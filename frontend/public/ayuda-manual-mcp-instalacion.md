@@ -10,12 +10,11 @@ Documento de instalación y configuración del servidor MCP FalkorSpecs Oracle p
 
 El MCP FalkorSpecs expone herramientas que permiten a la IA (Cursor, Antigravity, etc.) consultar el grafo de FalkorDB **antes** de modificar código legacy, reduciendo alucinaciones y rupturas. Incluye:
 
-- **list_known_projects** — Al inicio: mapear IDs. Respuesta `[{ id, name, roots: [{ id, name, branch? }] }]` (id = proyecto; roots[].id = repo). Para **`get_modification_plan`** con varios repos, pasa `projectId` = `roots[].id` del repo objetivo; en el resto de herramientas suele bastar proyecto o repo según el endpoint (file/chat).
 - **validate_before_edit** — Obligatorio antes de editar: impacto + contrato + endpoints de funciones.
 - **get_legacy_impact**, **get_contract_specs** — Impacto y props reales.
-- **get_file_content** — Contenido de archivos desde el repo o proyecto indexado.
-- **get_modification_plan** — `filesToModify` (path + repoId) y `questionsToRefine`; `POST /projects/:projectId/modification-plan` con UUID de proyecto **o** de repositorio (`roots[].id` recomendado en multi-root).
-- **semantic_search**, **get_project_analysis** — Búsqueda y diagnósticos (`get_project_analysis` → `POST /repositories/:id/analyze`: **`roots[].id`** del repo a analizar).
+- **get_file_content** — Contenido de archivos desde el repo indexado.
+- **semantic_search**, **get_project_analysis** — Búsqueda y diagnósticos.
+- **get_modification_plan** — Plan quirúrgico (`filesToModify` + `questionsToRefine`). En proyectos multi-root, el consumidor debe pasar como `projectId` el **`roots[].id` del repositorio** donde está el código (p. ej. frontend); el ingest lo acepta en `POST /projects/:id/modification-plan`.
 
 ---
 
@@ -278,20 +277,18 @@ La IA debería poder invocar las herramientas del MCP. Si aparecen errores de co
 
 ## 5. Herramientas disponibles
 
-| Herramienta            | Uso típico                                                                 |
-|------------------------|----------------------------------------------------------------------------|
-| `list_known_projects`  | Al inicio: mapear IDs. Respuesta `[{ id, name, roots: [{ id, name, branch? }] }]` (id = proyecto; roots[].id = repo) |
-| `validate_before_edit` | **OBLIGATORIO** antes de editar componente o función                       |
-| `get_legacy_impact`     | Ver qué se rompe si modificas un nodo                                      |
-| `get_contract_specs`   | Props reales de un componente                                              |
-| `get_component_graph`  | Árbol de dependencias de un componente                                     |
-| `get_functions_in_file`| Funciones y componentes en un archivo                                      |
-| `get_import_graph`     | Imports y contenido estructural de un archivo                              |
-| `get_file_content`     | Contenido de un archivo (repo o proyecto; requiere INGEST_URL)            |
-| `ask_codebase`         | Preguntas NL; usa projects/chat o repositories/chat según ID              |
-| `get_modification_plan`| Plan quirúrgico; `projectId` = proyecto o `roots[].id` del repo (multi-root) |
-| `semantic_search`      | Búsqueda en componentes, funciones y archivos                             |
-| `get_project_analysis` | Diagnóstico, duplicados, reingeniería, código muerto (id = repo)           |
+| Herramienta            | Uso típico                                             |
+|------------------------|--------------------------------------------------------|
+| `list_known_projects`  | Al inicio: mapear IDs de repos a nombres               |
+| `validate_before_edit`  | **OBLIGATORIO** antes de editar componente o función  |
+| `get_legacy_impact`     | Ver qué se rompe si modificas un nodo                  |
+| `get_contract_specs`   | Props reales de un componente                         |
+| `get_component_graph`  | Árbol de dependencias de un componente                 |
+| `get_functions_in_file`| Funciones y componentes en un archivo                  |
+| `get_import_graph`     | Imports y contenido estructural de un archivo         |
+| `get_file_content`     | Contenido crudo de un archivo (requiere INGEST_URL)   |
+| `semantic_search`      | Búsqueda en componentes, funciones y archivos         |
+| `get_project_analysis` | Diagnóstico, duplicados o reingeniería                 |
 
 ---
 
@@ -299,7 +296,7 @@ La IA debería poder invocar las herramientas del MCP. Si aparecen errores de co
 
 Al trabajar en código legacy indexado, seguir el flujo SDD:
 
-1. **Ejecutar `list_known_projects`** al inicio (proyecto = `id`; repos = `roots[].id`). Para **`get_modification_plan`** con multi-root, usa el `roots[].id` del repo donde está el código; para otras herramientas, proyecto o repo según corresponda.
+1. **Ejecutar `list_known_projects`** al inicio para obtener los `projectId`.
 2. **Antes de editar:** Ejecutar `validate_before_edit` con el `nodeName`.
 3. Si devuelve **"Nodo no encontrado"**: no proceder; verificar nombre o reindexar.
 4. Para **componentes**: usar las props del contrato. Para **funciones**: usar path, descripción y endpoints que devuelve.
@@ -369,7 +366,7 @@ El MCP acepta el token en `X-M2M-Token` o `Authorization: Bearer m2m_xxx`, lo re
 | Síntoma | Causa probable | Solución |
 |---------|-----------------|----------|
 | "Connection refused" al usar herramientas | FalkorDB no levantado o inaccesible | Levantar `pnpm run dev:infra` o comprobar túnel SSH |
-| "Nodo X no encontrado" | El nodo no existe en el grafo | Reindexar: `POST /repositories/:id/resync` (desde repo) o desde la UI del proyecto "Resync (proyecto)" (`resync-for-project`) |
+| "Nodo X no encontrado" | El nodo no existe en el grafo | Reindexar el repo (`POST /repositories/:id/resync`) |
 | get_file_content falla | INGEST_URL no configurada o incorrecta | Definir INGEST_URL en env del MCP |
 | Las herramientas no aparecen en Cursor | MCP no cargado | Verificar ruta en args, reiniciar Cursor |
 | projectId desconocido | No se ha llamado list_known_projects | Ejecutar list_known_projects al inicio |

@@ -1,64 +1,105 @@
 /**
- * @fileoverview Layout con header (nav) y main. Enlaces: Repositorios, + Nuevo, Credenciales.
- * Con SSO: muestra botón Cerrar sesión.
+ * Kreo AppLayout - Shell con Sidebar, Header y contenido principal
  */
-import { Link, useLocation } from 'react-router-dom';
-import { Button } from '@/components/ui/button';
-import { removeToken, redirectToSSO, isSSOEnabled } from '../utils/sso';
+import { useState } from "react"
+import { useLocation } from "react-router-dom"
+import {
+  Menu as MenuIcon,
+  Search,
+  LayoutDashboard,
+  FolderGit2,
+  Plus,
+  Key,
+  HelpCircle,
+} from "lucide-react"
+import { cn } from "@/lib/utils"
+import { SidebarModern, type SidebarGroup } from "./layout/SidebarModern"
+import { Button } from "@/components/ui/button"
 
-const navItems = [
-  { to: '/', label: 'Proyectos' },
-  { to: '/repos', label: 'Repositorios' },
-  { to: '/repos/new', label: '+ Nuevo repo' },
-  { to: '/credentials', label: 'Credenciales' },
-  { to: '/ayuda', label: 'Ayuda' },
-] as const;
+const navigationGroups: SidebarGroup[] = [
+  {
+    items: [
+      { label: "Proyectos", href: "/", icon: LayoutDashboard },
+      { label: "Repositorios", href: "/repos", icon: FolderGit2 },
+      { label: "+ Nuevo repo", href: "/repos/new", icon: Plus },
+      { label: "Credenciales", href: "/credentials", icon: Key },
+      { label: "Ayuda", href: "/ayuda", icon: HelpCircle },
+    ],
+  },
+]
 
-/**
- * Layout principal: header sticky con enlaces (Proyectos, Repositorios, + Nuevo repo, Credenciales, Ayuda) y Cerrar sesión si SSO está activo; main con children.
- */
 export function Layout({ children }: { children: React.ReactNode }) {
-  const location = useLocation();
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
+  const location = useLocation()
+
+  const path = location.pathname
+  const activeHref =
+    path === "/"
+      ? "/"
+      : path.startsWith("/ayuda")
+        ? "/ayuda"
+        : path.startsWith("/repos/new")
+          ? "/repos/new"
+          : path.startsWith("/credentials")
+            ? "/credentials"
+            : path.startsWith("/repos")
+              ? "/repos"
+              : path.startsWith("/projects")
+                ? "/"
+                : "/"
 
   return (
-    <div className="min-h-screen bg-background">
-      <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-        <div className="flex h-14 flex-1 items-center justify-between gap-6 px-[30px]">
-          <div className="flex items-center gap-6">
-            <Link to="/" className="flex items-center gap-2 font-semibold text-lg">
-              Ariadne
-            </Link>
-            <nav className="flex items-center gap-2">
-              {navItems.map((item) => {
-              const isActive =
-                item.to === '/'
-                  ? location.pathname === '/'
-                  : item.to === '/ayuda'
-                    ? location.pathname.startsWith('/ayuda')
-                    : location.pathname.startsWith(item.to);
-              return (
-                <Button key={item.to} variant={isActive ? 'secondary' : 'ghost'} size="sm" asChild>
-                  <Link to={item.to}>{item.label}</Link>
-                </Button>
-              );
-            })}
-            </nav>
-          </div>
-          {isSSOEnabled() && (
+    <div className="flex h-screen bg-[var(--background)] overflow-hidden">
+      <SidebarModern
+        groups={navigationGroups}
+        activeHref={activeHref}
+        brand={<span className="text-xl font-black tracking-tighter">ARIADNE</span>}
+        className="hidden lg:flex shrink-0"
+      />
+
+      <div
+        className={cn(
+          "fixed inset-0 z-[var(--z-modal)] lg:hidden transition-opacity duration-300",
+          mobileMenuOpen ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"
+        )}
+      >
+        <div
+          className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+          onClick={() => setMobileMenuOpen(false)}
+        />
+        <SidebarModern
+          groups={navigationGroups}
+          activeHref={activeHref}
+          collapsible={false}
+          className={cn(
+            "relative w-72 h-full transition-transform duration-300",
+            mobileMenuOpen ? "translate-x-0" : "-translate-x-full"
+          )}
+        />
+      </div>
+
+      <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+        <header className="h-14 lg:h-16 bg-[var(--card)] border-b border-[var(--border)] flex items-center justify-between px-4 lg:px-6 shrink-0 z-20">
+          <div className="flex items-center gap-4">
             <Button
               variant="ghost"
-              size="sm"
-              onClick={() => {
-                removeToken();
-                redirectToSSO();
-              }}
+              size="icon"
+              className="lg:hidden text-[var(--foreground-muted)]"
+              onClick={() => setMobileMenuOpen(true)}
             >
-              Cerrar sesión
+              <MenuIcon className="w-5 h-5" />
             </Button>
-          )}
-        </div>
-      </header>
-      <main className="px-[30px] pt-6 pb-[30px]">{children}</main>
+            <div className="hidden md:flex items-center gap-2 px-3 py-2 bg-[var(--background)] border border-[var(--border)] rounded-[var(--radius-lg)] w-48 lg:w-72 text-[var(--foreground-subtle)] text-sm">
+              <Search className="w-4 h-4" />
+              <span>Buscar...</span>
+            </div>
+          </div>
+        </header>
+
+        <main className="flex-1 overflow-y-auto p-4 lg:p-6">
+          <div className="max-w-[1600px] mx-auto">{children}</div>
+        </main>
+      </div>
     </div>
-  );
+  )
 }

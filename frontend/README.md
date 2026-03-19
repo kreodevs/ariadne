@@ -7,7 +7,7 @@ Proyecto en la raíz del repo (`frontend/`), independiente de `services/`. UI pa
 - Componentes, páginas y utilidades documentados con **JSDoc**.
 - `src/api.ts` — cliente API para Ingest.
 - `src/types.ts` — tipos e interfaces.
-- `src/components/` — Layout, StatusBadge, shadcn/ui.
+- `src/components/` — Layout (Kreo AppLayout + SidebarModern), StatusBadge, Kreo UI (Button, Card, Input, Select, Badge, Alert, Skeleton, Table, Dialog).
 - `src/pages/` — RepoList, RepoDetail (compound components), RepoChat, RepoIndex, CreateRepo, EditRepo, CredentialsList, CreateCredential, EditCredential, **Ayuda**.
 
 ## Stack
@@ -15,7 +15,7 @@ Proyecto en la raíz del repo (`frontend/`), independiente de `services/`. UI pa
 - React 19 + TypeScript + Vite
 - React Router
 - Tailwind CSS
-- Shadcn/ui (Card, Button, Table, Input, Select, Badge, Alert, Skeleton)
+- Kreo UI (tema corporate/luxury: Card, Button, Table, Input, Select, Badge, Alert, Skeleton, Dialog, SidebarModern)
 
 ## Configuración
 

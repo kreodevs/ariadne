@@ -176,7 +176,6 @@ services:
       - CREDENTIALS_ENCRYPTION_KEY=${CREDENTIALS_ENCRYPTION_KEY}
       - EMBEDDING_PROVIDER=${EMBEDDING_PROVIDER:-openai}
       - OPENAI_API_KEY=${OPENAI_API_KEY}
-      - CHAT_MODEL=${CHAT_MODEL:-gpt-4o-mini}
       - GOOGLE_API_KEY=${GOOGLE_API_KEY}
       # O variables de entorno legacy:
       - BITBUCKET_USER=${BITBUCKET_USER}
@@ -298,10 +297,8 @@ curl -X POST http://localhost:3002/repositories \
 
 | Recurso | Método | Descripción |
 |---------|--------|-------------|
-| Chat (repo) | `POST /repositories/:id/chat` | Preguntas NL por repo. Body: `{ message, history? }` |
-| Chat (proyecto) | `POST /projects/:projectId/chat` | Preguntas NL por proyecto (todos los repos). Body: `{ message, history? }` |
-| Plan modificación | `POST /projects/:projectId/modification-plan` | Body: `{ userDescription }` → `{ filesToModify: [{ path, repoId }], questionsToRefine }` |
-| Análisis | `POST /repositories/:id/analyze` | Diagnóstico, duplicados, reingeniería, código muerto. Body: `{ mode: 'diagnostico'|'duplicados'|'reingenieria'|'codigo_muerto' }` |
+| Chat | `POST /repositories/:id/chat` | Preguntas NL → Cypher → FalkorDB. Body: `{ message, history? }` |
+| Análisis | `POST /repositories/:id/analyze` | Diagnóstico, duplicados o reingeniería. Body: `{ mode: 'diagnostico'|'duplicados'|'reingenieria' }` |
 | Resumen grafo | `GET /repositories/:id/graph-summary` | Conteos y muestras de nodos indexados |
 
 Requieren `OPENAI_API_KEY`. Ver [CHAT_Y_ANALISIS.md](../CHAT_Y_ANALISIS.md) para detalles.
@@ -368,13 +365,9 @@ URL: `http://localhost:5173`
 | Ruta | Descripción |
 |------|-------------|
 | `/` | Lista de repositorios |
-| `/projects` | Lista de proyectos (multi-root) |
-| `/projects/new` | Crear proyecto |
-| `/projects/:id` | Detalle de proyecto (nombre editable, resync por repo, asociar repo, eliminar, "Repositorio nuevo" con ?projectId=) |
-| `/projects/:id/chat` | Chat por proyecto |
 | `/repos/new` | Alta de repositorio |
-| `/repos/:id` | Detalle, Sync, Resync (desde repo), tabla de jobs |
-| `/repos/:id/chat` | Chat con el repo (preguntas NL, Diagnóstico, Duplicados, Reingeniería, Código muerto) |
+| `/repos/:id` | Detalle, Sync, Resync, tabla de jobs |
+| `/repos/:id/chat` | Chat con el repo (preguntas NL, Diagnóstico, Duplicados, Reingeniería) |
 
 ---
 
@@ -393,7 +386,7 @@ URL: `http://localhost:5173`
    }
    ```
    Producción: `url`: `https://ariadne.kreoint.mx/mcp`. Con auth: añadir `"headers": { "Authorization": "Bearer <token>" }`.
-4. Herramientas: `list_known_projects` (al inicio; respuesta `[{ id, name, roots: [{ id, name, branch? }] }]`), `get_component_graph`, `get_legacy_impact`, `get_contract_specs`, `validate_before_edit`, `semantic_search`, `get_project_analysis`, `get_modification_plan`. **File/chat:** proyecto o `roots[].id` con resolución en ingest. **`get_project_analysis`:** endpoint por **repositorio** → usar **`roots[].id`**. **`get_modification_plan`:** en multi-root, preferir **`roots[].id`** del repo objetivo (también acepta UUID de proyecto Ariadne).
+4. Herramientas: `get_component_graph`, `get_legacy_impact`, `get_contract_specs`, `validate_before_edit`, `semantic_search`, `get_project_analysis`, etc.
 
 **Documentación completa:** [INSTALACION_MCP_CURSOR.md](../INSTALACION_MCP_CURSOR.md) — instalación paso a paso, escenarios local/producción (ariadne.kreoint.mx), troubleshooting.
 
@@ -420,12 +413,11 @@ URL: `http://localhost:5173`
 2. `GET /graph/compare/:componentName`.
 3. O usar `POST /workflow/refactor/full` con `proposedCode`.
 
-### 3.4 Proyectos y múltiples repos (multi-root)
+### 3.4 Múltiples repos (multi-proyecto)
 
-1. **Proyectos:** `GET /projects`, `POST /projects`, `PATCH /projects/:id`, `DELETE /projects/:id`. Un proyecto puede tener varios repos (asociar desde detalle del proyecto).
-2. Tabla `project_repositories` (repo_id, project_id): un repo puede estar en varios proyectos.
-3. **Resync:** `POST /repositories/:id/resync` borra ámbito standalone del repo y reindexa todo; `POST /repositories/:id/resync-for-project` con body `{ projectId }` borra solo el slice (projectId, repoId) y reindexa solo ese proyecto para ese repo.
-4. Grafo / herramientas MCP: muchas aceptan UUID de proyecto Ariadne o de repo (`roots[].id`). **`get_project_analysis`** (MCP → `POST /repositories/:id/analyze`) requiere **id de repositorio**. **`get_modification_plan`:** preferir `roots[].id` en multi-root.
+1. Registrar cada repo con su `provider`, `projectKey`, `repoSlug`.
+2. Cada uno se indexa como nodo `:Project` distinto en FalkorDB.
+3. Las consultas se filtran por `projectId` (UUID del repo).
 
 ---
 

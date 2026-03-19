@@ -28,6 +28,9 @@ Cada nodo representa un artefacto real en tu código legacy:
   - `description`: JSDoc extraído (opcional).
   - `embedding`: Vector para RAG (FalkorDB 4.0+; opcional).
 - **`:Hook`**: Hooks estándar (`useState`, `useEffect`, etc.) o **custom hooks definidos en el archivo** (`const useX = ...` o `function useX(...)`). Los custom definidos en archivo tienen relación `(File)-[:CONTAINS]->(Hook)`.
+- **`:Context`**: Contexto React (`createContext(...)`). Relación `(File)-[:CONTAINS]->(Context)`.
+  - `name`: Nombre del contexto (variable o identificador).
+  - `projectId`, `repoId`, `path`: Identidad.
 - **`:Prop`**: La interfaz del componente.
   - `name`: Nombre de la propiedad.
   - `required`: Booleano detectado por PropTypes o tipos.
@@ -72,9 +75,6 @@ Relaciones: `(File)-[:CONTAINS]->(StrapiContentType|StrapiController|StrapiServi
 
 **Nodos de dominio (grafo de conocimiento)**. Labels: `:DomainConcept`:
 
-- **`:Context`**: Contexto React (`createContext(...)`). Relación `(File)-[:CONTAINS]->(Context)`.
-  - `name`: Nombre del contexto (variable o identificador).
-  - `projectId`, `repoId`, `path`: Identidad.
 - **`:DomainConcept`**: Concepto extraído heurísticamente (tipos, opciones, contextos).
   - `name`: Nombre del concepto.
   - `projectId`: ID del proyecto.

@@ -56,11 +56,11 @@ Reiniciar Cursor. Listo.
 
 ---
 
-## 3. Herramientas
+## 3. Herramientas (lista principal)
 
 | Herramienta | Uso |
 |-------------|-----|
-| `list_known_projects` | Mapear IDs a nombres. Respuesta: `[{ id, name, roots: [{ id, name, branch? }] }]` (id = proyecto Ariadne; roots[].id = repo). Para **`get_modification_plan`** en multi-root, usar `roots[].id` del repo objetivo; en file/chat el MCP suele resolver proyecto vs repo con fallback. |
+| `list_known_projects` | Mapear IDs a nombres (ejecutar al inicio) |
 | `get_component_graph` | Árbol de dependencias de un componente |
 | `get_legacy_impact` | Ver qué se rompe si modificas un nodo |
 | `get_contract_specs` | Props reales de un componente |
@@ -69,9 +69,8 @@ Reiniciar Cursor. Listo.
 | `get_file_content` | Contenido de un archivo (Bitbucket/GitHub, requiere INGEST_URL) |
 | `validate_before_edit` | **Obligatorio** antes de editar: impacto + contrato en un solo llamado |
 | `semantic_search` | Búsqueda por palabra clave en componentes, funciones, archivos |
-| `get_project_analysis` | **Análisis por repositorio:** deuda técnica (`mode=diagnostico`), duplicados (`mode=duplicados`), reingeniería (`mode=reingenieria`), opcional `codigo_muerto`. El ingest usa `POST /repositories/:id/analyze`: pasa **`roots[].id`** del repo (el parámetro MCP se llama `projectId` pero el endpoint es por **repo**). Duplicados requiere embed-index previo. |
-| `get_modification_plan` | Plan quirúrgico: filesToModify + questionsToRefine. `POST /projects/:id/modification-plan`; `id` = proyecto o `roots[].id`. Opcional **`scope`** (repoIds, prefijos, globs) para filtrar archivos. |
-| `ask_codebase` | Preguntas NL sobre el código. Opcional **`scope`** y **`twoPhase`** (ingest: JSON de retrieval, `CHAT_TWO_PHASE`). |
+| `get_project_analysis` | Diagnóstico, duplicados, reingeniería, código muerto |
+| `ask_codebase` | Preguntas en NL sobre el código. Opcional **`scope`** (`repoIds`, `includePathPrefixes`, `excludePathGlobs`) y **`twoPhase`**; ingest: JSON de retrieval + `CHAT_TWO_PHASE`. |
 | `get_definitions` | Origen exacto de clase/función (archivo, líneas) |
 | `get_references` | Todos los lugares donde se usa un símbolo |
 | `get_implementation_details` | Firma, tipos, props, endpoints de un símbolo |
@@ -82,7 +81,9 @@ Reiniciar Cursor. Listo.
 | `find_similar_implementations` | Búsqueda semántica antes de escribir código nuevo |
 | `get_project_standards` | Prettier, ESLint, tsconfig para seguir estándares |
 | `get_file_context` | Contenido + imports + exports (paso 2: search → get_file_context → validate) |
-| **`analyze_local_changes`** | **Pre-flight check:** revisa `git diff --cached` contra el grafo. Detecta funciones/componentes editados, eliminados o agregados y el radio de explosión (quién depende). Devuelve tabla: Tipo de Cambio \| Elemento \| Impacto \| Riesgo (ALTO/MEDIO/BAJO). Usar antes del commit. Requiere `workspaceRoot` (donde ejecutar git) o `stagedDiff` (salida cruda). |
+| `get_modification_plan` | Plan quirúrgico (`filesToModify` + `questionsToRefine`); multi-root: `projectId` = `roots[].id` del repo objetivo. Opcional **`scope`** (filtra la lista de archivos). |
+
+**Ingest (operación):** `CHAT_TELEMETRY_LOG=1` añade en logs `pathGroundingRatio` y citas vs retrieval. `CHAT_TWO_PHASE=0|false|off` desactiva el bloque JSON estructurado en el sintetizador.
 
 ---
 
@@ -108,7 +109,7 @@ Contenido de `.ariadne-project`:
 }
 ```
 
-**Cómo obtener el `projectId`:** Pide *"Lista los proyectos indexados"* → la IA llama `list_known_projects` y te muestra el mapeo. Para **`get_modification_plan`** con varios repositorios, usa el **`roots[].id` del repo** donde está el código; si solo pasas el `id` del proyecto Ariadne, el plan puede anclarse al primer repo asociado. Para otras herramientas, proyecto o `roots[].id` según el caso.
+**Cómo obtener el `projectId`:** Pide *"Lista los proyectos indexados"* → la IA llama `list_known_projects` y te muestra el mapeo. Copia el `id` del proyecto que corresponda (por nombre o ruta). Para **`get_modification_plan`** con **multi-root**, copia el **`roots[].id` del repositorio objetivo** (p. ej. frontend): el ingest acepta ese UUID en `POST /projects/:id/modification-plan` y ancla el plan a ese repo; si solo pasas el `id` del proyecto Ariadne, el servicio puede usar el primer repo asociado.
 
 **Ventaja:** Una vez creado, la IA lo lee y usa ese `projectId` en todas las herramientas. No depende de inferencia ni se pierde entre conversaciones. Puedes commitearlo para que todo el equipo use el mismo proyecto.
 
@@ -149,7 +150,7 @@ Ejemplos de qué pedirle a la IA en el chat para que use las herramientas del MC
 | *¿Qué importa y exporta el archivo `Dashboard.tsx`?* | `get_import_graph` |
 | *Muéstrame el contenido del archivo `api/cotizaciones.ts`* | `get_file_content` |
 | *Busca en el código algo relacionado con "validación de precios"* | `semantic_search` |
-| *Haz un diagnóstico de deuda técnica del proyecto* | `get_project_analysis` (modo diagnostico) — pasar **`roots[].id`** del repo a analizar |
+| *Haz un diagnóstico de deuda técnica del proyecto* | `get_project_analysis` (modo diagnostico) |
 | *Explícame cómo funciona el proceso de exportación a Excel en este repo* | `ask_codebase` |
 
 ### Refactorización segura
@@ -171,7 +172,6 @@ Ejemplos de qué pedirle a la IA en el chat para que use las herramientas del MC
 
 | Prompt | Herramienta |
 |--------|-------------|
-| *Revisa mis cambios locales contra el grafo de FalkorDB y dime si hay riesgo de código spaghetti o dependencias rotas* | **`analyze_local_changes`** (pre-flight check antes del commit) |
 | *Si modifico `UserForm`, ¿qué archivos y funciones se verían afectados?* | `get_affected_scopes` |
 | *Voy a eliminar el parámetro `options` de `fetchData`. ¿Rompe algo?* | `check_breaking_changes` |
 
@@ -194,7 +194,7 @@ Ejemplos de qué pedirle a la IA en el chat para que use las herramientas del MC
 
 **Fijar proyecto:** *"Crea .ariadne-project con el projectId del proyecto [nombre]"* — la IA listará proyectos, elegirá el correcto y creará el archivo.
 
-**Si la IA no usa el MCP:** Sé explícito con **repo**: *"Usa get_project_analysis con el roots[].id del repo frontend tras list_known_projects"* — el endpoint de análisis es por **repositorio**, no por id de proyecto Ariadne solo.
+**Si la IA no usa el MCP:** Sé más explícito. Ej.: *"Usa la herramienta get_project_analysis del MCP para hacer un diagnóstico de deuda técnica del proyecto oohbp2"* — fuerza el uso de la herramienta correcta.
 
 ---
 

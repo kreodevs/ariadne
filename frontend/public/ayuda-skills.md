@@ -9,18 +9,17 @@ Protocol for using the MCP FalkorSpecs Oracle tools (get_component_graph, valida
 
 ## Session Start
 
-1. **Run `list_known_projects`** to map project names to IDs. Response: `[{ id, name, roots: [{ id, name, branch? }] }]`. `id` = Ariadne project; `roots[].id` = repo. For most tools either ID works; for **`get_modification_plan`** with multiple repos, pass **`roots[].id` of the target repo** (e.g. frontend), not only the Ariadne project `id`.
+1. **Run `list_known_projects`** to map project names to IDs.
 2. If `.ariadne-project` exists in workspace root, read its `projectId` and use it in all MCP calls.
-3. If user mentions project by name (e.g. "oohbp2"), use `list_known_projects` → find matching `id` or `roots[].id` → pass as `projectId`.
+3. If user mentions project by name (e.g. "oohbp2"), use `list_known_projects` → find matching `id` → pass as `projectId`.
 
 ## Tools by Intent
 
 | User Intent | Tool | Flow |
 |-------------|------|------|
 | **Diagnóstico de archivo/componente/hook** ("diagnóstico de usePauta.tsx", "analiza Board") | `get_component_graph`, `get_legacy_impact`, `get_definitions`, `get_references` | **Use MCP first**, not just Read/Grep. list_known_projects → projectId → get_component_graph + get_legacy_impact + get_definitions/get_references. |
-| Diagnóstico por repo, duplicados, reingeniería, código muerto | `get_project_analysis` | list_known_projects → **`roots[].id` del repo** → get_project_analysis (param `projectId` en MCP = id de repo; ingest: `/repositories/:id/analyze`). **Código muerto:** presentar el resultado tal cual. El backend es la fuente de verdad. |
-| Plan de modificación (archivos a tocar + preguntas de afinación) | `get_modification_plan` | `POST /projects/:projectId/modification-plan` with `projectId` = `roots[].id` of the target repo in multi-root → `filesToModify` (path + repoId), `questionsToRefine`. Ingest accepts project UUID or repository UUID. |
-| "¿Cómo funciona X?", explicar flujo | `ask_codebase` | Pass projectId (proyecto o repo) + question; MCP usa projects/chat o repositories/chat según ID. |
+| Diagnóstico proyecto, duplicados, reingeniería, código muerto | `get_project_analysis` | list_known_projects → projectId → get_project_analysis(projectId, mode). **Código muerto:** presentar el resultado tal cual, sin reformatear. No reorganizar en "Eliminar sin riesgo" / "Candidatos" / etc. No sugerir `rg`. El backend es la fuente de verdad. |
+| "¿Cómo funciona X?", explicar flujo | `ask_codebase` | Pass projectId + question |
 | Búsqueda por término | `semantic_search`, `find_similar_implementations` | Direct query |
 | Antes de editar componente/función | `validate_before_edit` | Required — returns impact + contract |
 

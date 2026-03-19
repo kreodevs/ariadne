@@ -8,8 +8,8 @@ Documentación del sistema de chat con repositorios, diagnósticos, métricas de
 
 | Endpoint | Descripción |
 |----------|-------------|
-| `POST /repositories/:id/chat` | Pregunta en NL por repo. Body: `{ message, history? }` |
-| `POST /projects/:projectId/chat` | Pregunta en NL por proyecto (todos los repos del proyecto). Body: `{ message, history? }` |
+| `POST /repositories/:id/chat` | Pregunta en NL por repo. Body: `{ message, history?, scope?, twoPhase? }` — `scope`: `repoIds`, `includePathPrefixes`, `excludePathGlobs`; `twoPhase` alinea con `CHAT_TWO_PHASE`. |
+| `POST /projects/:projectId/chat` | Chat por proyecto (todos los repos). Mismo body. |
 | `POST /repositories/:id/analyze` | Análisis estructurado. Body: `{ mode: 'diagnostico'|'duplicados'|'reingenieria'|'codigo_muerto' }` |
 | `GET /repositories/:id/graph-summary` | Conteos y muestras de nodos indexados |
 
@@ -29,6 +29,7 @@ Todas las preguntas pasan por el mismo pipeline. No hay clasificación code vs k
    - El Retriever NO escribe la respuesta; solo reúne contexto.
 
 2. **Fase Synthesizer** — Un solo LLM con el contexto reunido:
+   - Opcionalmente precedido por un **JSON `retrieval_summary`** (paths/repoIds del retrieval) cuando `twoPhase` está activo (`CHAT_TWO_PHASE` en ingest).
    - Recibe datos crudos (Cypher, archivos, búsquedas).
    - Responde SIEMPRE en prosa humana: procesos, flujos, impacto, explicaciones.
    - Prohibido devolver listas crudas de paths/funciones; siempre síntesis narrativa.
@@ -99,9 +100,9 @@ Todas las preguntas pasan por el mismo pipeline. No hay clasificación code vs k
 ## 7. Reingeniería (mode=reingenieria)
 
 - Orquesta `analyzeDiagnostico` + `analyzeDuplicados`.
-- Recibe datos crudos (top10Risk, antipatrones, duplicados) en JSON.
-- Cada acción debe referenciar path/name concreto; prohibido consejos genéricos.
-- Si no hay duplicados, prohibido recomendar "eliminar duplicados".
+- Recibe datos crudos (riskRanked, highCoupling, noDescription, componentProps, antipatrones, duplicados) en JSON.
+- **Alineación con el diagnóstico:** El plan generado sigue la misma estructura que el diagnóstico (Riesgo con path/name/riskScore, Anti-patrones con path/name y métrica, Funciones sin JSDoc, Quick wins) para que un agente pueda ejecutar cada acción 1:1 sin omitir ítems.
+- Cada acción debe referenciar path/name concreto; prohibido consejos genéricos. Si no hay duplicados, prohibido recomendar "eliminar duplicados".
 
 ---
 
@@ -112,6 +113,7 @@ Todas las preguntas pasan por el mismo pipeline. No hay clasificación code vs k
 - **Por archivo:** (1) ruta exacta, (2) referencias (quién importa, quién renderiza componentes, quién llama funciones), (3) detalle funcional (Componentes/Funciones/Modelos), (4) conclusión (Sí se usa / No se usa).
 - **Resumen:** Tabla final con Archivo | Ruta | Estado | Notas.
 - **Entradas:** index.tsx, main.tsx, App.tsx y componentes en Route se consideran usados.
+- **Normalización de paths:** Para reducir falsos positivos (archivos usados pero marcados como muertos), al construir y consultar IMPORTS se usa una forma canónica: barras unificadas (`/`), extensión de módulo quitada (`.ts`/`.tsx`/`.js`/`.jsx`). Así, si el grafo tiene la arista con un path y el archivo se guarda con otro (por extensión o barras), se considera que tiene importers. La verificación por contenido (import/require en otros archivos) usa además términos derivados del path (baseName, pathTail, pathSeg) para detectar referencias aunque el grafo no tenga la arista.
 
 ---
 
@@ -150,6 +152,6 @@ Todas las preguntas pasan por el mismo pipeline. No hay clasificación code vs k
 
 ## 10. Frontend (Chat UI)
 
-- **Rutas:** `/repos/:id/chat` (chat por repo) y `/projects/:id/chat` (chat por proyecto).
-- **Layout:** Dos columnas: izquierda = botones (Diagnóstico, Duplicados, Reingeniería, Código muerto, Ver índice) + resultados; derecha = chat (mensajes + input).
-- **API:** `api.chat()`, `api.analyze()`, `api.getGraphSummary()` en `frontend/src/api.ts`; para proyectos se usa el endpoint de proyecto cuando hay `projectId`.
+- **Ruta:** `/repos/:id/chat`
+- **Layout:** Dos columnas: izquierda = botones (Diagnóstico, Duplicados, Reingeniería, Ver índice) + resultados; derecha = chat (mensajes + input).
+- **API:** `api.chat()`, `api.analyze()`, `api.getGraphSummary()` en `frontend/src/api.ts`.
