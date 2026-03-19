@@ -1,0 +1,32 @@
+node_modules
+dist
+.env
+.env.local
+.env.*.local
+*.log
+logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+package-lock.json
+yarn.lock
+*.tgz
+coverage
+.DS_Store
+.vscode
+.idea
+tmp
+temp
+*.swp
+*.swo
+*.swn
+*.bak
+*.orig
+*.rej
+# Mac files
+._*
+# Editor directories
+*.code-workspace
+# OS metadata files
+Thumbs.db
+Desktop.ini

@@ -1,0 +1,22 @@
+{
+  "name": "ariadne",
+  "private": true,
+  "description": "Ariadne / FalkorSpecs — Cartographer + FalkorDB + MCP",
+  "scripts": {
+    "dev:setup": "pnpm install && pnpm -C services/api install && pnpm -C services/ingest install && pnpm -C services/orchestrator install",
+    "dev:infra": "INFRA_ONLY=1 node scripts/ensure-docker.js",
+    "dev:api": "node scripts/run-local.js api",
+    "dev:ingest": "node scripts/run-local.js ingest",
+    "dev:orchestrator": "node scripts/run-local.js orchestrator",
+    "dev:back": "BACKEND_ONLY=1 node scripts/ensure-docker.js",
+    "dev:front": "pnpm -C frontend dev",
+    "docker:up": "node scripts/ensure-docker.js",
+    "docker:down": "node scripts/colima-stop.js"
+  },
+  "devDependencies": {
+    "dotenv": "^16.6.1"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

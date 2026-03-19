@@ -1,0 +1,206 @@
+services:
+  # Base de Datos de Grafos (El Cerebro) — v4.0.1 para soporte vector (RAG)
+  # Sin puertos expuestos: solo accesible desde contenedores de la red
+  falkordb:
+    image: falkordb/falkordb:v4.0.1
+    platform: linux/amd64
+    container_name: falkorspecs-db
+    volumes:
+      - falkordb_data:/data
+    networks:
+      - falkor-net
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # PostgreSQL — repos, sync_jobs, indexed_files (microservicio de ingesta)
+  # Sin puertos expuestos: solo accesible desde contenedores de la red
+  postgres:
+    image: postgres:16-alpine
+    container_name: falkorspecs-postgres
+    environment:
+      POSTGRES_USER: falkorspecs
+      POSTGRES_PASSWORD: falkorspecs
+      POSTGRES_DB: falkorspecs
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - falkor-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U falkorspecs -d falkorspecs"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # Redis Stack — persistencia estados de agentes y caché de fragmentos (constitution §2.B)
+  # Sin puertos expuestos: solo accesible desde contenedores de la red
+  redis:
+    image: redis:7-alpine
+    container_name: falkorspecs-redis
+    volumes:
+      - redis_data:/data
+    networks:
+      - falkor-net
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # Servicio de Ingesta Estática (El Cartógrafo)
+  cartographer:
+    build:
+      context: .
+      dockerfile: ./services/cartographer/Dockerfile
+    container_name: falkorspecs-cartographer
+    volumes:
+      - ./src:/app/src-to-analyze:ro # Monta tu código legacy como solo lectura
+      - ./specs:/app/specs
+    environment:
+      - FALKORDB_HOST=falkordb
+      - FALKORDB_PORT=6379
+      - SCAN_PATH=/app/src-to-analyze
+      - SHADOW_SERVER_PORT=4000
+    depends_on:
+      falkordb:
+        condition: service_healthy
+    networks:
+      - falkor-net
+
+  # Frontend — UI admin del ingest (repos, sync, jobs)
+  # Dokploy Domains UI: ariadne.kreoint.mx path / → 80
+  frontend:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+      args:
+        VITE_API_URL: "${VITE_API_URL:-https://ariadne.kreoint.mx}"
+        VITE_SSO_BASE_URL: "${VITE_SSO_BASE_URL:-}"
+        VITE_SSO_APPLICATION_ID: "${VITE_SSO_APPLICATION_ID:-}"
+        VITE_SSO_FRONTEND_URL: "${VITE_SSO_FRONTEND_URL:-}"
+    networks:
+      - falkor-net
+      - dokploy-network
+    expose:
+      - "80"
+
+  # API REST — proxy a ingest, /graph, /openapi, /health
+  # Dokploy Domains UI: ariadne.kreoint.mx path /api → 3000
+  api:
+    build:
+      context: .
+      dockerfile: ./services/api/Dockerfile
+    environment:
+      - FALKORDB_HOST=falkordb
+      - FALKORDB_PORT=6379
+      - PORT=3000
+      - REDIS_URL=redis://redis:6379
+      - INGEST_URL=http://ingest:3002
+      - CARTOGRAPHER_URL=http://cartographer:4000
+      - CORS_ORIGIN=${CORS_ORIGIN:-}
+      - SSO_APPLICATION_ID=${SSO_APPLICATION_ID:-}
+      - SSO_JWKS_URI=${SSO_JWKS_URI:-}
+    depends_on:
+      falkordb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      ingest:
+        condition: service_started
+    networks:
+      - falkor-net
+      - dokploy-network
+    expose:
+      - "3000"
+
+  # Microservicio de Ingesta (repos + full sync + webhook Bitbucket)
+  # Sin puerto expuesto: el frontend usa la API (proxy) como puerta de entrada
+  ingest:
+    build:
+      context: .
+      dockerfile: ./services/ingest/Dockerfile
+    container_name: falkorspecs-ingest
+    environment:
+      - PORT=3002
+      - CORS_ORIGIN=${CORS_ORIGIN:-}
+      - PGHOST=postgres
+      - PGPORT=5432
+      - PGUSER=falkorspecs
+      - PGPASSWORD=falkorspecs
+      - PGDATABASE=falkorspecs
+      - FALKORDB_HOST=falkordb
+      - FALKORDB_PORT=6379
+      - REDIS_URL=redis://redis:6379
+      - NODE_ENV=production
+      - EMBEDDING_PROVIDER=${EMBEDDING_PROVIDER:-openai}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - CHAT_MODEL=${CHAT_MODEL:-gpt-4o-mini}
+      - CHAT_TELEMETRY_LOG=${CHAT_TELEMETRY_LOG:-0}
+      - CHAT_TWO_PHASE=${CHAT_TWO_PHASE:-1}
+      - MODIFICATION_PLAN_MAX_FILES=${MODIFICATION_PLAN_MAX_FILES:-150}
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY}
+      - CREDENTIALS_ENCRYPTION_KEY=${CREDENTIALS_ENCRYPTION_KEY}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      falkordb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - falkor-net
+
+  # Orquestador NestJS + LangGraph (constitution §2.C)
+  # Sin puerto expuesto: proxy enruta por orchestrator:3001
+  orchestrator:
+    build:
+      context: .
+      dockerfile: ./services/orchestrator/Dockerfile
+    container_name: falkorspecs-orchestrator
+    environment:
+      - PORT=3001
+      - FALKORSPEC_API_URL=http://api:3000/api
+    depends_on:
+      api:
+        condition: service_started
+    networks:
+      - falkor-net
+
+  # Servidor MCP (El Oráculo). Streamable HTTP para producción (Dokploy).
+  # Cursor/IA conecta por URL. Auth M2M opcional: MCP_AUTH_TOKEN.
+  mcp-falkorspec:
+    build:
+      context: .
+      dockerfile: ./services/mcp-falkorspec/Dockerfile
+    container_name: falkorspecs-mcp
+    environment:
+      - PORT=8080
+      - FALKORDB_HOST=falkordb
+      - FALKORDB_PORT=6379
+      - INGEST_URL=http://ingest:3002
+      - MCP_AUTH_TOKEN=${MCP_AUTH_TOKEN:-}
+      - SSO_API_URL=${SSO_API_URL:-}
+      - SSO_JWKS_URI=${SSO_JWKS_URI:-}
+      - APPLICATION_ID=${APPLICATION_ID:-}
+      - SSO_APPLICATION_ID=${SSO_APPLICATION_ID:-}
+    depends_on:
+      falkordb:
+        condition: service_healthy
+    networks:
+      - falkor-net
+      - dokploy-network
+    expose:
+      - "8080"
+
+networks:
+  falkor-net:
+    driver: bridge
+  dokploy-network:
+    external: true
+
+volumes:
+  falkordb_data:
+  postgres_data:
+  redis_data:

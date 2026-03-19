@@ -1,0 +1,51 @@
+/**
+ * @fileoverview API REST de proyectos (multi-root): listar, detalle, file, crear, actualizar, eliminar.
+ */
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query } from '@nestjs/common';
+import { ProjectsService } from './projects.service';
+import { FileContentService } from '../repositories/file-content.service';
+
+@Controller('projects')
+export class ProjectsController {
+  constructor(
+    private readonly service: ProjectsService,
+    private readonly fileContent: FileContentService,
+  ) {}
+
+  @Get()
+  findAll() {
+    return this.service.findAll();
+  }
+
+  /** Contenido de un archivo buscando en todos los repos del proyecto (multi-root). MCP y chat por proyecto. */
+  @Get(':id/file')
+  async getFile(
+    @Param('id') projectId: string,
+    @Query('path') path: string,
+    @Query('ref') ref?: string,
+  ) {
+    const content = await this.fileContent.getFileContentSafeByProject(projectId, path?.trim() ?? '');
+    if (content == null) return { content: null };
+    return { content };
+  }
+
+  @Get(':id')
+  findOne(@Param('id') id: string) {
+    return this.service.findOne(id);
+  }
+
+  @Post()
+  create(@Body() body: { name?: string | null; description?: string | null }) {
+    return this.service.create(body);
+  }
+
+  @Patch(':id')
+  update(@Param('id') id: string, @Body() body: { name?: string | null; description?: string | null }) {
+    return this.service.update(id, body);
+  }
+
+  @Delete(':id')
+  async remove(@Param('id') id: string) {
+    await this.service.remove(id);
+  }
+}

@@ -1,0 +1,20 @@
+# Git y IDE
+.git
+.gitignore
+.cursor
+.vscode
+*.swp
+*.swo
+
+# Dependencies (se reinstalan en build)
+**/node_modules
+**/dist
+**/.pnpm-store
+
+# Logs y temporales
+*.log
+.tmp
+.cache
+
+# Otros servicios (solo necesitamos frontend, mcp-falkorspec, docs)
+# Se incluye todo pero se excluye lo pesado de arriba

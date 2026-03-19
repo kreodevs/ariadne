@@ -1,0 +1,17 @@
+{
+  "name": "ariadne-common",
+  "version": "1.0.0",
+  "description": "Shared FalkorDB/Cypher types and utils for Ariadne services",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "prepublishOnly": "npm run build"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "typescript": "^5.7.2"
+  },
+  "engines": { "node": ">=20" }
+}

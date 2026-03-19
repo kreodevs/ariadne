@@ -1,0 +1,31 @@
+# Dev local: expone puertos de DB y API para conectar desde el host
+# Uso: docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d
+# Producción: solo docker-compose.yml (sin este archivo)
+services:
+  falkordb:
+    ports:
+      - "6379:6379"
+
+  postgres:
+    ports:
+      - "5432:5432"
+
+  redis:
+    ports:
+      - "6380:6379"
+
+  api:
+    ports:
+      - "3000:3000"
+
+  ingest:
+    ports:
+      - "3002:3002"
+
+  orchestrator:
+    ports:
+      - "3001:3001"
+
+  frontend:
+    ports:
+      - "5173:80"

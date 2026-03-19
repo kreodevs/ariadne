@@ -1,0 +1,30 @@
+{
+  "name": "ariadne-mcp",
+  "version": "1.0.0",
+  "description": "MCP server FalkorSpecs: get_component_graph, get_legacy_impact, validate_before_edit, semantic_search",
+  "type": "module",
+  "main": "dist/index.js",
+  "bin": "./dist/index.js",
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsc",
+    "prepare": "npm run build",
+    "prepublishOnly": "npm run build",
+    "start": "node dist/index.js",
+    "dev": "tsc --watch"
+  },
+  "dependencies": {
+    "ariadne-common": "file:../../packages/ariadne-common",
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "falkordb": "^6.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "typescript": "^5.7.2"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "keywords": ["mcp", "falkordb", "ariadne", "cursor"],
+  "license": "ISC"
+}
