@@ -6,8 +6,9 @@ import { Link, useLocation } from "react-router-dom"
 import { ChevronLeft, ChevronRight, ChevronDown, LogOut } from "lucide-react"
 import type { LucideIcon } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { useNavigate } from "react-router-dom"
 import { Avatar } from "../atoms/Avatar"
-import { removeToken, redirectToSSO, isSSOEnabled } from "../../utils/sso"
+import { removeToken } from "../../utils/auth"
 
 export interface SidebarLink {
   label: string
@@ -47,6 +48,7 @@ export const SidebarModern = forwardRef<HTMLElement, SidebarModernProps>(
     },
     ref
   ) => {
+    const navigate = useNavigate()
     const [collapsed, setCollapsed] = useState(defaultCollapsed)
     const [openMenus, setOpenMenus] = useState<string[]>([])
     const location = useLocation()
@@ -203,57 +205,53 @@ export const SidebarModern = forwardRef<HTMLElement, SidebarModernProps>(
         </div>
 
         <div className="p-4 mt-auto border-t border-[var(--border)] shrink-0">
-          {isSSOEnabled() && (
-            <>
-              {user && !collapsed ? (
-                <div className="flex items-center gap-3 p-2 rounded-[var(--radius-lg)] hover:bg-[var(--secondary)] transition-colors">
-                  <Avatar
-                    src={user.avatar}
-                    name={user.name}
-                    size="sm"
-                  />
-                  <div className="flex-1 min-w-0 overflow-hidden">
-                    <p className="text-sm font-bold text-[var(--foreground)] truncate">
-                      {user.name}
-                    </p>
-                    <p className="text-[10px] text-[var(--foreground-muted)] truncate">
-                      {user.email}
-                    </p>
-                  </div>
-                  <button
-                    onClick={() => {
-                      removeToken()
-                      redirectToSSO()
-                    }}
-                    className="p-2 text-[var(--foreground-subtle)] hover:text-[var(--destructive)] transition-colors"
-                    title="Cerrar sesión"
-                  >
-                    <LogOut className="w-4 h-4" />
-                  </button>
-                </div>
-              ) : (
-                <div className="flex flex-col items-center gap-4">
-                  {user && (
-                    <Avatar
-                      src={user.avatar}
-                      name={user.name}
-                      size="sm"
-                      className="ring-2 ring-[var(--primary)]"
-                    />
-                  )}
-                  <button
-                    onClick={() => {
-                      removeToken()
-                      redirectToSSO()
-                    }}
-                    className="p-2 text-[var(--foreground-muted)] hover:text-[var(--destructive)] transition-colors"
-                    title="Cerrar sesión"
-                  >
-                    <LogOut className="w-5 h-5" />
-                  </button>
-                </div>
+          {user && !collapsed ? (
+            <div className="flex items-center gap-3 p-2 rounded-[var(--radius-lg)] hover:bg-[var(--secondary)] transition-colors">
+              <Avatar
+                src={user.avatar}
+                name={user.name}
+                size="sm"
+              />
+              <div className="flex-1 min-w-0 overflow-hidden">
+                <p className="text-sm font-bold text-[var(--foreground)] truncate">
+                  {user.name}
+                </p>
+                <p className="text-[10px] text-[var(--foreground-muted)] truncate">
+                  {user.email}
+                </p>
+              </div>
+              <button
+                onClick={() => {
+                  removeToken()
+                  navigate('/login', { replace: true })
+                }}
+                className="p-2 text-[var(--foreground-subtle)] hover:text-[var(--destructive)] transition-colors"
+                title="Cerrar sesión"
+              >
+                <LogOut className="w-4 h-4" />
+              </button>
+            </div>
+          ) : (
+            <div className="flex flex-col items-center gap-4">
+              {user && (
+                <Avatar
+                  src={user.avatar}
+                  name={user.name}
+                  size="sm"
+                  className="ring-2 ring-[var(--primary)]"
+                />
               )}
-            </>
+              <button
+                onClick={() => {
+                  removeToken()
+                  navigate('/login', { replace: true })
+                }}
+                className="p-2 text-[var(--foreground-muted)] hover:text-[var(--destructive)] transition-colors"
+                title="Cerrar sesión"
+              >
+                <LogOut className="w-5 h-5" />
+              </button>
+            </div>
           )}
         </div>
 

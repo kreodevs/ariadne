@@ -19,8 +19,8 @@ Proyecto en la raíz del repo (`frontend/`), independiente de `services/`. UI pa
 
 ## Configuración
 
-- **API base:** variable de entorno `VITE_API_URL` (por defecto `http://localhost:3002`). Copia `.env.example` a `.env` y ajusta si el ingest corre en otra URL/puerto.
-- **SSO (opcional):** Si defines `VITE_SSO_APPLICATION_ID`, la app usa autenticación SSO (redirección a apisso.grupowib.com.mx). Ver `.env.example` para `VITE_SSO_BASE_URL`, `VITE_SSO_APPLICATION_ID`, `VITE_SSO_FRONTEND_URL`.
+- **API base:** variable de entorno `VITE_API_URL` (por defecto `http://localhost:3000`). El frontend se conecta a la API que hace proxy al ingest.
+- **Auth OTP:** Autenticación con código de un solo uso. El usuario introduce email, recibe un código de 6 dígitos y lo valida. En desarrollo, `OTP_DEV_MODE=true` en la API devuelve el código en la respuesta para pruebas sin envío real.
 
 ## Scripts
 
@@ -30,7 +30,8 @@ Proyecto en la raíz del repo (`frontend/`), independiente de `services/`. UI pa
 
 ## Rutas
 
-- `/` — Listado de repos (`GET /repositories`).
+- `/login` — Login con OTP: email → código de 6 dígitos.
+- `/` — Listado de proyectos (`GET /projects`).
 - `/repos/new` — Formulario de alta (`POST /repositories`). Provider → Credencial → Workspace/Owner → Proyecto (select) → Repo slug (editable) → Branch (select) → Webhook secret (Bitbucket, opcional). Carga workspaces, repos y branches desde la API con credencial.
 - `/repos/:id` — Detalle del repo, Editar, Chat, Sync, **Resync** (`POST /repositories/:id/resync`), tabla de jobs.
 - `/repos/:id/chat` — Layout split: **izquierda** botones Diagnóstico/Duplicados/Reingeniería y resultados (`POST /repositories/:id/analyze`); **derecha** chat NL→Cypher (`POST /repositories/:id/chat`). Requiere `OPENAI_API_KEY`. Spinner durante carga; errores visibles; markdown en respuestas.
@@ -40,8 +41,7 @@ Proyecto en la raíz del repo (`frontend/`), independiente de `services/`. UI pa
 - `/credentials` — Lista de credenciales (tokens, app passwords, webhook secrets) cifradas en BD.
 - `/credentials/new` — Alta de credencial.
 - `/credentials/:id/edit` — Editar credencial: nombre, valor (token/password) y usuario para app_password (`PATCH /credentials/:id`).
-- `/callback` — Callback SSO: recibe `?token=...` desde el SSO, guarda el token y redirige a `/`.
-- `/error` — Página de error (ej. fallo de autenticación SSO).
+- `/error` — Página de error genérica.
 - `/ayuda` — Ayuda con 3 subsecciones (navegación in-app, sin descargar): **MCP** (`docs/MCP_AYUDA.md`), **Skills** (Skill FalkorSpecs), **Manual de uso** (`docs/manual/README.md`).
 
 ## Docker

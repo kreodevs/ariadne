@@ -1,10 +1,10 @@
 /**
  * API client para el servicio Ingest (repos, sync, chat, análisis, credenciales).
- * Usa VITE_API_URL + /api (ej. https://ariadne.kreoint.mx/api o http://localhost:3000/api).
- * Con SSO: incluye Bearer token y redirige al SSO en 401.
+ * Usa VITE_API_URL + /api. Incluye Bearer token JWT (OTP) en todas las peticiones.
+ * En 401 redirige a /login.
  * @module api
  */
-import { getToken, removeToken, redirectToSSO, isSSOEnabled } from './utils/sso';
+import { getToken, removeToken } from './utils/auth';
 
 /** Base URL para llamadas API (incluye /api). */
 export const API_BASE =
@@ -12,37 +12,23 @@ export const API_BASE =
 
 const BASE = API_BASE;
 
-/**
- * Construye los headers de autenticación para las llamadas API. Con SSO incluye Bearer token si existe.
- * @returns {Record<string, string>} Headers con Content-Type y opcionalmente Authorization.
- * @internal
- */
 function getAuthHeaders(): Record<string, string> {
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-  if (isSSOEnabled()) {
-    const token = getToken();
-    if (token) headers.Authorization = `Bearer ${token}`;
-  }
+  const token = getToken();
+  if (token) headers.Authorization = `Bearer ${token}`;
   return headers;
 }
 
-/**
- * Ejecuta un request fetch a la API con JSON. Lanza si !res.ok. Con SSO añade Bearer token; en 401 elimina token y redirige al SSO.
- * @param {string} path - Ruta relativa a API_BASE (ej. /repositories).
- * @param {RequestInit} [options] - Opciones de fetch (method, body, headers).
- * @returns {Promise<T>} Respuesta parseada como JSON, o undefined en 204/body vacío.
- * @internal
- */
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const res = await fetch(`${BASE}${path}`, {
     ...options,
     headers: { ...getAuthHeaders(), ...options?.headers },
   });
 
-  if (res.status === 401 && isSSOEnabled()) {
+  if (res.status === 401) {
     removeToken();
-    redirectToSSO();
-    throw new Error('Sesión expirada. Redirigiendo al SSO.');
+    window.location.href = '/login';
+    throw new Error('Sesión expirada. Redirigiendo al login.');
   }
 
   if (!res.ok) {
@@ -114,7 +100,6 @@ export const api = {
       method: 'POST',
     }),
 
-  /** Resync solo para un proyecto: borra nodos de ese (projectId, repoId) y reindexa solo en ese proyecto. */
   resyncForProject: (repoId: string, projectId: string) =>
     request<{ jobId: string; queued: boolean }>(`/repositories/${repoId}/resync-for-project`, {
       method: 'POST',
@@ -149,7 +134,6 @@ export const api = {
       body: JSON.stringify(body),
     }),
 
-  /** Chat a nivel proyecto: grafo de todos los repos del proyecto; respuestas pueden citar archivos de cualquier repo. */
   chatProject: (projectId: string, body: { message: string; history?: Array<{ role: 'user' | 'assistant'; content: string; cypher?: string; result?: unknown[] }> }) =>
     request<{ answer: string; cypher?: string; result?: unknown[] }>(`/projects/${projectId}/chat`, {
       method: 'POST',

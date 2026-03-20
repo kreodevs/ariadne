@@ -1,54 +1,36 @@
 /**
- * Protege rutas exigiendo autenticación SSO. Si no hay token válido, redirige al SSO.
+ * Protege rutas exigiendo autenticación OTP (JWT válido).
  */
 import { useEffect, useState } from 'react';
-import {
-  getToken,
-  isTokenExpired,
-  redirectToSSO,
-  validateToken,
-  hasAdminRole,
-  isSSOEnabled,
-  extractTokenFromUrl,
-} from '../utils/sso';
+import { useNavigate } from 'react-router-dom';
+import { getToken, isTokenExpired } from '../utils/auth';
 
 interface ProtectedRouteProps {
   children: React.ReactNode;
 }
 
-/** Envuelve children y exige autenticación SSO (token válido + rol admin). Muestra loading o acceso denegado hasta que check() termine. */
+/** Envuelve children y exige token JWT válido. Redirige a /login si no hay sesión. */
 export function ProtectedRoute({ children }: ProtectedRouteProps) {
+  const navigate = useNavigate();
   const [ready, setReady] = useState(false);
   const [authenticated, setAuthenticated] = useState(false);
 
   useEffect(() => {
-    if (!isSSOEnabled()) {
+    const token = getToken();
+    if (!token || isTokenExpired(token)) {
+      setAuthenticated(false);
+    } else {
       setAuthenticated(true);
-      setReady(true);
-      return;
     }
-
-    /** Comprueba token en URL, valida con backend y rol admin; redirige a SSO si no hay token o no es válido. */
-    const check = async () => {
-      extractTokenFromUrl();
-      const token = getToken();
-      if (!token || isTokenExpired(token)) {
-        redirectToSSO();
-        setReady(true);
-        return;
-      }
-      const valid = await validateToken(token);
-      if (!valid) {
-        redirectToSSO();
-        setReady(true);
-        return;
-      }
-      setAuthenticated(hasAdminRole(token));
-      setReady(true);
-    };
-
-    check();
+    setReady(true);
   }, []);
+
+  useEffect(() => {
+    if (!ready) return;
+    if (!authenticated) {
+      navigate('/login', { replace: true });
+    }
+  }, [ready, authenticated, navigate]);
 
   if (!ready) {
     return (
@@ -62,14 +44,7 @@ export function ProtectedRoute({ children }: ProtectedRouteProps) {
   }
 
   if (!authenticated) {
-    return (
-      <div className="flex min-h-[50vh] flex-col items-center justify-center gap-4">
-        <p className="text-destructive font-medium">Acceso denegado</p>
-        <p className="text-muted-foreground text-sm">
-          Se requiere rol admin para acceder a esta aplicación.
-        </p>
-      </div>
-    );
+    return null;
   }
 
   return <>{children}</>;

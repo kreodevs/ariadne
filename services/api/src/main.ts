@@ -1,18 +1,20 @@
 /**
- * @fileoverview Entry point del API NestJS. Proxy a ingest, OpenAPI, CORS, SSO JWKS.
+ * @fileoverview Entry point del API NestJS. Proxy a ingest, OpenAPI, CORS, auth OTP.
  */
 import { NestFactory } from '@nestjs/core';
 import { createProxyMiddleware } from 'http-proxy-middleware';
 import { AppModule } from './app.module';
-import { ssoAuthMiddleware } from './auth/sso.middleware';
+import { AuthService } from './auth/auth.service';
+import { createOtpAuthMiddleware } from './auth/otp.middleware';
 
-/** Inicia el servidor, configura CORS, prefijo /api, SSO y proxy a ingest. */
+/** Inicia el servidor, configura CORS, prefijo /api, auth OTP y proxy a ingest. */
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
   app.setGlobalPrefix('api');
 
-  app.use(ssoAuthMiddleware);
+  const authService = app.get(AuthService);
+  app.use(createOtpAuthMiddleware(authService));
 
   const corsOrigin = process.env.CORS_ORIGIN;
   app.enableCors({

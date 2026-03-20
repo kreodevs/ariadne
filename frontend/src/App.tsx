@@ -1,9 +1,10 @@
 /**
- * @fileoverview App principal: rutas y layout. Repos, chat, credenciales. SSO opcional.
+ * @fileoverview App principal: rutas y layout. Auth OTP, repos, chat, credenciales.
  */
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { Layout } from './components/Layout';
 import { ProtectedRoute } from './components/ProtectedRoute';
+import { Login } from './pages/Login';
 import { ProjectList } from './pages/ProjectList';
 import { ProjectDetail } from './pages/ProjectDetail';
 import { ProjectChat } from './pages/ProjectChat';
@@ -18,20 +19,19 @@ import { CredentialsList } from './pages/CredentialsList';
 import { CreateCredential } from './pages/CreateCredential';
 import { EditCredential } from './pages/EditCredential';
 import { Ayuda } from './pages/Ayuda';
-import { Callback } from './pages/Callback';
 import { ErrorPage } from './pages/ErrorPage';
 
 /** Componente raíz con enrutamiento. */
 function App() {
   return (
     <BrowserRouter>
-      <Layout>
-        <Routes>
-          <Route path="/callback" element={<Callback />} />
-          <Route path="/error" element={<ErrorPage />} />
-          <Route
-            path="*"
-            element={
+      <Routes>
+        <Route path="/login" element={<Login />} />
+        <Route path="/error" element={<ErrorPage />} />
+        <Route
+          path="*"
+          element={
+            <Layout>
               <ProtectedRoute>
                 <Routes>
                   <Route path="/" element={<ProjectList />} />
@@ -50,10 +50,10 @@ function App() {
                   <Route path="/ayuda/*" element={<Ayuda />} />
                 </Routes>
               </ProtectedRoute>
-            }
-          />
-        </Routes>
-      </Layout>
+            </Layout>
+          }
+        />
+      </Routes>
     </BrowserRouter>
   );
 }
