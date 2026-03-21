@@ -747,16 +747,17 @@ async function fetchFileFromIngest(
     const ingestUrl = process.env.INGEST_URL ?? process.env.ARIADNESPEC_INGEST_URL ?? "";
     if (ingestUrl) {
       try {
-        const res = await fetch(`${ingestUrl.replace(/\/$/, "")}/projects`, {
-          signal: AbortSignal.timeout(5000),
-        });
-        if (res.ok) {
-          const data = (await res.json()) as Array<{
+        const base = ingestUrl.replace(/\/$/, "");
+        // 1) Proyectos (con repos asociados)
+        const projectsRes = await fetch(`${base}/projects`, { signal: AbortSignal.timeout(5000) });
+        let projects: Array<{ id: string; name: string; roots: Array<{ id: string; name: string; branch: string | null }> }> = [];
+        if (projectsRes.ok) {
+          const data = (await projectsRes.json()) as Array<{
             id: string;
             name: string | null;
             repositories: Array<{ id: string; projectKey: string; repoSlug: string; defaultBranch: string }>;
           }>;
-          const projects = data.map((p) => ({
+          projects = data.map((p) => ({
             id: p.id,
             name: p.name ?? "",
             roots: p.repositories.map((r) => ({
@@ -765,16 +766,42 @@ async function fetchFileFromIngest(
               branch: r.defaultBranch ?? null,
             })),
           }));
-          const json = JSON.stringify(projects, null, 2);
-          return {
-            content: [
-              {
-                type: "text",
-                text: `## Proyectos indexados (multi-root)\n\nCada elemento tiene \`id\` (proyecto Ariadne) y \`roots[]\` (repos). Para **get_modification_plan** con varios repos, pasa como \`projectId\` el \`roots[].id\` del repositorio donde está el código (p. ej. frontend), no solo el \`id\` global del proyecto.\n\n\`\`\`json\n${json}\n\`\`\``,
-              },
-            ],
-          };
         }
+        // 2) Repos standalone (no en ningún proyecto) — GET /repositories
+        const reposRes = await fetch(`${base}/repositories`, { signal: AbortSignal.timeout(5000) });
+        if (reposRes.ok) {
+          const repos = (await reposRes.json()) as Array<{
+            id: string;
+            projectKey: string;
+            repoSlug: string;
+            defaultBranch?: string;
+          }>;
+          const repoIdsInProjects = new Set(projects.flatMap((p) => p.roots.map((r) => r.id)));
+          for (const r of repos) {
+            if (!repoIdsInProjects.has(r.id)) {
+              projects.push({
+                id: r.id,
+                name: `${r.projectKey}/${r.repoSlug}`,
+                roots: [
+                  {
+                    id: r.id,
+                    name: `${r.projectKey}/${r.repoSlug}`,
+                    branch: r.defaultBranch ?? null,
+                  },
+                ],
+              });
+            }
+          }
+        }
+        const json = JSON.stringify(projects, null, 2);
+        return {
+          content: [
+            {
+              type: "text",
+              text: `## Proyectos indexados (multi-root)\n\nCada elemento tiene \`id\` (proyecto Ariadne) y \`roots[]\` (repos). Para **get_modification_plan** con varios repos, pasa como \`projectId\` el \`roots[].id\` del repositorio donde está el código (p. ej. frontend), no solo el \`id\` global del proyecto.\n\n\`\`\`json\n${json}\n\`\`\``,
+            },
+          ],
+        };
       } catch {
         // Fallback to graph
       }
