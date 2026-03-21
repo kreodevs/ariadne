@@ -278,11 +278,14 @@ export function RepoChat() {
                 >
                   <ReactMarkdown
                     remarkPlugins={[remarkGfm]}
+                    children={typeof analysisResult.summary === 'string' ? analysisResult.summary : String(analysisResult.summary ?? '')}
                     components={{
                       p: ({ children }) => (children ? <p className="mb-1 last:mb-0">{children}</p> : null),
                       ul: ({ children }) => <ul className="list-disc pl-4 my-1">{children}</ul>,
                       ol: ({ children }) => <ol className="list-decimal pl-4 my-1">{children}</ol>,
                       strong: ({ children }) => <strong className="font-semibold">{children}</strong>,
+                      h2: ({ children }) => <h2 className="text-base font-semibold mt-4 mb-2">{children}</h2>,
+                      h3: ({ children }) => <h3 className="text-sm font-medium mt-3 mb-1">{children}</h3>,
                       table: ({ children }) => (
                         <div className="overflow-x-auto my-2">
                           <table className="w-full text-xs border-collapse">{children}</table>
@@ -305,9 +308,7 @@ export function RepoChat() {
                         );
                       },
                     }}
-                  >
-                    {analysisResult.summary}
-                  </ReactMarkdown>
+                  />
                 </div>
               </CardContent>
             </Card>
