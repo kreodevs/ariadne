@@ -1,12 +1,12 @@
 ---
-description: Usar projectId de .ariadne-project en llamadas al MCP FalkorSpecs
+description: Usar projectId de .ariadne-project en llamadas al MCP AriadneSpecs
 globs: "**/*"
 alwaysApply: true
 ---
 
-# ProjectId fijo para FalkorSpecs
+# ProjectId fijo para AriadneSpecs
 
-Al usar herramientas del MCP FalkorSpecs (`validate_before_edit`, `get_legacy_impact`, `get_component_graph`, etc.):
+Al usar herramientas del MCP AriadneSpecs (`validate_before_edit`, `get_legacy_impact`, `get_component_graph`, etc.):
 
 1. **Si existe `.ariadne-project` en la raíz del workspace:** léelo y usa su `projectId` en **todas** las llamadas. No infieras ni uses IDs de conversaciones anteriores.
 2. **Si no existe:** usa `currentFilePath` (ruta del archivo abierto) para que el MCP infiera el proyecto.

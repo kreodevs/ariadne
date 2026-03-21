@@ -6,7 +6,7 @@
 
 ## 1. Resumen Ejecutivo
 
-La arquitectura de **FalkorSpecs** se basa en la separación de preocupaciones entre la **Ingesta Estática** y la **Consulta de Contexto** (Oracle MCP). El objetivo central es que la base de datos de grafos actúe como una memoria de corto y largo plazo que valide cada intención de código antes de su ejecución.
+La arquitectura de **AriadneSpecs** se basa en la separación de preocupaciones entre la **Ingesta Estática** y la **Consulta de Contexto** (Oracle MCP). El objetivo central es que la base de datos de grafos actúe como una memoria de corto y largo plazo que valide cada intención de código antes de su ejecución.
 
 ## 2. Stack objetivo
 
@@ -60,7 +60,7 @@ Instancia de base de datos de grafos en memoria que almacena la topología del s
 
 ### C. Oracle MCP Server (El Interfaz)
 
-Servidor que implementa el **Model Context Protocol** para exponer las herramientas de FalkorSpecs a la IA.
+Servidor que implementa el **Model Context Protocol** para exponer las herramientas de AriadneSpecs a la IA.
 
 - **Seguridad:** Capa de abstracción que impide a la IA ejecutar queries destructivas.
 - **Enriquecimiento:** No solo entrega nodos del grafo, sino que formatea la respuesta en Markdown estructurado para que la IA lo consuma fácilmente.
@@ -74,7 +74,7 @@ Servidor que implementa el **Model Context Protocol** para exponer las herramien
 2. **Fase de Razonamiento (Lectura):**
    - `IA (Cursor/Claude)` -> `MCP Tool (get_legacy_impact)` -> `Oracle Server` -> `FalkorDB` (Query Cypher).
 3. **Fase de Validación (Ciclo SDD):**
-   - `IA` propone código → Orquestador ejecuta flujo (impacto, contratos, opcional weaver) → **Shadow Indexing**: Cartographer expone `POST /shadow` con `{ files: [{ path, content }] }` para indexar en grafo `FalkorSpecsShadow`; API expone `GET /graph/compare/:componentName` para comparar main vs shadow → `IA` recibe veredicto (approved, missingInShadow, extraInShadow) y confirma o corrige.
+   - `IA` propone código → Orquestador ejecuta flujo (impacto, contratos, opcional weaver) → **Shadow Indexing**: Cartographer expone `POST /shadow` con `{ files: [{ path, content }] }` para indexar en grafo `AriadneSpecsShadow`; API expone `GET /graph/compare/:componentName` para comparar main vs shadow → `IA` recibe veredicto (approved, missingInShadow, extraInShadow) y confirma o corrige.
 
 ---
 
@@ -89,7 +89,7 @@ Servidor que implementa el **Model Context Protocol** para exponer las herramien
 
 ## 7. Diagrama de Entidad-Relación (Lógico)
 
-Para **FalkorSpecs**, el modelo relacional es el siguiente:
+Para **AriadneSpecs**, el modelo relacional es el siguiente:
 
 - **PROJECT** --(CONTAINS)--> **FILE** (nodo raíz: `projectId`, `projectName`, `rootPath`, `lastIndexed`, `manifestDeps`; nodos con `repoId` además de `projectId`)
 - **FILE** --(CONTAINS)--> **COMPONENT** | **CONTEXT** (createContext) | **HOOK** (custom hooks definidos en archivo)

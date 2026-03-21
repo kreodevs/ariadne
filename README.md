@@ -38,7 +38,7 @@ Ver [docs/DEPLOYMENT_DOKPLOY.md](docs/DEPLOYMENT_DOKPLOY.md).
 - [Motor de indexado](docs/indexing_engine.md)
 - [Chat y Análisis](docs/CHAT_Y_ANALISIS.md) — Flujo NL→Cypher, diagnósticos, antipatrones, métricas
 - [Especificación MCP](docs/mcp_server_specs.md)
-- [Esquema DB y Cypher](docs/db_schema.md), [DFD](docs/dfd_specs.md)
+- [Esquema DB y Cypher](docs/db_schema.md)
 - [Manual de uso](docs/manual/README.md) — Puesta en marcha, endpoints, troubleshooting
 
 ## Flujo para desarrollo local

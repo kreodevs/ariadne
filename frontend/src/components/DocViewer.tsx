@@ -45,8 +45,6 @@ const MANUAL_HREF_SLUGS: Record<string, string> = {
   'CHAT_Y_ANALISIS.md': 'chat',
   '../INSTALACION_MCP_CURSOR.md': 'mcp-instalacion',
   'INSTALACION_MCP_CURSOR.md': 'mcp-instalacion',
-  '../REFACTOR_USE_PAUTA.md': 'parse-refactor',
-  'REFACTOR_USE_PAUTA.md': 'parse-refactor',
 };
 
 /** Resuelve un href de markdown del manual (ej. README.md, ../db_schema.md) al path de ruta /ayuda/manual/:slug. */

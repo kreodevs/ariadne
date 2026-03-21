@@ -82,7 +82,7 @@ El grafo puede tener **varios proyectos** indexados. Cada uno tiene un `projectI
 
 ## 4. Qué necesitas en el otro proyecto
 
-- **Cursor** (o IDE con MCP) con el servidor **Falkorspecs** configurado y accesible (URL o local + túnel).
+- **Cursor** (o IDE con MCP) con el servidor **AriadneSpecs** configurado y accesible (URL o local + túnel).
 - **`.ariadne-project`** en la raíz del repo con el `projectId` del proyecto ya indexado en Ariadne (recomendado).
 - **Reglas o prompt** que indiquen al agente: (1) usar siempre `projectId` en las llamadas MCP, (2) ejecutar `validate_before_edit` antes de editar componente/función, (3) no inventar props ni firmas y usar lo que devuelve el grafo.
 

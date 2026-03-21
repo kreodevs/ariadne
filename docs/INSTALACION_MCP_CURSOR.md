@@ -1,6 +1,6 @@
-# Instalación del MCP FalkorSpecs para Cursor — Mantenimiento de Ariadne
+# Instalación del MCP AriadneSpecs para Cursor — Mantenimiento de Ariadne
 
-Documento de instalación y configuración del servidor MCP FalkorSpecs Oracle para dar mantenimiento al proyecto **Ariadne** con **Cursor** u otros IDEs compatibles con MCP.
+Documento de instalación y configuración del servidor MCP AriadneSpecs Oracle para dar mantenimiento al proyecto **Ariadne** con **Cursor** u otros IDEs compatibles con MCP.
 
 **Deployment:** Frontend [ariadne.kreoint.mx](https://ariadne.kreoint.mx) | Backend [apiariadne.kreoint.mx](https://apiariadne.kreoint.mx)
 
@@ -8,7 +8,7 @@ Documento de instalación y configuración del servidor MCP FalkorSpecs Oracle p
 
 ## 1. Resumen
 
-El MCP FalkorSpecs expone herramientas que permiten a la IA (Cursor, Antigravity, etc.) consultar el grafo de FalkorDB **antes** de modificar código legacy, reduciendo alucinaciones y rupturas. Incluye:
+El MCP AriadneSpecs expone herramientas que permiten a la IA (Cursor, Antigravity, etc.) consultar el grafo de FalkorDB **antes** de modificar código legacy, reduciendo alucinaciones y rupturas. Incluye:
 
 - **validate_before_edit** — Obligatorio antes de editar: impacto + contrato + endpoints de funciones.
 - **get_legacy_impact**, **get_contract_specs** — Impacto y props reales.
@@ -202,7 +202,7 @@ En Windows:
 %APPDATA%\Cursor\mcp.json
 ```
 
-### Paso 4: Añadir el servidor FalkorSpecs
+### Paso 4: Añadir el servidor AriadneSpecs
 
 Añadir esta entrada al JSON de MCP:
 
@@ -268,7 +268,7 @@ Cerrar y volver a abrir Cursor (o recargar la ventana) para que cargue el MCP.
 ### Paso 6: Verificar
 
 En el chat de Cursor, al pedir algo como:
-- "Lista los proyectos indexados en FalkorSpecs"
+- "Lista los proyectos indexados en AriadneSpecs"
 - "¿Qué impacto tiene modificar el componente X?"
 
 La IA debería poder invocar las herramientas del MCP. Si aparecen errores de conexión, revisar [Troubleshooting](#8-troubleshooting).

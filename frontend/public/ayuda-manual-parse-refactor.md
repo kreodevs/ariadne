@@ -5,7 +5,7 @@ Cuando Ariadne omite archivos por **Error de parse**, puede deberse a que el arc
 ## Qué hacer
 
 1. Comprueba el tamaño: `wc -l path/to/file.tsx`
-2. Si **> ~800 líneas**: sigue la guía en `docs/REFACTOR_USE_PAUTA.md` (repo Ariadne)
+2. Si **> ~800 líneas**: sigue el orden de extracción indicado más abajo en este documento
 3. Divide el archivo en módulos < 800 líneas
 4. Ejecuta **Sync** o **Resync** (desde repo o desde proyecto, si usas proyectos multi-root) para reindexar
 
@@ -27,4 +27,4 @@ Cuando Ariadne omite archivos por **Error de parse**, puede deberse a que el arc
 find src \( -name "*.ts" -o -name "*.tsx" \) -exec wc -l {} \; | awk '$1 > 800'
 ```
 
-Ver guía completa: `docs/REFACTOR_USE_PAUTA.md`
+El orden de extracción recomendado está indicado arriba.

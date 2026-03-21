@@ -2,7 +2,7 @@
 
 **Protocolo:** Model Context Protocol (MCP)
 
-**Origen de Datos:** FalkorDB (via Oracle/FalkorSpecs Core)
+**Origen de Datos:** FalkorDB (via Oracle/AriadneSpecs Core)
 
 ## 1. Arquitectura del Servidor MCP
 
@@ -137,7 +137,7 @@ import {
 
 const server = new Server(
   {
-    name: "FalkorSpecs-Oracle",
+    name: "AriadneSpecs-Oracle",
     version: "1.0.0",
   },
   {
@@ -150,7 +150,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
   tools: [
     {
       name: "get_component_architecture",
-      description: "Recupera la arquitectura y dependencias de FalkorSpecs",
+      description: "Recupera la arquitectura y dependencias de AriadneSpecs",
       inputSchema: {
         type: "object",
         properties: {
@@ -179,7 +179,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
 1. **Cursor/IA** detecta que estás en un archivo legacy.
 2. La IA llama a `get_legacy_impact` a través del MCP.
-3. **FalkorSpecs** responde: _"Este componente es usado por el Dashboard y recibe un prop 'user' que es obligatorio"_.
+3. **AriadneSpecs** responde: _"Este componente es usado por el Dashboard y recibe un prop 'user' que es obligatorio"_.
 4. La IA genera el código **restringida** por esa información, eliminando la posibilidad de inventar props o romper el Dashboard.
 
 ## 5. Configuración de Seguridad
