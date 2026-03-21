@@ -27,9 +27,9 @@ import { WebhooksModule } from './webhooks/webhooks.module';
       type: 'postgres',
       host: process.env.PGHOST ?? 'localhost',
       port: parseInt(process.env.PGPORT ?? '5432', 10),
-      username: process.env.PGUSER ?? 'ariadnespecs',
-      password: process.env.PGPASSWORD ?? 'ariadnespecs',
-      database: process.env.PGDATABASE ?? 'ariadnespecs',
+      username: process.env.PGUSER ?? 'falkorspecs',
+      password: process.env.PGPASSWORD ?? 'falkorspecs',
+      database: process.env.PGDATABASE ?? 'falkorspecs',
       entities: [ProjectEntity, ProjectRepositoryEntity, RepositoryEntity, SyncJob, IndexedFile, CredentialEntity],
       synchronize: process.env.NODE_ENV !== 'production',
       logging: process.env.NODE_ENV === 'development',
@@ -46,4 +46,4 @@ import { WebhooksModule } from './webhooks/webhooks.module';
   ],
 })
 /** Módulo principal del microservicio Ingest. */
-export class AppModule {}
+export class AppModule { }

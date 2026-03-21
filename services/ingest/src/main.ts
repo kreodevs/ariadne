@@ -19,9 +19,9 @@ async function runMigrations(): Promise<void> {
     type: 'postgres',
     host: process.env.PGHOST ?? 'localhost',
     port: parseInt(process.env.PGPORT ?? '5432', 10),
-    username: process.env.PGUSER ?? 'ariadnespecs',
-    password: process.env.PGPASSWORD ?? 'ariadnespecs',
-    database: process.env.PGDATABASE ?? 'ariadnespecs',
+    username: process.env.PGUSER ?? 'falkorspecs',
+    password: process.env.PGPASSWORD ?? 'falkorspecs',
+    database: process.env.PGDATABASE ?? 'falkorspecs',
     migrations: [__dirname + '/migrations/*.js'],
     migrationsRun: false,
   });

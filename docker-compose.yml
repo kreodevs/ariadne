@@ -21,15 +21,15 @@ services:
     image: postgres:16-alpine
     container_name: ariadnespecs-postgres
     environment:
-      POSTGRES_USER: ariadnespecs
-      POSTGRES_PASSWORD: ariadnespecs
-      POSTGRES_DB: ariadnespecs
+      POSTGRES_USER: falkorspecs
+      POSTGRES_PASSWORD: falkorspecs
+      POSTGRES_DB: falkorspecs
     volumes:
       - postgres_data:/var/lib/postgresql/data
     networks:
       - falkor-net
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ariadnespecs -d ariadnespecs"]
+      test: ["CMD-SHELL", "pg_isready -U falkorspecs -d falkorspecs"]
       interval: 5s
       timeout: 3s
       retries: 5
@@ -132,9 +132,9 @@ services:
       - CORS_ORIGIN=${CORS_ORIGIN:-}
       - PGHOST=postgres
       - PGPORT=5432
-      - PGUSER=ariadnespecs
-      - PGPASSWORD=ariadnespecs
-      - PGDATABASE=ariadnespecs
+      - PGUSER=falkorspecs
+      - PGPASSWORD=falkorspecs
+      - PGDATABASE=falkorspecs
       - FALKORDB_HOST=falkordb
       - FALKORDB_PORT=6379
       - REDIS_URL=redis://redis:6379

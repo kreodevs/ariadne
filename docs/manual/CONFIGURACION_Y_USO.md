@@ -8,38 +8,38 @@ Guía completa para configurar y usar el sistema: variables de entorno, credenci
 
 ### 1.1 Requisitos
 
-| Requisito | Versión / Nota |
-|-----------|----------------|
-| Node.js | ≥ 20 |
-| Docker | Para levantar el stack completo |
+| Requisito      | Versión / Nota                                                           |
+| -------------- | ------------------------------------------------------------------------ |
+| Node.js        | ≥ 20                                                                     |
+| Docker         | Para levantar el stack completo                                          |
 | Colima (macOS) | Opcional; `scripts/ensure-docker.js` lo arranca si no hay Docker Desktop |
 
 ### 1.2 Variables de entorno
 
 #### Servicio Ingest (puerto 3002)
 
-| Variable | Obligatoria | Default | Descripción |
-|----------|------------|---------|-------------|
-| `PORT` | No | 3002 | Puerto HTTP |
-| `PGHOST` | Sí* | localhost | PostgreSQL host |
-| `PGPORT` | Sí* | 5432 | PostgreSQL puerto |
-| `PGUSER` | Sí* | ariadnespecs | Usuario PostgreSQL |
-| `PGPASSWORD` | Sí* | ariadnespecs | Contraseña PostgreSQL |
-| `PGDATABASE` | Sí* | ariadnespecs | Base de datos |
-| `FALKORDB_HOST` | Sí* | localhost | FalkorDB host |
-| `FALKORDB_PORT` | Sí* | 6379 | FalkorDB puerto |
-| `REDIS_URL` | Sí* | redis://localhost:6380 | Redis para cola de sync (BullMQ) |
-| `BITBUCKET_TOKEN` | Condicional | — | Token OAuth Bitbucket |
-| `BITBUCKET_APP_PASSWORD` | Condicional | — | App Password Bitbucket |
-| `BITBUCKET_USER` | Condicional | — | Usuario Bitbucket (con App Password) |
-| `GITHUB_TOKEN` | Condicional | — | PAT GitHub (provider=github). Fallback si no hay credencial en BD. |
-| `BITBUCKET_WEBHOOK_SECRET` | Condicional | — | Secret webhook. Fallback si no hay credencial en BD. |
-| `CREDENTIALS_ENCRYPTION_KEY` | Condicional | — | Clave para cifrar credenciales en BD. Base64 32 bytes o hex 64 chars. Ej: `openssl rand -base64 32`. |
-| `EMBEDDING_PROVIDER` | Condicional | openai | RAG: `openai` o `google` |
-| `OPENAI_API_KEY` | Condicional | — | API key OpenAI: chat, diagnósticos/analyze y (si provider=openai) embeddings. **Obligatorio** para chat/analyze. |
-| `CHAT_MODEL` | Condicional | gpt-4o-mini | Modelo OpenAI para chat |
-| `GOOGLE_API_KEY` / `GEMINI_API_KEY` | Condicional | — | API key Google AI (si provider=google). Para `gemini-embedding-001` (768 dims). |
-| `NODE_ENV` | No | development | Si ≠ production, TypeORM usa synchronize |
+| Variable                            | Obligatoria | Default                | Descripción                                                                                                      |
+| ----------------------------------- | ----------- | ---------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| `PORT`                              | No          | 3002                   | Puerto HTTP                                                                                                      |
+| `PGHOST`                            | Sí\*        | localhost              | PostgreSQL host                                                                                                  |
+| `PGPORT`                            | Sí\*        | 5432                   | PostgreSQL puerto                                                                                                |
+| `PGUSER`                            | Sí\*        | falkorspecs            | Usuario PostgreSQL                                                                                               |
+| `PGPASSWORD`                        | Sí\*        | falkorspecs            | Contraseña PostgreSQL                                                                                            |
+| `PGDATABASE`                        | Sí\*        | falkorspecs            | Base de datos                                                                                                    |
+| `FALKORDB_HOST`                     | Sí\*        | localhost              | FalkorDB host                                                                                                    |
+| `FALKORDB_PORT`                     | Sí\*        | 6379                   | FalkorDB puerto                                                                                                  |
+| `REDIS_URL`                         | Sí\*        | redis://localhost:6380 | Redis para cola de sync (BullMQ)                                                                                 |
+| `BITBUCKET_TOKEN`                   | Condicional | —                      | Token OAuth Bitbucket                                                                                            |
+| `BITBUCKET_APP_PASSWORD`            | Condicional | —                      | App Password Bitbucket                                                                                           |
+| `BITBUCKET_USER`                    | Condicional | —                      | Usuario Bitbucket (con App Password)                                                                             |
+| `GITHUB_TOKEN`                      | Condicional | —                      | PAT GitHub (provider=github). Fallback si no hay credencial en BD.                                               |
+| `BITBUCKET_WEBHOOK_SECRET`          | Condicional | —                      | Secret webhook. Fallback si no hay credencial en BD.                                                             |
+| `CREDENTIALS_ENCRYPTION_KEY`        | Condicional | —                      | Clave para cifrar credenciales en BD. Base64 32 bytes o hex 64 chars. Ej: `openssl rand -base64 32`.             |
+| `EMBEDDING_PROVIDER`                | Condicional | openai                 | RAG: `openai` o `google`                                                                                         |
+| `OPENAI_API_KEY`                    | Condicional | —                      | API key OpenAI: chat, diagnósticos/analyze y (si provider=openai) embeddings. **Obligatorio** para chat/analyze. |
+| `CHAT_MODEL`                        | Condicional | gpt-4o-mini            | Modelo OpenAI para chat                                                                                          |
+| `GOOGLE_API_KEY` / `GEMINI_API_KEY` | Condicional | —                      | API key Google AI (si provider=google). Para `gemini-embedding-001` (768 dims).                                  |
+| `NODE_ENV`                          | No          | development            | Si ≠ production, TypeORM usa synchronize                                                                         |
 
 \* En Docker las variables vienen del compose; en local hay que definirlas.
 
@@ -60,37 +60,37 @@ GOOGLE_API_KEY=xxx
 
 #### Servicio API (puerto 3000)
 
-| Variable | Obligatoria | Default | Descripción |
-|----------|------------|---------|-------------|
-| `PORT` | No | 3000 | Puerto HTTP |
-| `FALKORDB_HOST` | Sí | localhost | FalkorDB host |
-| `FALKORDB_PORT` | Sí | 6379 | FalkorDB puerto |
-| `REDIS_URL` | Sí | redis://localhost:6380 | Redis (caché) |
-| `INGEST_URL` | No | — | URL del ingest para proxy shadow |
-| `CARTOGRAPHER_URL` | No | — | Fallback shadow si ingest no disponible |
+| Variable           | Obligatoria | Default                | Descripción                             |
+| ------------------ | ----------- | ---------------------- | --------------------------------------- |
+| `PORT`             | No          | 3000                   | Puerto HTTP                             |
+| `FALKORDB_HOST`    | Sí          | localhost              | FalkorDB host                           |
+| `FALKORDB_PORT`    | Sí          | 6379                   | FalkorDB puerto                         |
+| `REDIS_URL`        | Sí          | redis://localhost:6380 | Redis (caché)                           |
+| `INGEST_URL`       | No          | —                      | URL del ingest para proxy shadow        |
+| `CARTOGRAPHER_URL` | No          | —                      | Fallback shadow si ingest no disponible |
 
 #### Orchestrator (puerto 3001)
 
-| Variable | Obligatoria | Default | Descripción |
-|----------|------------|---------|-------------|
-| `PORT` | No | 3001 | Puerto HTTP |
-| `FALKORSPEC_API_URL` | No | http://api:3000 | URL de la API |
+| Variable             | Obligatoria | Default         | Descripción   |
+| -------------------- | ----------- | --------------- | ------------- |
+| `PORT`               | No          | 3001            | Puerto HTTP   |
+| `FALKORSPEC_API_URL` | No          | http://api:3000 | URL de la API |
 
 #### MCP AriadneSpecs (Streamable HTTP)
 
-| Variable | Obligatoria | Default | Descripción |
-|----------|------------|---------|-------------|
-| `PORT` | No | 8080 | Puerto del servidor HTTP |
-| `FALKORDB_HOST` | Sí | localhost | FalkorDB host |
-| `FALKORDB_PORT` | Sí | 6379 | FalkorDB puerto |
-| `INGEST_URL` | No | http://localhost:3002 | Para `get_file_content` y `semantic_search` (embed) |
-| `MCP_AUTH_TOKEN` | No | — | Si está definido: exige Bearer token en peticiones |
+| Variable         | Obligatoria | Default               | Descripción                                         |
+| ---------------- | ----------- | --------------------- | --------------------------------------------------- |
+| `PORT`           | No          | 8080                  | Puerto del servidor HTTP                            |
+| `FALKORDB_HOST`  | Sí          | localhost             | FalkorDB host                                       |
+| `FALKORDB_PORT`  | Sí          | 6379                  | FalkorDB puerto                                     |
+| `INGEST_URL`     | No          | http://localhost:3002 | Para `get_file_content` y `semantic_search` (embed) |
+| `MCP_AUTH_TOKEN` | No          | —                     | Si está definido: exige Bearer token en peticiones  |
 
 #### Frontend (puerto 5173)
 
-| Variable | Obligatoria | Default | Descripción |
-|----------|------------|---------|-------------|
-| `VITE_API_URL` | No | http://localhost:3002 | URL del servicio ingest |
+| Variable       | Obligatoria | Default               | Descripción             |
+| -------------- | ----------- | --------------------- | ----------------------- |
+| `VITE_API_URL` | No          | http://localhost:3002 | URL del servicio ingest |
 
 ---
 
@@ -101,6 +101,7 @@ Las credenciales pueden guardarse en la **base de datos** (cifradas) o en variab
 #### Opción A: Credenciales en BD (cifradas)
 
 1. Definir la clave de cifrado:
+
    ```bash
    # Generar clave (32 bytes base64)
    openssl rand -base64 32
@@ -122,12 +123,12 @@ Las credenciales pueden guardarse en la **base de datos** (cifradas) o en variab
 
 Para que el formulario de alta de repositorio liste workspaces, repos y branches, y para sync y webhook incremental, la credencial de Bitbucket debe tener estos permisos (marcar al crear el App Password en Bitbucket → Personal settings → App passwords):
 
-| Permiso | Nivel | Uso |
-|---------|-------|-----|
-| **Account** | Read | Listar workspaces del usuario |
-| **Workspace membership** | Read | Listar workspaces (desplegable en alta de repo) |
-| **Repositories** | Read | Listar repos, branches, archivos; clone; diff por commit |
-| **Projects** | Read | Opcional; algunos planes lo incluyen con Repositories |
+| Permiso                  | Nivel | Uso                                                      |
+| ------------------------ | ----- | -------------------------------------------------------- |
+| **Account**              | Read  | Listar workspaces del usuario                            |
+| **Workspace membership** | Read  | Listar workspaces (desplegable en alta de repo)          |
+| **Repositories**         | Read  | Listar repos, branches, archivos; clone; diff por commit |
+| **Projects**             | Read  | Opcional; algunos planes lo incluyen con Repositories    |
 
 Sin **Account: Read** y **Workspace membership: Read** obtendrás 403 al listar workspaces. **Repositories: Read** es obligatorio para sync y lectura de archivos.
 
@@ -156,15 +157,15 @@ npm run docker:down
 
 **Puertos en host:**
 
-| Servicio | Puerto |
-|----------|--------|
-| API | 3000 |
-| Ingest | 3002 |
-| Orchestrator | 3001 |
-| Frontend | 5173 |
-| FalkorDB | 6379 |
-| PostgreSQL | 5432 |
-| Redis | 6380 |
+| Servicio     | Puerto |
+| ------------ | ------ |
+| API          | 3000   |
+| Ingest       | 3002   |
+| Orchestrator | 3001   |
+| Frontend     | 5173   |
+| FalkorDB     | 6379   |
+| PostgreSQL   | 5432   |
+| Redis        | 6380   |
 
 **Credenciales en Docker:** crear un `.env` en la raíz o usar override:
 
@@ -192,15 +193,16 @@ Para credenciales en BD, solo necesitas `CREDENTIALS_ENCRYPTION_KEY`; el resto s
 1. Levantar PostgreSQL, FalkorDB y Redis (contenedores o binarios).
 2. Crear base de datos:
    ```bash
-   createdb -U postgres ariadnespecs
-   # o con usuario ariadnespecs
+   createdb -U postgres falkorspecs
+   # o con usuario falkorspecs
    ```
 3. Ejecutar migraciones del ingest:
    ```bash
    cd services/ingest
-   PGHOST=localhost PGPORT=5432 PGUSER=ariadnespecs PGPASSWORD=ariadnespecs PGDATABASE=ariadnespecs npm run migration:run
+   PGHOST=localhost PGPORT=5432 PGUSER=falkorspecs PGPASSWORD=falkorspecs PGDATABASE=falkorspecs npm run migration:run
    ```
 4. Arrancar servicios en orden:
+
    ```bash
    # Terminal 1 - Ingest
    cd services/ingest && npm run start
@@ -214,6 +216,7 @@ Para credenciales en BD, solo necesitas `CREDENTIALS_ENCRYPTION_KEY`; el resto s
    # Terminal 4 - Frontend
    cd frontend && npm run dev
    ```
+
 5. MCP: configurar en el IDE (ver 2.6).
 
 ---
@@ -222,7 +225,7 @@ Para credenciales en BD, solo necesitas `CREDENTIALS_ENCRYPTION_KEY`; el resto s
 
 1. Bitbucket → Repository settings → Webhooks → Add webhook.
 2. **Title:** p. ej. "Ariadne Ingest".
-3. **URL:** `https://<tu-host>/webhooks/bitbucket`  
+3. **URL:** `https://<tu-host>/webhooks/bitbucket`
    - Local: usar ngrok o similar: `https://xxxx.ngrok.io/webhooks/bitbucket`.
 4. **Triggers:** Repository push.
 5. **Secret:** mismo valor que `BITBUCKET_WEBHOOK_SECRET` en el ingest.
@@ -261,27 +264,31 @@ curl -X POST http://localhost:3002/repositories \
   }'
 ```
 
-| Campo | Bitbucket | GitHub |
-|-------|-----------|--------|
-| projectKey | Workspace | Owner o organización |
-| repoSlug | Nombre del repo | Nombre del repo |
+| Campo      | Bitbucket       | GitHub               |
+| ---------- | --------------- | -------------------- |
+| projectKey | Workspace       | Owner o organización |
+| repoSlug   | Nombre del repo | Nombre del repo      |
 
 ---
 
 ### 2.2 Full sync e ingesta
 
 1. Listar repos:
+
    ```bash
    curl http://localhost:3002/repositories
    ```
 
 2. Disparar sync (el job se encola en Redis):
+
    ```bash
    curl -X POST http://localhost:3002/repositories/<UUID>/sync
    ```
+
    Respuesta: `{ "jobId": "...", "queued": true }`
 
 3. Ver jobs de un repo:
+
    ```bash
    curl http://localhost:3002/repositories/<UUID>/jobs
    ```
@@ -295,11 +302,11 @@ curl -X POST http://localhost:3002/repositories \
 
 ### 2.3 Chat y análisis (ingest)
 
-| Recurso | Método | Descripción |
-|---------|--------|-------------|
-| Chat | `POST /repositories/:id/chat` | Preguntas NL → Cypher → FalkorDB. Body: `{ message, history? }` |
-| Análisis | `POST /repositories/:id/analyze` | Diagnóstico, duplicados o reingeniería. Body: `{ mode: 'diagnostico'|'duplicados'|'reingenieria' }` |
-| Resumen grafo | `GET /repositories/:id/graph-summary` | Conteos y muestras de nodos indexados |
+| Recurso       | Método                                | Descripción                                                          |
+| ------------- | ------------------------------------- | -------------------------------------------------------------------- | ------------ | ----------------- |
+| Chat          | `POST /repositories/:id/chat`         | Preguntas NL → Cypher → FalkorDB. Body: `{ message, history? }`      |
+| Análisis      | `POST /repositories/:id/analyze`      | Diagnóstico, duplicados o reingeniería. Body: `{ mode: 'diagnostico' | 'duplicados' | 'reingenieria' }` |
+| Resumen grafo | `GET /repositories/:id/graph-summary` | Conteos y muestras de nodos indexados                                |
 
 Requieren `OPENAI_API_KEY`. Ver [CHAT_Y_ANALISIS.md](../CHAT_Y_ANALISIS.md) para detalles.
 
@@ -315,14 +322,14 @@ Añade tus prefijos según la estructura de tu repo. Ver [services/ingest/src/ch
 
 ### 2.4 Consultas a la API (api service)
 
-| Recurso | Método | Descripción |
-|---------|--------|-------------|
-| Health | `GET /health` | Estado del servicio |
-| Impacto | `GET /graph/impact/:nodeId` | Dependientes del nodo |
-| Componente | `GET /graph/component/:name?depth=2` | Dependencias del componente |
-| Contrato | `GET /graph/contract/:componentName` | Props del componente |
-| Compare | `GET /graph/compare/:componentName` | Props main vs shadow |
-| Shadow | `POST /graph/shadow` | Indexar código propuesto en shadow |
+| Recurso    | Método                               | Descripción                        |
+| ---------- | ------------------------------------ | ---------------------------------- |
+| Health     | `GET /health`                        | Estado del servicio                |
+| Impacto    | `GET /graph/impact/:nodeId`          | Dependientes del nodo              |
+| Componente | `GET /graph/component/:name?depth=2` | Dependencias del componente        |
+| Contrato   | `GET /graph/contract/:componentName` | Props del componente               |
+| Compare    | `GET /graph/compare/:componentName`  | Props main vs shadow               |
+| Shadow     | `POST /graph/shadow`                 | Indexar código propuesto en shadow |
 
 **Ejemplos:**
 
@@ -346,11 +353,11 @@ curl -X POST http://localhost:3000/graph/shadow \
 
 ### 2.5 Orquestador (flujo SDD)
 
-| Recurso | Método | Descripción |
-|---------|--------|-------------|
-| Refactor | `GET /workflow/refactor/:nodeId` | Impacto + contratos + comparación |
-| Validar | `POST /workflow/refactor/validate` | Validar props propuestas |
-| Full | `POST /workflow/refactor/full` | Shadow + compare completo |
+| Recurso  | Método                             | Descripción                       |
+| -------- | ---------------------------------- | --------------------------------- |
+| Refactor | `GET /workflow/refactor/:nodeId`   | Impacto + contratos + comparación |
+| Validar  | `POST /workflow/refactor/validate` | Validar props propuestas          |
+| Full     | `POST /workflow/refactor/full`     | Shadow + compare completo         |
 
 **Ejemplo validación de props:**
 
@@ -372,11 +379,11 @@ curl -X POST http://localhost:3001/workflow/refactor/validate \
 
 URL: `http://localhost:5173`
 
-| Ruta | Descripción |
-|------|-------------|
-| `/` | Lista de repositorios |
-| `/repos/new` | Alta de repositorio |
-| `/repos/:id` | Detalle, Sync, Resync, tabla de jobs |
+| Ruta              | Descripción                                                            |
+| ----------------- | ---------------------------------------------------------------------- |
+| `/`               | Lista de repositorios                                                  |
+| `/repos/new`      | Alta de repositorio                                                    |
+| `/repos/:id`      | Detalle, Sync, Resync, tabla de jobs                                   |
 | `/repos/:id/chat` | Chat con el repo (preguntas NL, Diagnóstico, Duplicados, Reingeniería) |
 
 ---
@@ -433,14 +440,14 @@ URL: `http://localhost:5173`
 
 ## 4. Troubleshooting
 
-| Problema | Posible causa | Solución |
-|----------|---------------|----------|
-| Sync no arranca / job falla | Sin credenciales | Definir `BITBUCKET_*` o `GITHUB_TOKEN` |
-| 401 en webhook | Secret incorrecto | Revisar `BITBUCKET_WEBHOOK_SECRET` |
-| Redis connection refused | Redis no levantado | Levantar Redis en 6380 (o `REDIS_URL`) |
-| FalkorDB no responde | FalkorDB no levantado | Verificar FalkorDB en 6379 |
-| Migraciones fallan | Postgres no accesible | Revisar `PGHOST`, `PGPORT`, credenciales |
-| Frontend no conecta al ingest | `VITE_API_URL` errónea | Ajustar en build o `.env` del frontend |
+| Problema                      | Posible causa          | Solución                                 |
+| ----------------------------- | ---------------------- | ---------------------------------------- |
+| Sync no arranca / job falla   | Sin credenciales       | Definir `BITBUCKET_*` o `GITHUB_TOKEN`   |
+| 401 en webhook                | Secret incorrecto      | Revisar `BITBUCKET_WEBHOOK_SECRET`       |
+| Redis connection refused      | Redis no levantado     | Levantar Redis en 6380 (o `REDIS_URL`)   |
+| FalkorDB no responde          | FalkorDB no levantado  | Verificar FalkorDB en 6379               |
+| Migraciones fallan            | Postgres no accesible  | Revisar `PGHOST`, `PGPORT`, credenciales |
+| Frontend no conecta al ingest | `VITE_API_URL` errónea | Ajustar en build o `.env` del frontend   |
 
 ---
 
