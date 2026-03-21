@@ -3,7 +3,7 @@
 ## Layout
 
 - **Layout** — Shell principal con SidebarModern (Kreo), header y área de contenido.
-- **layout/SidebarModern** — Navegación lateral colapsable con grupos, iconos y sección de usuario/SSO.
+- **layout/SidebarModern** — Navegación lateral colapsable con grupos, iconos y sección de usuario.
 - **atoms/Avatar** — Avatar con imagen, iniciales o icono por defecto.
 
 ## UI (Kreo)

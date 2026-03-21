@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * @fileoverview AriadneSpecs Oracle MCP Server. Transporte Streamable HTTP. Tools: get_component_graph, get_legacy_impact, validate_before_edit, semantic_search, etc. Config: PORT, MCP_AUTH_TOKEN, SSO_API_URL, FALKORDB_HOST, INGEST_URL.
+ * @fileoverview AriadneSpecs Oracle MCP Server. Transporte Streamable HTTP. Tools: get_component_graph, get_legacy_impact, validate_before_edit, semantic_search, etc. Config: PORT, MCP_AUTH_TOKEN, FALKORDB_HOST, INGEST_URL.
  */
 
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
@@ -12,22 +12,6 @@ import { getGraph, closeFalkor } from "./falkor.js";
 
 const MCP_PATH = "/mcp";
 
-/** URL base del SSO para /auth/validate. Si no está definida, se infiere de SSO_JWKS_URI (igual que la API). */
-function getSSOBaseUrl(): string {
-  const explicit = process.env.SSO_API_URL?.trim();
-  if (explicit) return explicit.replace(/\/$/, "");
-  const jwks = process.env.SSO_JWKS_URI?.trim();
-  if (jwks) return jwks.replace(/\/auth\/jwks\/?$/, "").replace(/\/$/, "");
-  return "";
-}
-
-const SSO_BASE = getSSOBaseUrl();
-/** APPLICATION_ID o SSO_APPLICATION_ID (misma variable que la API). */
-const APPLICATION_ID =
-  process.env.APPLICATION_ID?.trim() ||
-  process.env.SSO_APPLICATION_ID?.trim() ||
-  "";
-
 function getTokenFromRequest(req: IncomingMessage): string | null {
   const m2m = req.headers["x-m2m-token"];
   if (typeof m2m === "string" && m2m.trim()) return m2m.trim();
@@ -35,128 +19,13 @@ function getTokenFromRequest(req: IncomingMessage): string | null {
   return auth?.startsWith("Bearer ") ? auth.slice(7).trim() : null;
 }
 
-interface ValidateResponse {
-  valid?: boolean;
-  type?: string;
-  success?: boolean;
-  data?: { valid?: boolean; type?: string };
-  error?: string;
-  message?: string;
-}
-
-/** Cache de tokens válidos para reducir llamadas al SSO y evitar 429 rate limit. */
-const tokenCache = new Map<string, { expiresAt: number }>();
-const CACHE_TTL_MS = parseInt(process.env.MCP_TOKEN_CACHE_TTL_SEC ?? "300", 10) * 1000; // 5 min default
-
-function getCachedValidation(token: string): boolean | null {
-  const entry = tokenCache.get(token);
-  if (!entry) return null;
-  if (Date.now() > entry.expiresAt) {
-    tokenCache.delete(token);
-    return null;
-  }
-  return true;
-}
-
-function setCachedValidation(token: string): void {
-  tokenCache.set(token, { expiresAt: Date.now() + CACHE_TTL_MS });
-  if (tokenCache.size > 100) {
-    const oldest = [...tokenCache.entries()].sort((a, b) => a[1].expiresAt - b[1].expiresAt)[0];
-    if (oldest) tokenCache.delete(oldest[0]);
-  }
-}
-
-/**
- * Valida token M2M llamando al SSO. Cache en memoria para evitar 429 rate limit.
- * M2M no requiere rol (a diferencia de JWT).
- */
-async function validateM2MWithSSO(token: string): Promise<string | null> {
-  if (!SSO_BASE) return "SSO_API_URL o SSO_JWKS_URI no configurado";
-  if (!APPLICATION_ID) return "APPLICATION_ID o SSO_APPLICATION_ID no configurado en el contenedor MCP. El SSO lo requiere para validar tokens M2M.";
-
-  if (getCachedValidation(token) === true) return null;
-
-  const url = `${SSO_BASE}/auth/validate`;
-  const baseHeaders: Record<string, string> = {
-    "X-M2M-Token": token,
-    ...(APPLICATION_ID ? { "X-Application-Id": APPLICATION_ID } : {}),
-  };
-
-  const tryValidate = async (headers: Record<string, string>): Promise<string | null> => {
-    const res = await fetch(url, { method: "GET", headers });
-
-    const ct = res.headers.get("content-type") ?? "";
-    const body = await res.text();
-
-    if (!ct.includes("application/json")) {
-      return `SSO respondió ${res.status} (${ct}). URL: ${url}. Respuesta: ${body.slice(0, 150)}`;
-    }
-
-    let json: ValidateResponse;
-    try {
-      json = JSON.parse(body) as ValidateResponse;
-    } catch {
-      return `SSO devolvió JSON inválido: ${body.slice(0, 100)}`;
-    }
-
-    const data = json?.data ?? json;
-
-    // 2xx + valid/success en respuesta → OK (cachear para evitar 429)
-    if (res.ok) {
-      const valid =
-        data?.valid === true ||
-        (data as Record<string, unknown>)?.valid === true ||
-        (data as Record<string, unknown>)?.success === true ||
-        json?.valid === true ||
-        json?.success === true;
-      if (valid) {
-        setCachedValidation(token);
-        return null;
-      }
-      return `SSO ok pero sin valid=true. Respuesta: ${JSON.stringify(json).slice(0, 200)}`;
-    }
-
-    // 429 → rate limit (no cachear; reintentar más tarde)
-    if (res.status === 429) {
-      const retryAfter = res.headers.get("retry-after");
-      return `SSO rate limit (429). Demasiadas validaciones. Espera unos minutos.${retryAfter ? ` Retry-After: ${retryAfter}s` : ""}`;
-    }
-
-    // 4xx/5xx → token rechazado
-    const errMsg = (json?.message ?? json?.error ?? body).toString().slice(0, 150);
-    return `SSO rechazó el token (${res.status}): ${errMsg}`;
-  };
-
-  try {
-    let err = await tryValidate(baseHeaders);
-    if (!err) return null;
-
-    // Fallback: algunos SSOs esperan Authorization: Bearer para M2M
-    const withBearer = await tryValidate({
-      ...baseHeaders,
-      Authorization: `Bearer ${token}`,
-    });
-    if (!withBearer) return null;
-
-    return err;
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e);
-    return `Error validando token con SSO (${url}): ${msg}`;
-  }
-}
-
-/** Valida auth: SSO (si configurado) o MCP_AUTH_TOKEN estático. Retorna null si ok. */
-async function validateAuth(req: IncomingMessage): Promise<string | null> {
-  const useSSO = !!SSO_BASE && !!APPLICATION_ID;
+/** Valida auth con MCP_AUTH_TOKEN estático. Retorna null si ok. */
+function validateAuth(req: IncomingMessage): string | null {
   const staticToken = process.env.MCP_AUTH_TOKEN?.trim();
-  const authRequired = useSSO || !!staticToken;
-
-  if (!authRequired) return null;
+  if (!staticToken) return null;
 
   const clientToken = getTokenFromRequest(req);
   if (!clientToken) return "Token no proporcionado (X-M2M-Token o Authorization: Bearer)";
-
-  if (useSSO) return validateM2MWithSSO(clientToken);
   if (clientToken !== staticToken) return "Token inválido";
   return null;
 }
@@ -2250,7 +2119,7 @@ function formatImportGraph(
   return lines.join("\n");
 }
 
-/** Respuestas JSON para OAuth discovery (Cursor las pide antes de conectar). Sin auth. */
+/** Respuestas JSON para OAuth discovery (Cursor las pide antes de conectar). Sin OAuth; retorna vacío. */
 function serveWellKnown(path: string, req: IncomingMessage, res: ServerResponse): boolean {
   if (req.method !== "GET") return false;
 
@@ -2258,15 +2127,8 @@ function serveWellKnown(path: string, req: IncomingMessage, res: ServerResponse)
   const mcpUrl = `${baseUrl.replace(/\/$/, "")}${MCP_PATH}`;
 
   if (path === "/.well-known/oauth-authorization-server" || path === ".well-known/oauth-authorization-server") {
-    const authServer = SSO_BASE || "https://apisso.grupowib.com.mx/api/v1";
-    const body = JSON.stringify({
-      issuer: authServer,
-      authorization_endpoint: `${authServer}/auth/sso`,
-      token_endpoint: `${authServer}/auth/token`,
-      jwks_uri: `${authServer}/auth/jwks`,
-    });
-    res.writeHead(200, { "Content-Type": "application/json" });
-    res.end(body);
+    res.writeHead(404, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ error: "OAuth not configured" }));
     return true;
   }
 
@@ -2276,11 +2138,7 @@ function serveWellKnown(path: string, req: IncomingMessage, res: ServerResponse)
     path === "/.well-known/oauth-protected-resource" ||
     path === ".well-known/oauth-protected-resource"
   ) {
-    const authServer = SSO_BASE ? `${SSO_BASE}/auth/validate` : null;
-    const body = JSON.stringify({
-      resource: mcpUrl,
-      authorization_servers: authServer ? [{ uri: SSO_BASE }] : [],
-    });
+    const body = JSON.stringify({ resource: mcpUrl, authorization_servers: [] });
     res.writeHead(200, { "Content-Type": "application/json" });
     res.end(body);
     return true;
@@ -2303,7 +2161,7 @@ async function requestHandler(req: IncomingMessage, res: ServerResponse): Promis
     return;
   }
 
-  const authError = await validateAuth(req);
+  const authError = validateAuth(req);
   if (authError) {
     console.warn(`[MCP] 401 Unauthorized: ${authError} (${req.headers["x-forwarded-for"] ?? req.socket.remoteAddress})`);
     res.writeHead(401, { "Content-Type": "application/json", "WWW-Authenticate": "Bearer" });
@@ -2320,12 +2178,12 @@ async function requestHandler(req: IncomingMessage, res: ServerResponse): Promis
 
 async function main() {
   const port = parseInt(process.env.PORT ?? process.env.MCP_HTTP_PORT ?? "8080", 10);
-  const useSSO = !!SSO_BASE && !!APPLICATION_ID;
-  const authEnabled = !!process.env.MCP_AUTH_TOKEN?.trim();
-  const authMode = useSSO ? "SSO (M2M)" : authEnabled ? "static (Bearer)" : "disabled";
+  const rawToken = process.env.MCP_AUTH_TOKEN;
+  const authEnabled = !!rawToken?.trim();
+  const authMode = authEnabled ? "static (Bearer)" : "disabled";
   console.log("[AriadneSpecs MCP] Starting Streamable HTTP server (stateless)...");
   console.log(`[MCP] Port: ${port}, Path: ${MCP_PATH}, Auth: ${authMode}`);
-  if (useSSO) console.log(`[MCP] SSO validate: ${SSO_BASE}/auth/validate`);
+  console.log(`[MCP] MCP_AUTH_TOKEN: ${authEnabled ? "configured" : "empty or not set"}`);
 
   const httpServer = createServer((req, res) => {
     requestHandler(req, res).catch((err) => {

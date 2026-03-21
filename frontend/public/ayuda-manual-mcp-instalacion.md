@@ -319,45 +319,7 @@ El MCP usa **Streamable HTTP** en todas las configuraciones (puerto 8080, path /
 | FALKORDB_PORT   | Puerto de FalkorDB                         | `6379`         |
 | INGEST_URL      | URL base del Ingest (get_file_content, etc.) | —           |
 | ARIADNESPEC_INGEST_URL | Alias de INGEST_URL                    | = INGEST_URL   |
-| MCP_AUTH_TOKEN  | Legacy: comparación estática Bearer (si SSO no configurado) | — |
-| SSO_API_URL     | Para validar M2M: URL base del API SSO (ej. `https://apisso.grupowib.com.mx/api/v1`). Si vacío, se infiere de SSO_JWKS_URI. | — |
-| APPLICATION_ID  | UUID de la app para `X-Application-Id` al validar con SSO | — |
-
----
-
-## 7.1. SSO (opcional)
-
-Ariadne puede integrarse con el SSO de apisso.grupowib.com.mx mediante flujo de redirección.
-
-**Frontend** (variables en `.env`):
-
-| Variable                  | Descripción                    | Ejemplo                           |
-|---------------------------|--------------------------------|-----------------------------------|
-| VITE_SSO_APPLICATION_ID    | UUID de la app en el SSO       | `550e8400-e29b-41d4-a716-446655440000` |
-| VITE_SSO_BASE_URL          | URL base del API SSO (opcional)| `https://apisso.grupowib.com.mx/api/v1` |
-| VITE_SSO_FRONTEND_URL      | URL del frontend SSO (opcional)| `https://sso.grupowib.com.mx`     |
-
-Si no defines `VITE_SSO_APPLICATION_ID`, la app funciona sin autenticación.
-
-**API** (variables en el entorno del servicio):
-
-| Variable            | Descripción                          |
-|---------------------|--------------------------------------|
-| SSO_APPLICATION_ID   | Mismo UUID que el frontend           |
-| SSO_JWKS_URI         | URL del JWKS (default: `https://apisso.grupowib.com.mx/api/v1/auth/jwks`) |
-
-Si no defines `SSO_APPLICATION_ID` y `SSO_JWKS_URI`, la API no exige auth. Las rutas `/api/health` y `/api/openapi.json` quedan siempre públicas.
-
-**Rol requerido (usuarios):** Solo se permite acceso con rol `admin` en la aplicación. El usuario debe tener `admin` en el array `roles` de su asignación a esta app (o ser `isSystemAdmin`).
-
-**MCP con SSO (M2M):** El MCP valida tokens llamando al SSO. Variables en el servidor MCP:
-
-```env
-SSO_API_URL=https://apisso.grupowib.com.mx/api/v1
-APPLICATION_ID=uuid-de-la-aplicacion
-```
-
-El MCP acepta el token en `X-M2M-Token` o `Authorization: Bearer m2m_xxx`, lo reenvía a `GET {SSO_API_URL}/auth/validate` con `X-Application-Id`, y autoriza si el SSO responde `{ valid: true }` (M2M no requiere rol). Cursor debe enviar el token M2M (creado en el panel del SSO) en cada petición. APPLICATION_ID puede ser SSO_APPLICATION_ID si coincide con la API.
+| MCP_AUTH_TOKEN  | Token estático Bearer: si está definido, exige `Authorization: Bearer <token>` o `X-M2M-Token` | — |
 
 ---
 

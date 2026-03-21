@@ -12,7 +12,7 @@ Si Ariadne está desplegado (ariadne.kreoint.mx), Cursor se conecta por URL. **N
 
 En Cursor: **Settings** → **MCP** → editar `~/.cursor/mcp.json`:
 
-**Sin autenticación** (MCP sin SSO ni token):
+**Sin autenticación** (MCP sin token):
 
 ```json
 {
@@ -24,7 +24,7 @@ En Cursor: **Settings** → **MCP** → editar `~/.cursor/mcp.json`:
 }
 ```
 
-**Con token M2M** (cuando el MCP exige autenticación):
+**Con token** (cuando MCP_AUTH_TOKEN está definido en el servidor):
 
 ```json
 {
@@ -39,7 +39,7 @@ En Cursor: **Settings** → **MCP** → editar `~/.cursor/mcp.json`:
 }
 ```
 
-Sustituye `m2m_xxx` por el token que el admin te proporcione (creado en el panel SSO). Alternativa: `"X-M2M-Token": "m2m_xxx"`.
+Sustituye el valor por el token que el admin te proporcione (MCP_AUTH_TOKEN). Alternativa: `"X-M2M-Token": "<token>"`.
 
 Reiniciar Cursor. Listo.
 
@@ -203,8 +203,6 @@ Ejemplos de qué pedirle a la IA en el chat para que use las herramientas del MC
 | Síntoma | Solución |
 |---------|----------|
 | `Unexpected token '<', "<!doctype "... is not valid JSON` | **Rutas no enrutadas al MCP.** Cursor pide `/mcp` y `/.well-known/oauth-*`; si van al frontend, recibe HTML. En Dokploy: añadir rutas path **`/mcp`** y **`/.well-known`** → servicio `mcp-ariadne` puerto `8080`. Verificar: `curl -s https://ariadne.kreoint.mx/.well-known/oauth-authorization-server` → JSON, no HTML. |
-| "Token M2M inválido" con token válido | **SSO_API_URL incorrecto.** Debe apuntar al API del SSO: `https://apisso.grupowib.com.mx/api/v1` (apisso), NO a `sso.grupowib.com.mx` (frontend). Si tienes SSO_JWKS_URI, el MCP lo usa como fallback; si no, define SSO_API_URL. APPLICATION_ID debe coincidir con la app en el panel SSO. |
-| "SSO rate limit (429)" | Demasiadas validaciones en poco tiempo. El MCP cachea tokens válidos 5 min (configurable con MCP_TOKEN_CACHE_TTL_SEC). Espera unos minutos o aumenta el límite en el SSO. |
 | "Connection refused" | Verificar que ariadne.kreoint.mx/mcp responda; revisar ruta en Dokploy |
 | 401 Unauthorized / "Token no proporcionado" | El MCP exige token M2M. Añadir en mcp.json: `"headers": { "Authorization": "Bearer m2m_xxx" }` (el admin te da el token) |
 | "Nodo X no encontrado" | Reindexar: resync del repo desde la UI |

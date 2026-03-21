@@ -16,7 +16,7 @@ Despliegue del stack Ariadne con un solo dominio.
 
 ## 2. Variables de entorno para producción
 
-En `.env` (o en la config de Dokploy):
+En **Dokploy** → tu aplicación → **Environment**, o en `.env` del proyecto:
 
 ```env
 # CORS — permitir requests desde el frontend
@@ -31,7 +31,13 @@ OPENAI_API_KEY=<tu-key>
 # Opcional — modelo para chat/analyze/modification-plan (default en compose: gpt-4o-mini)
 CHAT_MODEL=gpt-4o-mini
 CREDENTIALS_ENCRYPTION_KEY=<generar con: openssl rand -base64 32>
+
+# MCP — Auth M2M (recomendado en producción)
+# Si se define, Cursor debe enviar Authorization: Bearer <token>. Sin esto, el MCP queda abierto.
+MCP_AUTH_TOKEN=<token-secreto>
 ```
+
+**Importante:** Las variables definidas en Dokploy Environment se inyectan a Docker al desplegar. El servicio `mcp-ariadne` lee `MCP_AUTH_TOKEN` del entorno; si está definido, todas las peticiones al MCP requieren el header `Authorization: Bearer <valor>` o `X-M2M-Token: <valor>`.
 
 ## 3. Enrutamiento Traefik (docker-compose)
 
@@ -79,7 +85,7 @@ El MCP usa **Streamable HTTP** en el puerto 8080. FalkorDB e Ingest están en la
    - Path **`/mcp`** (o prefix `/mcp`) → servicio **mcp-ariadne**, puerto **8080** — conexión MCP
    - Path **`/.well-known`** (o prefix) → servicio **mcp-ariadne**, puerto **8080** — discovery OAuth (Cursor pide esto antes de conectar)
    - Orden: rutas más específicas primero. Sin esto, `/mcp` devuelve HTML (SPA) → error "Unexpected token '<'"
-2. **Variables**: `MCP_AUTH_TOKEN` (opcional) — si se define, la IA debe enviar `Authorization: Bearer <token>`.
+2. **Token**: En **Dokploy** → Environment, definir `MCP_AUTH_TOKEN` con un token secreto. Ese valor se inyecta al contenedor `mcp-ariadne` vía `environment` del compose. Si está definido, todas las peticiones requieren `Authorization: Bearer <token>`.
 3. **Cursor** (`~/.cursor/mcp.json`):
 
 ```json
@@ -129,3 +135,4 @@ Variables requeridas para Postgres (ingest):
 - [ ] Frontend desplegado en ariadne.kreoint.mx
 - [ ] API accesible en ariadne.kreoint.mx/api/repositories, /api/graph/*, etc.
 - [ ] Certificado SSL en ariadne.kreoint.mx
+- [ ] `MCP_AUTH_TOKEN` en Environment (Dokploy) si quieres auth en el MCP; Cursor configurado con `headers.Authorization`

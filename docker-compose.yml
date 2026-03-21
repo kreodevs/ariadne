@@ -186,10 +186,6 @@ services:
       - FALKORDB_PORT=6379
       - INGEST_URL=http://ingest:3002
       - MCP_AUTH_TOKEN=${MCP_AUTH_TOKEN:-}
-      - SSO_API_URL=${SSO_API_URL:-}
-      - SSO_JWKS_URI=${SSO_JWKS_URI:-}
-      - APPLICATION_ID=${APPLICATION_ID:-}
-      - SSO_APPLICATION_ID=${SSO_APPLICATION_ID:-}
     depends_on:
       falkordb:
         condition: service_healthy
