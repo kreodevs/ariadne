@@ -190,7 +190,7 @@ export function RepoChat() {
 
       <div className="flex min-h-0 flex-1 gap-4">
         {/* Izquierda: diagnósticos e índice */}
-        <aside className="flex w-[min(420px,45%)] shrink-0 flex-col gap-4 overflow-y-auto border-r pr-4">
+        <aside className="flex min-h-0 w-[min(420px,45%)] shrink-0 flex-col gap-4 overflow-hidden border-r pr-4">
           <div className="flex flex-wrap gap-2">
             <Button
               variant="outline"
@@ -287,17 +287,15 @@ export function RepoChat() {
           )}
 
           {analysisResult && !loadingAnalysis && (
-            <Card>
-              <CardHeader className="pb-2">
+            <Card className="flex min-h-0 flex-1 flex-col">
+              <CardHeader className="shrink-0 pb-2">
                 <CardTitle className="text-base">
                   {ANALYSIS_RESULT_TITLES[analysisResult.mode] ?? analysisResult.mode}
                 </CardTitle>
               </CardHeader>
-              <CardContent>
+              <CardContent className="flex min-h-0 flex-1 flex-col p-0 px-6 pb-6">
                 <div
-                  className={`overflow-auto rounded border bg-muted/50 p-3 text-sm [&_ul]:my-1 [&_ol]:my-1 [&_li]:my-0 [&_p]:my-1 [&_strong]:font-semibold [&_pre]:overflow-x-auto [&_h1]:text-lg [&_h2]:text-base [&_h3]:text-sm [&_table]:w-full [&_th]:text-left [&_th]:border [&_td]:border [&_td]:px-2 [&_td]:py-1 ${
-                    analysisResult.mode === 'codigo_muerto' ? 'max-h-[75vh]' : 'max-h-[50vh]'
-                  }`}
+                  className={`flex-1 min-h-0 overflow-auto rounded border bg-muted/50 p-3 text-sm [&_ul]:my-1 [&_ol]:my-1 [&_li]:my-0 [&_p]:my-1 [&_strong]:font-semibold [&_pre]:overflow-x-auto [&_h1]:text-lg [&_h2]:text-base [&_h3]:text-sm [&_table]:w-full [&_th]:text-left [&_th]:border [&_td]:border [&_td]:px-2 [&_td]:py-1`}
                 >
                   <MarkdownBlock
                     content={typeof analysisResult.summary === 'string' ? analysisResult.summary : String(analysisResult.summary ?? '')}
