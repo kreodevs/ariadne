@@ -43,8 +43,8 @@ Infraestructura y servicios corriendo en tu máquina. El MCP usa **Streamable HT
 ```bash
 pnpm run dev:infra      # FalkorDB, Postgres, Redis
 pnpm run dev:ingest     # Ingest (puerto 3002)
-pnpm -C services/mcp-falkorspec build
-PORT=8080 node services/mcp-falkorspec/dist/index.js   # MCP en segundo plano
+pnpm -C services/mcp-ariadne build
+PORT=8080 node services/mcp-ariadne/dist/index.js   # MCP en segundo plano
 ```
 
 ---
@@ -152,7 +152,7 @@ Con el túnel activo, inicia el MCP localmente (en otra terminal):
 
 ```bash
 cd ariadne
-FALKORDB_HOST=localhost FALKORDB_PORT=6379 INGEST_URL=https://apiariadne.kreoint.mx PORT=8080 node services/mcp-falkorspec/dist/index.js
+FALKORDB_HOST=localhost FALKORDB_PORT=6379 INGEST_URL=https://apiariadne.kreoint.mx PORT=8080 node services/mcp-ariadne/dist/index.js
 ```
 
 Luego en Cursor usa la URL local:
@@ -160,7 +160,7 @@ Luego en Cursor usa la URL local:
 ```json
 {
   "mcpServers": {
-    "falkorspecs": {
+    "ariadnespecs": {
       "url": "http://localhost:8080/mcp"
     }
   }
@@ -182,8 +182,8 @@ cd ariadne
 
 ```bash
 pnpm install
-pnpm -C services/mcp-falkorspec install
-pnpm -C services/mcp-falkorspec build
+pnpm -C services/mcp-ariadne install
+pnpm -C services/mcp-ariadne build
 ```
 
 ### Paso 3: Configurar el MCP en Cursor
@@ -213,7 +213,7 @@ Previo: arrancar el MCP en tu máquina (`PORT=8080 node dist/index.js` con FALKO
 ```json
 {
   "mcpServers": {
-    "falkorspecs": {
+    "ariadnespecs": {
       "url": "http://localhost:8080/mcp"
     }
   }
@@ -224,7 +224,7 @@ Previo: arrancar el MCP en tu máquina (`PORT=8080 node dist/index.js` con FALKO
 ```json
 {
   "mcpServers": {
-    "falkorspecs": {
+    "ariadnespecs": {
       "url": "https://ariadne.kreoint.mx/mcp"
     }
   }
@@ -235,7 +235,7 @@ Previo: arrancar el MCP en tu máquina (`PORT=8080 node dist/index.js` con FALKO
 ```json
 {
   "mcpServers": {
-    "falkorspecs": {
+    "ariadnespecs": {
       "url": "https://ariadne.kreoint.mx/mcp",
       "headers": {
         "Authorization": "Bearer <tu-token-m2m>"
@@ -252,7 +252,7 @@ Previo: túnel SSH activo + arrancar el MCP con `FALKORDB_HOST=localhost`, `INGE
 ```json
 {
   "mcpServers": {
-    "falkorspecs": {
+    "ariadnespecs": {
       "url": "http://localhost:8080/mcp"
     }
   }

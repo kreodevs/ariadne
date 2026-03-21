@@ -1,4 +1,4 @@
-# FalkorSpec Orchestrator (NestJS + LangGraph)
+# AriadneSpec Orchestrator (NestJS + LangGraph)
 
 Orquestación de agentes y flujos de razonamiento cíclicos (constitution §2.C).
 
@@ -11,7 +11,7 @@ Orquestación de agentes y flujos de razonamiento cíclicos (constitution §2.C)
 ## Variables de entorno
 
 - `PORT` — Puerto HTTP (default 3001).
-- `FALKORSPEC_API_URL` — Base URL de la API (default http://api:3000).
+- `ARIADNESPEC_API_URL` — Base URL de la API (default http://api:3000).
 
 ## Ampliación
 

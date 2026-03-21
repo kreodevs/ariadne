@@ -11,9 +11,10 @@ import { ChatAntipatternsService } from './chat-antipatterns.service';
 import { ChatHandlersService } from './chat-handlers.service';
 import { RepositoriesModule } from '../repositories/repositories.module';
 import { EmbeddingModule } from '../embedding/embedding.module';
+import { ProjectsModule } from '../projects/projects.module';
 
 @Module({
-  imports: [RepositoriesModule, EmbeddingModule],
+  imports: [RepositoriesModule, EmbeddingModule, ProjectsModule],
   controllers: [ChatController, ProjectChatController],
   providers: [ChatCypherService, ChatLlmService, ChatAntipatternsService, ChatHandlersService, ChatService],
 })

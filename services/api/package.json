@@ -1,5 +1,5 @@
 {
-  "name": "falkorspec-api",
+  "name": "ariadnespec-api",
   "version": "1.0.0",
   "description": "API REST OpenAPI 3.1 - FalkorSpecs graph impact & component context (NestJS)",
   "main": "dist/main.js",

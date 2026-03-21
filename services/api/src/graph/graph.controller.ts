@@ -13,7 +13,7 @@ import {
 } from '@nestjs/common';
 import { GraphService } from './graph.service';
 
-/** Endpoints del grafo FalkorDB para el MCP FalkorSpecs. */
+/** Endpoints del grafo FalkorDB para el MCP AriadneSpecs. */
 @Controller('graph')
 export class GraphController {
   constructor(private readonly graph: GraphService) {}

@@ -64,14 +64,14 @@ Levantar FalkorDB, PostgreSQL y Redis por tu cuenta (binarios o contenedores sue
 - **Ingest:** `cd services/ingest && npm run build && npm run start` (o `nest start --watch` en dev).
 - **API:** `cd services/api && npm run dev` (o `npm run start`).
 - **Orchestrator:** `cd services/orchestrator && npm run start` (o `nest start --watch`).
-- **MCP:** `cd services/mcp-falkorspec && npm run build && PORT=8080 node dist/index.js` (Streamable HTTP).
+- **MCP:** `cd services/mcp-ariadne && npm run build && PORT=8080 node dist/index.js` (Streamable HTTP).
 - **Frontend:** `cd frontend && npm run dev`.
 
 #### Variables de entorno por servicio
 
 - **Ingest:** `PORT` (3002), `PGHOST`, `PGPORT`, `PGUSER`, `PGPASSWORD`, `PGDATABASE`, `FALKORDB_HOST`, `FALKORDB_PORT`, `REDIS_URL` (cola sync). Opcional: `CREDENTIALS_ENCRYPTION_KEY` (si usas credenciales en BD), `BITBUCKET_*`, `GITHUB_TOKEN` (fallback).
 - **API:** `PORT` (3000), `FALKORDB_HOST`, `FALKORDB_PORT`, `REDIS_URL`. Opcional: `INGEST_URL`, `CARTOGRAPHER_URL` para el proxy de shadow (default ingest, fallback cartographer).
-- **Orchestrator:** `PORT` (3001), `FALKORSPEC_API_URL` (default `http://api:3000` en Docker).
+- **Orchestrator:** `PORT` (3001), `ARIADNESPEC_API_URL` (default `http://api:3000` en Docker).
 - **MCP:** `FALKORDB_HOST`, `FALKORDB_PORT`.
 - **Frontend:** `VITE_API_URL` (default `http://localhost:3002`, URL del ingest).
 

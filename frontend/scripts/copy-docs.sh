@@ -3,7 +3,7 @@
 cd "$(dirname "$0")/.."
 mkdir -p public
 cp ../docs/MCP_AYUDA.md public/ayuda-mcp.md 2>/dev/null
-cp ../.cursor/skills/falkorspecs-mcp/SKILL.md public/ayuda-skills.md 2>/dev/null
+cp ../.cursor/skills/ariadnespecs-mcp/SKILL.md public/ayuda-skills.md 2>/dev/null
 cp ../docs/manual/README.md public/ayuda-manual.md 2>/dev/null
 cp ../docs/manual/CONFIGURACION_Y_USO.md public/ayuda-manual-configuracion.md 2>/dev/null
 cp ../docs/README.md public/ayuda-manual-indice.md 2>/dev/null

@@ -8,7 +8,7 @@ import { createClient, type RedisClientType } from "redis";
 const TTL_IMPACT = 300; // 5 min
 const TTL_COMPONENT = 300;
 const TTL_CONTRACT = 300;
-const PREFIX = "falkorspecs:";
+const PREFIX = "ariadnespecs:";
 
 let redis: RedisClientType | null = null;
 

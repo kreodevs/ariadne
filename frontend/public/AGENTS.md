@@ -1,8 +1,8 @@
-# Protocolo para Agentes (FalkorSpecs Oracle)
+# Protocolo para Agentes (AriadneSpecs Oracle)
 
 ## Protocolo de sesión
 
-Al iniciar una sesión de desarrollo con el MCP FalkorSpecs Oracle:
+Al iniciar una sesión de desarrollo con el MCP AriadneSpecs Oracle:
 
 1. **OBLIGATORIO: Ejecutar `list_known_projects`** al inicio. Respuesta: `[{ id, name, roots: [{ id, name, branch? }] }]`. `id` = proyecto Ariadne; `roots[].id` = repo. Para **`get_modification_plan`** con varios repos, usa como `projectId` el **`roots[].id` del repo donde vive el código** (p. ej. frontend); el endpoint de ingest acepta también UUID de proyecto, pero entonces el plan puede anclarse al primer repo del proyecto.
 2. **OBLIGATORIO: Verificar que el `projectId` existe** antes de proponer modificaciones en componentes o funciones. Si una herramienta devuelve `[NOT_FOUND_IN_GRAPH]`, no proceder: solicitar reindexación (sync/resync) o verificar el nombre del nodo.

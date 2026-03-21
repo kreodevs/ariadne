@@ -1,12 +1,12 @@
 # Plan: grounding en grafo, filtrado multi-root y calidad de respuestas MCP/Ingest
 
 **Estado:** MVP + §2, §3, §6 y métricas §7 implementados en ingest/MCP (ver §Implementado y tabla extendida).  
-**Objetivo:** que FalkorSpecs deje de comportarse como “consultor genérico” y priorice respuestas **ancladas al índice** (grafo + repo), con trazabilidad y menos ruido entre roots (ERP vs frontend vs monorepo).
+**Objetivo:** que AriadneSpecs deje de comportarse como “consultor genérico” y priorice respuestas **ancladas al índice** (grafo + repo), con trazabilidad y menos ruido entre roots (ERP vs frontend vs monorepo).
 
 **Contexto en código actual (referencia):**
 
 - Chat unificado: `services/ingest/src/chat/chat.service.ts` (`runUnifiedPipeline`, Retriever + Synthesizer).
-- MCP `ask_codebase`: `services/mcp-falkorspec/src/index.ts` → ingest chat.
+- MCP `ask_codebase`: `services/mcp-ariadne/src/index.ts` → ingest chat.
 - `semantic_search` / fallback semántico en planes: mismo servicio + Cypher.
 - `getModificationPlan`: `getModificationPlan` / `getModificationPlanByProject` en `chat.service.ts`.
 

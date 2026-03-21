@@ -1,11 +1,12 @@
 /**
  * @fileoverview Chat a nivel proyecto: consulta el grafo de todos los repos del proyecto.
- * Las respuestas pueden citar archivos de cualquier repo asociado al proyecto.
+ * Botones AGENTS y SKILL generan AGENTS.md y SKILL.md según el conocimiento del proyecto.
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import { MarkdownBlock } from '@/components/MarkdownBlock';
 import { api } from '../api';
 import type { Project } from '../types';
 import { Button } from '@/components/ui/button';
@@ -28,7 +29,25 @@ export function ProjectChat() {
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [analysisResult, setAnalysisResult] = useState<{ mode: string; summary: string } | null>(null);
+  const [loadingAnalysis, setLoadingAnalysis] = useState<string | null>(null);
+  const [analysisError, setAnalysisError] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+
+  const runAnalysis = useCallback(
+    (mode: 'agents' | 'skill') => {
+      if (!projectId) return;
+      setLoadingAnalysis(mode);
+      setAnalysisError(null);
+      setError(null);
+      api
+        .analyzeProject(projectId, mode)
+        .then((res) => setAnalysisResult({ mode: res.mode, summary: res.summary }))
+        .catch((e) => setAnalysisError(e.message))
+        .finally(() => setLoadingAnalysis(null));
+    },
+    [projectId],
+  );
 
   useEffect(() => {
     if (!projectId) return;
@@ -132,7 +151,67 @@ export function ProjectChat() {
         </span>
       </div>
 
-      <Card className="flex min-w-0 flex-1 flex-col overflow-hidden">
+      <div className="flex min-h-0 flex-1 gap-4">
+        <aside className="flex w-[min(420px,45%)] shrink-0 flex-col gap-4 overflow-y-auto border-r pr-4">
+          <div className="flex flex-wrap gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => runAnalysis('agents')}
+              disabled={!!loadingAnalysis}
+              title="Genera AGENTS.md para agentes AI"
+            >
+              {loadingAnalysis === 'agents' ? '…' : 'AGENTS'}
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => runAnalysis('skill')}
+              disabled={!!loadingAnalysis}
+              title="Genera SKILL.md para Cursor/Claude"
+            >
+              {loadingAnalysis === 'skill' ? '…' : 'SKILL'}
+            </Button>
+          </div>
+          {loadingAnalysis && (
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-base">{loadingAnalysis === 'agents' ? 'AGENTS.md' : 'SKILL.md'}</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="flex items-center gap-2 py-6 text-muted-foreground">
+                  <span className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
+                  Generando…
+                </div>
+              </CardContent>
+            </Card>
+          )}
+          {analysisError && !loadingAnalysis && (
+            <Alert variant="destructive">
+              <AlertTitle>Error en el análisis</AlertTitle>
+              <AlertDescription>{analysisError}</AlertDescription>
+            </Alert>
+          )}
+          {analysisResult && !loadingAnalysis && (
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-base">{analysisResult.mode === 'agents' ? 'AGENTS.md' : 'SKILL.md'}</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="max-h-[50vh] overflow-auto rounded border bg-muted/50 p-3 text-sm [&_ul]:my-1 [&_ol]:my-1 [&_li]:my-0 [&_p]:my-1 [&_strong]:font-semibold [&_pre]:overflow-x-auto [&_h1]:text-lg [&_h2]:text-base [&_h3]:text-sm [&_table]:w-full [&_th]:text-left [&_th]:border [&_td]:border [&_td]:px-2 [&_td]:py-1">
+                  <MarkdownBlock content={typeof analysisResult.summary === 'string' ? analysisResult.summary : String(analysisResult.summary ?? '')} />
+                </div>
+              </CardContent>
+            </Card>
+          )}
+          {!analysisResult && !loadingAnalysis && !analysisError && (
+            <p className="text-muted-foreground py-8 text-center text-sm">
+              Usa AGENTS o SKILL para generar el contenido markdown según el conocimiento del proyecto.
+            </p>
+          )}
+        </aside>
+
+        <Card className="flex min-w-0 flex-1 flex-col overflow-hidden">
         <CardHeader className="shrink-0 pb-2">
           <CardTitle>Pregunta sobre todo el proyecto</CardTitle>
           <p className="text-sm text-muted-foreground">
@@ -227,6 +306,7 @@ export function ProjectChat() {
           </div>
         </CardContent>
       </Card>
+      </div>
     </div>
   );
 }

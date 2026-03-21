@@ -11,8 +11,8 @@ Tipos y utilidades compartidas para FalkorDB/Cypher entre servicios Ariadne (ing
 
 ## Consumidores
 
-- **falkorspec-ingest**: producer, falkor, project.
-- **falkorspecs-cartographer**: producer, falkor, project.
+- **ariadnespec-ingest**: producer, falkor, project.
+- **ariadnespecs-cartographer**: producer, falkor, project.
 - **ariadne-mcp**: falkor.
 
 ## Build (desarrollo)
@@ -25,4 +25,4 @@ Los servicios usan `"ariadne-common": "file:../../packages/ariadne-common"`. Tra
 
 ## Deployment (Docker)
 
-Los Dockerfiles de ingest, cartographer y mcp-falkorspec **deben construirse con contexto en la raíz del repo** (no solo la carpeta del servicio), para poder copiar y compilar `packages/ariadne-common` dentro de la imagen. Ver [docs/ariadne-common.md](../../docs/ariadne-common.md).
+Los Dockerfiles de ingest, cartographer y mcp-ariadne **deben construirse con contexto en la raíz del repo** (no solo la carpeta del servicio), para poder copiar y compilar `packages/ariadne-common` dentro de la imagen. Ver [docs/ariadne-common.md](../../docs/ariadne-common.md).

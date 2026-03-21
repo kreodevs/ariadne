@@ -2,7 +2,7 @@
  * Configuración de conexión FalkorDB (host, port) compartida por ingest, cartographer y MCP.
  */
 
-export const GRAPH_NAME = 'FalkorSpecs';
+export const GRAPH_NAME = 'AriadneSpecs';
 
 export interface FalkorConfig {
   host: string;

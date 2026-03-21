@@ -190,7 +190,7 @@ const SHADOW_URL = process.env.INGEST_URL ?? process.env.CARTOGRAPHER_URL ?? "ht
 
 /**
  * POST /graph/shadow
- * Proxy a Ingest o Cartographer: indexa archivos en FalkorSpecsShadow.
+ * Proxy a Ingest o Cartographer: indexa archivos en AriadneSpecsShadow.
  * Body: { files: [{ path, content }] }.
  */
 graphRouter.post("/shadow", async (req: Request, res: Response) => {

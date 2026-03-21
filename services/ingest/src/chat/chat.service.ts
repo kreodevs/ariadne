@@ -33,6 +33,7 @@ import { ChatCypherService } from './chat-cypher.service';
 import { ChatLlmService } from './chat-llm.service';
 import { ChatAntipatternsService } from './chat-antipatterns.service';
 import { ChatHandlersService } from './chat-handlers.service';
+import { ProjectsService } from '../projects/projects.service';
 import {
   type ChatScope,
   filterCypherRowsByScope,
@@ -80,8 +81,8 @@ export interface ModificationPlanResult {
   questionsToRefine: string[];
 }
 
-/** Modos de análisis estructurado (diagnóstico, duplicados, reingeniería, código muerto). */
-export type AnalyzeMode = 'diagnostico' | 'duplicados' | 'reingenieria' | 'codigo_muerto';
+/** Modos de análisis estructurado (diagnóstico, duplicados, reingeniería, código muerto, AGENTS.md, SKILL.md). */
+export type AnalyzeMode = 'diagnostico' | 'duplicados' | 'reingenieria' | 'codigo_muerto' | 'agents' | 'skill';
 
 /** Resultado de un análisis (summary markdown + detalles opcionales). */
 export interface AnalyzeResult {
@@ -199,6 +200,7 @@ export class ChatService {
     private readonly llm: ChatLlmService,
     private readonly antipatterns: ChatAntipatternsService,
     private readonly handlers: ChatHandlersService,
+    private readonly projects: ProjectsService,
   ) {}
 
   /** Proyecto a usar para un repo: primer proyecto asociado o repo.id (standalone). */
@@ -1025,15 +1027,94 @@ Estructura OBLIGATORIA (reflejar el diagnóstico):
   }
 
   /**
+   * Genera AGENTS.md: protocolo para agentes AI (Cursor/Claude) basado en la estructura del proyecto.
+   * Usa el conocimiento del MCP Handbook: protocolo de sesión, herramientas por intención, flujos SDD y refactorización.
+   */
+  async analyzeAgents(projectId: string, displayName: string): Promise<AnalyzeResult> {
+    const summary = await this.cypher.getGraphSummaryForProject(projectId);
+    const context = `Proyecto/repo: ${displayName}\nConteos del grafo: ${JSON.stringify(summary.counts)}\nMuestras (paths, componentes, funciones): ${JSON.stringify(summary.samples).slice(0, 4000)}`;
+
+    const systemPrompt = `Eres experto en protocolos para agentes AI (Cursor, Claude, MCP). Genera un archivo AGENTS.md en formato Markdown para este proyecto.
+
+Estructura obligatoria (basada en Model Context Protocol Handbook):
+1. **Protocolo de sesión** — Al iniciar: ejecutar list_known_projects; verificar projectId; usar .ariadne-project si existe.
+2. **Preferencia projectId** — Fijar proyecto; cuando no hay .ariadne-project, pasar projectId explícito; excepciones para get_project_analysis (roots[].id).
+3. **Herramientas por intención** — Tabla: Intención | Herramienta MCP | Flujo. Adapta las intenciones a los componentes/rutas del proyecto mostrado (Components, Routes, Functions, NestController, etc.).
+4. **Flujo SDD (Spec-Driven Development)** — validate_before_edit, get_legacy_impact, no inventar props.
+5. **Flujo de refactorización** — semantic_search, get_definitions, get_references, validate_before_edit.
+
+Deriva TODO de los datos del contexto (conteos, muestras). Incluye rutas y nombres reales del proyecto. Salida SOLO markdown, sin explicaciones previas.`;
+
+    const answer = await this.llm.callLlm(
+      [{ role: 'system', content: systemPrompt }, { role: 'user', content: context }],
+      8192,
+    );
+    return { mode: 'agents', summary: answer };
+  }
+
+  /**
+   * Genera SKILL.md: skill para Cursor/Claude adaptada al proyecto.
+   * Usa el conocimiento del MCP Handbook: YAML frontmatter (name, description), Instructions, Examples, Troubleshooting.
+   */
+  async analyzeSkill(projectId: string, displayName: string): Promise<AnalyzeResult> {
+    const summary = await this.cypher.getGraphSummaryForProject(projectId);
+    const context = `Proyecto/repo: ${displayName}\nConteos: ${JSON.stringify(summary.counts)}\nMuestras: ${JSON.stringify(summary.samples).slice(0, 4000)}`;
+
+    const systemPrompt = `Eres experto en SKILL.md para agentes AI (Cursor, Claude). Genera un archivo SKILL.md en formato Markdown para este proyecto.
+
+Estructura obligatoria (Model Context Protocol Handbook):
+1. **YAML frontmatter** (al inicio, entre ---):
+   - name: kebab-case (ej. ${displayName.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '')}-analysis)
+   - description: qué hace y frases trigger (sin XML, máx 1024 chars)
+
+2. **# Nombre del Skill** — Título
+
+3. **## Instructions** — Pasos concretos: qué herramientas MCP usar, qué consultar, qué validar. Referencia rutas y componentes del proyecto.
+
+4. **## Examples** — 2-3 escenarios: "User says: ..." → "Actions: ..." → "Result: ..."
+
+5. **## Troubleshooting** — Errores típicos: NOT_FOUND_IN_GRAPH, MCP no responde, projectId incorrecto — causas y soluciones.
+
+Deriva TODO de los datos. Incluye paths y nombres reales. Salida SOLO markdown con frontmatter, sin texto previo.`;
+
+    const answer = await this.llm.callLlm(
+      [{ role: 'system', content: systemPrompt }, { role: 'user', content: context }],
+      8192,
+    );
+    return { mode: 'skill', summary: answer };
+  }
+
+  /**
    * Ejecuta el análisis según el modo indicado.
    * @param repositoryId - UUID del repositorio
-   * @param mode - diagnóstico | duplicados | reingeniería | código muerto
+   * @param mode - diagnóstico | duplicados | reingeniería | código muerto | agents | skill
    */
   async analyze(repositoryId: string, mode: AnalyzeMode): Promise<AnalyzeResult> {
     if (mode === 'diagnostico') return this.analyzeDiagnostico(repositoryId);
     if (mode === 'duplicados') return this.analyzeDuplicados(repositoryId);
     if (mode === 'codigo_muerto') return this.analyzeCodigoMuerto(repositoryId);
+    if (mode === 'reingenieria') return this.analyzeReingenieria(repositoryId);
+    const repo = await this.repos.findOne(repositoryId);
+    const projectId = await this.resolveProjectIdForRepo(repo.id);
+    const displayName = `${repo.projectKey}/${repo.repoSlug}`;
+    if (mode === 'agents') return this.analyzeAgents(projectId, displayName);
+    if (mode === 'skill') return this.analyzeSkill(projectId, displayName);
     return this.analyzeReingenieria(repositoryId);
+  }
+
+  /**
+   * Análisis por proyecto (multi-root). Usa projectId para consultar el grafo.
+   */
+  async analyzeByProject(projectId: string, mode: 'agents' | 'skill'): Promise<AnalyzeResult> {
+    const project = await this.projects.findOne(projectId);
+    const displayName =
+      project.name ||
+      project.repositories
+        .map((r) => `${r.projectKey}/${r.repoSlug}`)
+        .join(', ') ||
+      projectId.slice(0, 8);
+    if (mode === 'agents') return this.analyzeAgents(projectId, displayName);
+    return this.analyzeSkill(projectId, displayName);
   }
 
   /**

@@ -1,11 +1,11 @@
 ---
-name: falkorspecs-mcp
-description: Protocol for using MCP FalkorSpecs Oracle tools when maintaining legacy code. Use when: diagnóstico de archivo/componente/hook (e.g. "diagnóstico de usePauta.tsx"), FalkorSpecs MCP, technical debt, validate_before_edit, get_project_analysis, semantic search, refactoring legacy components, or user mentions Ariadne, FalkorDB, or project analysis. Always invoke MCP tools (get_component_graph, get_legacy_impact, get_definitions, get_references) when user asks for file/component diagnostics—do NOT rely only on Read/Grep.
+name: ariadnespecs-mcp
+description: Protocol for using MCP AriadneSpecs Oracle tools when maintaining legacy code. Use when: diagnóstico de archivo/componente/hook (e.g. "diagnóstico de usePauta.tsx"), AriadneSpecs MCP, technical debt, validate_before_edit, get_project_analysis, semantic search, refactoring legacy components, or user mentions Ariadne, FalkorDB, or project analysis. Always invoke MCP tools (get_component_graph, get_legacy_impact, get_definitions, get_references) when user asks for file/component diagnostics—do NOT rely only on Read/Grep.
 ---
 
-# FalkorSpecs MCP Protocol
+# AriadneSpecs MCP Protocol
 
-Protocol for using the MCP FalkorSpecs Oracle tools (get_component_graph, validate_before_edit, get_project_analysis, etc.) when maintaining indexed codebases.
+Protocol for using the MCP AriadneSpecs Oracle tools (get_component_graph, validate_before_edit, get_project_analysis, etc.) when maintaining indexed codebases.
 
 ## Session Start
 

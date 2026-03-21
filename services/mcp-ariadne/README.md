@@ -1,4 +1,4 @@
-# ariadne-mcp (FalkorSpecs MCP Server)
+# ariadne-mcp (AriadneSpecs MCP Server)
 
 Servidor MCP que expone herramientas de contexto sobre el grafo en FalkorDB.
 
@@ -7,7 +7,7 @@ Servidor MCP que expone herramientas de contexto sobre el grafo en FalkorDB.
 ## Publicar a npm
 
 ```bash
-cd services/mcp-falkorspec
+cd services/mcp-ariadne
 npm login
 npm publish
 ```
@@ -50,7 +50,7 @@ Variables: `FALKORDB_HOST`, `FALKORDB_PORT`, `INGEST_URL` (para get_file_content
 ## Uso (producción / Docker)
 
 - Transporte: **Streamable HTTP** en `0.0.0.0:8080` (o `PORT`).
-- Requiere FalkorDB con el grafo `FalkorSpecs` ya poblado.
+- Requiere FalkorDB con el grafo `AriadneSpecs` ya poblado.
 - **Auth:** Si `MCP_AUTH_TOKEN` está definido, las peticiones deben incluir `Authorization: Bearer <token>`.
 
 Variables: `PORT` (8080), `FALKORDB_HOST`, `FALKORDB_PORT`, `INGEST_URL`, `MCP_AUTH_TOKEN` (opcional).

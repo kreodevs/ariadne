@@ -1,7 +1,7 @@
 {
   "name": "ariadne-mcp",
   "version": "1.0.0",
-  "description": "MCP server FalkorSpecs: get_component_graph, get_legacy_impact, validate_before_edit, semantic_search",
+  "description": "MCP server AriadneSpecs: get_component_graph, get_legacy_impact, validate_before_edit, semantic_search",
   "type": "module",
   "main": "dist/index.js",
   "bin": "./dist/index.js",

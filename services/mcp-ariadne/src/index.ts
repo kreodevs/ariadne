@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * @fileoverview FalkorSpecs Oracle MCP Server. Transporte Streamable HTTP. Tools: get_component_graph, get_legacy_impact, validate_before_edit, semantic_search, etc. Config: PORT, MCP_AUTH_TOKEN, SSO_API_URL, FALKORDB_HOST, INGEST_URL.
+ * @fileoverview AriadneSpecs Oracle MCP Server. Transporte Streamable HTTP. Tools: get_component_graph, get_legacy_impact, validate_before_edit, semantic_search, etc. Config: PORT, MCP_AUTH_TOKEN, SSO_API_URL, FALKORDB_HOST, INGEST_URL.
  */
 
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
@@ -161,7 +161,7 @@ async function validateAuth(req: IncomingMessage): Promise<string | null> {
   return null;
 }
 
-const MCP_INSTRUCTIONS = `FalkorSpecs Oracle: herramientas de análisis de código indexado en FalkorDB.
+const MCP_INSTRUCTIONS = `AriadneSpecs Oracle: herramientas de análisis de código indexado en FalkorDB.
 
 ## projectId (OBLIGATORIO)
 
@@ -174,7 +174,7 @@ Si no hay .ariadne-project: ejecuta \`list_known_projects\` y usa el \`id\` que 
 /** Crea un MCP Server configurado. Stateless: un Server+Transport por request evita "Server already initialized". */
 function createMcpServer(): Server {
   const srv = new Server(
-    { name: "FalkorSpecs-Oracle", version: "1.0.0" },
+    { name: "AriadneSpecs-Oracle", version: "1.0.0" },
     { capabilities: { tools: {} }, instructions: MCP_INSTRUCTIONS }
   );
 
@@ -875,7 +875,7 @@ async function fetchFileFromIngest(
   const graph = await getGraph();
 
   if (name === "list_known_projects") {
-    const ingestUrl = process.env.INGEST_URL ?? process.env.FALKORSPEC_INGEST_URL ?? "";
+    const ingestUrl = process.env.INGEST_URL ?? process.env.ARIADNESPEC_INGEST_URL ?? "";
     if (ingestUrl) {
       try {
         const res = await fetch(`${ingestUrl.replace(/\/$/, "")}/projects`, {
@@ -1110,7 +1110,7 @@ async function fetchFileFromIngest(
       };
     }
     const { graphPath } = await resolveFileForPath(graph, pathParam, projectId, currentFilePath);
-    const ingestUrl = process.env.INGEST_URL ?? process.env.FALKORSPEC_INGEST_URL ?? "http://localhost:3002";
+    const ingestUrl = process.env.INGEST_URL ?? process.env.ARIADNESPEC_INGEST_URL ?? "http://localhost:3002";
     try {
       const result = await fetchFileFromIngest(ingestUrl, projectId, graphPath, ref);
       if ("error" in result) {
@@ -1141,7 +1141,7 @@ async function fetchFileFromIngest(
         isError: true,
       };
     }
-    const ingestUrl = process.env.INGEST_URL ?? process.env.FALKORSPEC_INGEST_URL ?? "http://localhost:3002";
+    const ingestUrl = process.env.INGEST_URL ?? process.env.ARIADNESPEC_INGEST_URL ?? "http://localhost:3002";
     const results: { type: string; name: string; projectId?: string }[] = [];
     let usedVector = false;
     try {
@@ -1235,7 +1235,7 @@ async function fetchFileFromIngest(
         isError: true,
       };
     }
-    const ingestUrl = process.env.INGEST_URL ?? process.env.FALKORSPEC_INGEST_URL ?? "http://localhost:3002";
+    const ingestUrl = process.env.INGEST_URL ?? process.env.ARIADNESPEC_INGEST_URL ?? "http://localhost:3002";
     const url = `${ingestUrl.replace(/\/$/, "")}/repositories/${projectId}/analyze`;
     try {
       const res = await fetch(url, {
@@ -1279,7 +1279,7 @@ async function fetchFileFromIngest(
         isError: true,
       };
     }
-    const ingestUrl = process.env.INGEST_URL ?? process.env.FALKORSPEC_INGEST_URL ?? "http://localhost:3002";
+    const ingestUrl = process.env.INGEST_URL ?? process.env.ARIADNESPEC_INGEST_URL ?? "http://localhost:3002";
     const base = ingestUrl.replace(/\/$/, "");
     const scopeRaw = args?.scope;
     const scope =
@@ -1325,7 +1325,7 @@ async function fetchFileFromIngest(
         isError: true,
       };
     }
-    const ingestUrl = process.env.INGEST_URL ?? process.env.FALKORSPEC_INGEST_URL ?? "http://localhost:3002";
+    const ingestUrl = process.env.INGEST_URL ?? process.env.ARIADNESPEC_INGEST_URL ?? "http://localhost:3002";
     const url = `${ingestUrl.replace(/\/$/, "")}/projects/${projectId}/modification-plan`;
     const scopeRaw = args?.scope;
     const scope =
@@ -1851,7 +1851,7 @@ async function fetchFileFromIngest(
         isError: true,
       };
     }
-    const ingestUrl = process.env.INGEST_URL ?? process.env.FALKORSPEC_INGEST_URL ?? "http://localhost:3002";
+    const ingestUrl = process.env.INGEST_URL ?? process.env.ARIADNESPEC_INGEST_URL ?? "http://localhost:3002";
     const results: { type: string; name: string; projectId?: string }[] = [];
     let usedVector = false;
     try {
@@ -1938,7 +1938,7 @@ async function fetchFileFromIngest(
         isError: true,
       };
     }
-    const ingestUrl = process.env.INGEST_URL ?? process.env.FALKORSPEC_INGEST_URL ?? "http://localhost:3002";
+    const ingestUrl = process.env.INGEST_URL ?? process.env.ARIADNESPEC_INGEST_URL ?? "http://localhost:3002";
     const configPaths = [".prettierrc", ".prettierrc.json", ".prettierrc.js", ".eslintrc", ".eslintrc.json", ".eslintrc.js", ".eslintrc.cjs", "tsconfig.json", "package.json"];
     const lines = ["## Estándares del proyecto", ""];
     for (const configPath of configPaths) {
@@ -1969,7 +1969,7 @@ async function fetchFileFromIngest(
       };
     }
     const { graphPath } = await resolveFileForPath(graph, filePathParam, projectId, currentFilePath);
-    const ingestUrl = process.env.INGEST_URL ?? process.env.FALKORSPEC_INGEST_URL ?? "http://localhost:3002";
+    const ingestUrl = process.env.INGEST_URL ?? process.env.ARIADNESPEC_INGEST_URL ?? "http://localhost:3002";
     const params: Record<string, string> = { path: graphPath };
     const matchProj = projectId ? ", projectId: $projectId" : "";
     if (projectId) params.projectId = projectId;
@@ -2323,7 +2323,7 @@ async function main() {
   const useSSO = !!SSO_BASE && !!APPLICATION_ID;
   const authEnabled = !!process.env.MCP_AUTH_TOKEN?.trim();
   const authMode = useSSO ? "SSO (M2M)" : authEnabled ? "static (Bearer)" : "disabled";
-  console.log("[FalkorSpecs MCP] Starting Streamable HTTP server (stateless)...");
+  console.log("[AriadneSpecs MCP] Starting Streamable HTTP server (stateless)...");
   console.log(`[MCP] Port: ${port}, Path: ${MCP_PATH}, Auth: ${authMode}`);
   if (useSSO) console.log(`[MCP] SSO validate: ${SSO_BASE}/auth/validate`);
 
@@ -2338,28 +2338,28 @@ async function main() {
   });
 
   httpServer.listen(port, "0.0.0.0", () => {
-    console.log(`[FalkorSpecs MCP] HTTP server listening on 0.0.0.0:${port}${MCP_PATH}`);
+    console.log(`[AriadneSpecs MCP] HTTP server listening on 0.0.0.0:${port}${MCP_PATH}`);
   });
 
   httpServer.on("error", (err) => {
-    console.error("[FalkorSpecs MCP] Server error:", err);
+    console.error("[AriadneSpecs MCP] Server error:", err);
     process.exit(1);
   });
 
   process.on("SIGTERM", () => {
-    console.log("[FalkorSpecs MCP] SIGTERM received, closing...");
+    console.log("[AriadneSpecs MCP] SIGTERM received, closing...");
     closeFalkor();
     httpServer.close(() => process.exit(0));
   });
 
   process.on("SIGINT", () => {
-    console.log("[FalkorSpecs MCP] SIGINT received, closing...");
+    console.log("[AriadneSpecs MCP] SIGINT received, closing...");
     closeFalkor();
     httpServer.close(() => process.exit(0));
   });
 }
 
 main().catch((err) => {
-  console.error("[FalkorSpecs MCP] Fatal error:", err);
+  console.error("[AriadneSpecs MCP] Fatal error:", err);
   process.exit(1);
 });

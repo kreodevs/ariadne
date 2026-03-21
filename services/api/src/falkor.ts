@@ -4,10 +4,10 @@
 import { FalkorDB } from "falkordb";
 
 /** Nombre del grafo principal (índice de repositorios). */
-export const GRAPH_NAME = "FalkorSpecs";
+export const GRAPH_NAME = "AriadneSpecs";
 
 /** Nombre del grafo shadow usado para comparar código propuesto (flujo SDD). */
-export const SHADOW_GRAPH_NAME = "FalkorSpecsShadow";
+export const SHADOW_GRAPH_NAME = "AriadneSpecsShadow";
 
 /**
  * Obtiene la configuración de conexión desde variables de entorno.

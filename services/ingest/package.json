@@ -1,5 +1,5 @@
 {
-  "name": "falkorspec-ingest",
+  "name": "ariadnespec-ingest",
   "version": "1.0.0",
   "description": "Microservicio de ingesta: repositorios remotos (Bitbucket) + full sync + webhook",
   "scripts": {

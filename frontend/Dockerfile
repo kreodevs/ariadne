@@ -1,4 +1,4 @@
-# build — contexto: repo root para tener access a frontend + services/mcp-falkorspec + docs
+# build — contexto: repo root para tener access a frontend + services/mcp-ariadne + docs
 FROM node:20-alpine AS build
 WORKDIR /app
 
@@ -13,14 +13,14 @@ COPY . .
 # 1. Build frontend (usa ../docs para ayuda-mcp.md)
 RUN cd frontend && pnpm install --frozen-lockfile && pnpm run build
 
-# 2. ariadne-common debe estar construido para que mcp-falkorspec resuelva file:../../packages/ariadne-common
+# 2. ariadne-common debe estar construido para que mcp-ariadne resuelva file:../../packages/ariadne-common
 RUN cd packages/ariadne-common && npm install && npm run build
 
 # 3. Build MCP y generar tarball para npx desde ariadne.kreoint.mx/mcp/ariadne-mcp.tgz
-RUN cd services/mcp-falkorspec && npm install && npm run build && npm pack
+RUN cd services/mcp-ariadne && npm install && npm run build && npm pack
 
 # 4. Copiar tarball al dist estático del frontend
-RUN mkdir -p frontend/dist/mcp && mv services/mcp-falkorspec/ariadne-mcp-*.tgz frontend/dist/mcp/ariadne-mcp.tgz
+RUN mkdir -p frontend/dist/mcp && mv services/mcp-ariadne/ariadne-mcp-*.tgz frontend/dist/mcp/ariadne-mcp.tgz
 
 # serve
 FROM nginx:alpine

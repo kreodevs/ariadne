@@ -23,9 +23,9 @@ Guía completa para configurar y usar el sistema: variables de entorno, credenci
 | `PORT` | No | 3002 | Puerto HTTP |
 | `PGHOST` | Sí* | localhost | PostgreSQL host |
 | `PGPORT` | Sí* | 5432 | PostgreSQL puerto |
-| `PGUSER` | Sí* | falkorspecs | Usuario PostgreSQL |
-| `PGPASSWORD` | Sí* | falkorspecs | Contraseña PostgreSQL |
-| `PGDATABASE` | Sí* | falkorspecs | Base de datos |
+| `PGUSER` | Sí* | ariadnespecs | Usuario PostgreSQL |
+| `PGPASSWORD` | Sí* | ariadnespecs | Contraseña PostgreSQL |
+| `PGDATABASE` | Sí* | ariadnespecs | Base de datos |
 | `FALKORDB_HOST` | Sí* | localhost | FalkorDB host |
 | `FALKORDB_PORT` | Sí* | 6379 | FalkorDB puerto |
 | `REDIS_URL` | Sí* | redis://localhost:6380 | Redis para cola de sync (BullMQ) |
@@ -76,7 +76,7 @@ GOOGLE_API_KEY=xxx
 | `PORT` | No | 3001 | Puerto HTTP |
 | `FALKORSPEC_API_URL` | No | http://api:3000 | URL de la API |
 
-#### MCP FalkorSpecs (Streamable HTTP)
+#### MCP AriadneSpecs (Streamable HTTP)
 
 | Variable | Obligatoria | Default | Descripción |
 |----------|------------|---------|-------------|
@@ -192,13 +192,13 @@ Para credenciales en BD, solo necesitas `CREDENTIALS_ENCRYPTION_KEY`; el resto s
 1. Levantar PostgreSQL, FalkorDB y Redis (contenedores o binarios).
 2. Crear base de datos:
    ```bash
-   createdb -U postgres falkorspecs
-   # o con usuario falkorspecs
+   createdb -U postgres ariadnespecs
+   # o con usuario ariadnespecs
    ```
 3. Ejecutar migraciones del ingest:
    ```bash
    cd services/ingest
-   PGHOST=localhost PGPORT=5432 PGUSER=falkorspecs PGPASSWORD=falkorspecs PGDATABASE=falkorspecs npm run migration:run
+   PGHOST=localhost PGPORT=5432 PGUSER=ariadnespecs PGPASSWORD=ariadnespecs PGDATABASE=ariadnespecs npm run migration:run
    ```
 4. Arrancar servicios en orden:
    ```bash
@@ -303,6 +303,16 @@ curl -X POST http://localhost:3002/repositories \
 
 Requieren `OPENAI_API_KEY`. Ver [CHAT_Y_ANALISIS.md](../CHAT_Y_ANALISIS.md) para detalles.
 
+#### Monorepos: prefijos para muestreo estratificado
+
+Si tu repo es un monorepo con `apps/admin`, `apps/api`, `apps/worker`, el chat usa muestreo estratificado para que las respuestas incluyan frontend y backend. Si usas otra estructura (ej. `packages/frontend`, `packages/backend`), amplía la lista de prefijos en `services/ingest/src/chat/chat-cypher.service.ts`:
+
+```typescript
+private static MONOREPO_PREFIXES = ['apps/admin', 'apps/api', 'apps/worker', 'apps/web', 'packages/', 'packages/frontend', 'packages/backend'];
+```
+
+Añade tus prefijos según la estructura de tu repo. Ver [services/ingest/src/chat/README.md](../../services/ingest/src/chat/README.md).
+
 ### 2.4 Consultas a la API (api service)
 
 | Recurso | Método | Descripción |
@@ -371,15 +381,15 @@ URL: `http://localhost:5173`
 
 ---
 
-### 2.7 MCP FalkorSpecs en Cursor
+### 2.7 MCP AriadneSpecs en Cursor
 
-1. Arrancar el MCP: `cd services/mcp-falkorspec && npm run build && PORT=8080 node dist/index.js` (con FALKORDB_HOST, INGEST_URL).
+1. Arrancar el MCP: `cd services/mcp-ariadne && npm run build && PORT=8080 node dist/index.js` (con FALKORDB_HOST, INGEST_URL).
 2. Cursor → Settings → MCP.
 3. Añadir servidor (local o producción):
    ```json
    {
      "mcpServers": {
-       "falkorspecs": {
+       "ariadnespecs": {
          "url": "http://localhost:8080/mcp"
        }
      }

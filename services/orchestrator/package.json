@@ -1,5 +1,5 @@
 {
-  "name": "falkorspec-orchestrator",
+  "name": "ariadnespec-orchestrator",
   "version": "1.0.0",
   "description": "NestJS + LangGraph — orquestación de agentes y flujos de razonamiento cíclicos (constitution §2.C)",
   "scripts": {

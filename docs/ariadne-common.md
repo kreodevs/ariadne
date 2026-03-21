@@ -1,6 +1,6 @@
 # ariadne-common — Paquete compartido
 
-`packages/ariadne-common` concentra tipos y utilidades compartidas entre **ingest**, **cartographer** y **mcp-falkorspec** para FalkorDB/Cypher, evitando duplicar lógica y facilitando cambios en un solo lugar.
+`packages/ariadne-common` concentra tipos y utilidades compartidas entre **ingest**, **cartographer** y **mcp-ariadne** para FalkorDB/Cypher, evitando duplicar lógica y facilitando cambios en un solo lugar.
 
 ## Contenido
 
@@ -13,8 +13,8 @@
 
 ## Consumidores
 
-- **falkorspec-ingest** — `pipeline/producer`, `pipeline/falkor`, `pipeline/project`
-- **falkorspecs-cartographer** — `graph/producer`, `graph/falkor`, `graph/project`
+- **ariadnespec-ingest** — `pipeline/producer`, `pipeline/falkor`, `pipeline/project`
+- **ariadnespecs-cartographer** — `graph/producer`, `graph/falkor`, `graph/project`
 - **ariadne-mcp** — `falkor` (solo `getFalkorConfig`, `GRAPH_NAME`)
 
 ## Uso en desarrollo
@@ -33,13 +33,13 @@
 
 ## Deployment a producción (Docker)
 
-Los Dockerfiles de **ingest**, **cartographer** y **mcp-falkorspec** están preparados para construirse **con contexto en la raíz del repo**. El `docker-compose.yml` ya usa `context: .` en todos los servicios; no cambiar a un contexto por carpeta de servicio.
+Los Dockerfiles de **ingest**, **cartographer** y **mcp-ariadne** están preparados para construirse **con contexto en la raíz del repo**. El `docker-compose.yml` ya usa `context: .` en todos los servicios; no cambiar a un contexto por carpeta de servicio.
 
 - **Build manual (raíz del repo):**
   ```bash
   docker build -f services/ingest/Dockerfile .
   docker build -f services/cartographer/Dockerfile .
-  docker build -f services/mcp-falkorspec/Dockerfile .
+  docker build -f services/mcp-ariadne/Dockerfile .
   ```
 - **Orden en el Dockerfile:** se copia `packages/ariadne-common` a `/packages/ariadne-common`, se ejecuta `npm install` y `npm run build` ahí, y después se instala y construye el servicio. Así la dependencia `file:../../packages/ariadne-common` se resuelve correctamente.
 - **MCP (multi-stage):** la etapa final copia también `/packages/ariadne-common` desde el builder para que `npm ci` resuelva la dependencia local antes de copiar `dist`.

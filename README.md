@@ -1,4 +1,4 @@
-# Ariadne / FalkorSpecs
+# Ariadne / AriadneSpecs
 
 Arquitectura: **Ingest** (repos remotos + sync) + **FalkorDB** (grafo) + **Chat/Analysis** (NL→Cypher + diagnósticos) + **MCP** (herramientas para la IA).
 
@@ -17,7 +17,7 @@ Ver [docs/DEPLOYMENT_DOKPLOY.md](docs/DEPLOYMENT_DOKPLOY.md).
 - **ingest** — NestJS: repos Bitbucket/GitHub, full sync, resync, webhook, **Chat** (NL→Cypher), **Análisis** (diagnóstico, duplicados, reingeniería), embed-index automático (puerto 3002). Ver [docs/bitbucket_webhook.md](docs/bitbucket_webhook.md).
 - **api** — REST NestJS: impacto, componente, contrato, compare, shadow (puerto 3000).
 - **orchestrator** — NestJS + LangGraph: validación SDD (puerto 3001).
-- **mcp-falkorspec** — MCP stdio: `get_component_graph`, `get_legacy_impact`, `get_contract_specs`, `semantic_search`, `get_file_content`, `validate_before_edit`, `get_project_analysis`.
+- **mcp-ariadne** — MCP stdio: `get_component_graph`, `get_legacy_impact`, `get_contract_specs`, `semantic_search`, `get_file_content`, `validate_before_edit`, `get_project_analysis`.
 - **frontend** — React+Vite: repos, credenciales, detalle, **Chat con repo** (preguntas NL, diagnósticos, índice FalkorDB), resync (puerto 5173).
 
 ## Uso con Docker
@@ -29,7 +29,7 @@ Ver [docs/DEPLOYMENT_DOKPLOY.md](docs/DEPLOYMENT_DOKPLOY.md).
    - **Producción (sin puertos expuestos):** `docker compose -f docker-compose.yml up -d`.
    - Para omitir el script: `SKIP_ENSURE_DOCKER=1 <comando>`.
    - Para bajar el stack y parar Colima: `pnpm run docker:down` o `npm run docker:down`.
-3. El Cartographer corre al iniciar e indexa una vez. mcp-falkorspec se ejecuta con stdio (para Cursor, configura el MCP apuntando al `node dist/index.js` del servicio mcp-falkorspec).
+3. El Cartographer corre al iniciar e indexa una vez. mcp-ariadne se ejecuta con stdio (para Cursor, configura el MCP apuntando al `node dist/index.js` del servicio mcp-ariadne).
 
 ## Documentación
 

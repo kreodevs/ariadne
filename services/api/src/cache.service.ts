@@ -7,9 +7,9 @@ import { createClient, RedisClientType } from 'redis';
 const TTL_IMPACT = 300;
 const TTL_COMPONENT = 300;
 const TTL_CONTRACT = 300;
-const PREFIX = 'falkorspecs:';
+const PREFIX = 'ariadnespecs:';
 
-/** Cache Redis con prefijo falkorspecs: para impact, component, contract. */
+/** Cache Redis con prefijo ariadnespecs: para impact, component, contract. */
 @Injectable()
 export class CacheService implements OnModuleDestroy {
   private redis: RedisClientType | null = null;
@@ -27,7 +27,7 @@ export class CacheService implements OnModuleDestroy {
 
   /**
    * Obtiene un valor del cache por clave (deserializado JSON). Devuelve null si no hay Redis o no existe.
-   * @param {string} key - Clave sin prefijo (se antepone falkorspecs:).
+   * @param {string} key - Clave sin prefijo (se antepone ariadnespecs:).
    * @returns {Promise<T | null>}
    */
   async get<T>(key: string): Promise<T | null> {

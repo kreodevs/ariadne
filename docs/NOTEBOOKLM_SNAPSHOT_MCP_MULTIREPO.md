@@ -15,13 +15,13 @@
 
 - `services/ingest/src/chat/chat-scope.util.ts` — filtros multi-root.
 - `services/ingest/src/chat/chat.service.ts` — pipeline unificado: scope, `retrieval_summary`, telemetría `pathGroundingRatio`; `getModificationPlan` con `scope`.
-- `services/mcp-falkorspec/src/index.ts` — `scope` / `twoPhase` en `ask_codebase` y `scope` en `get_modification_plan`.
+- `services/mcp-ariadne/src/index.ts` — `scope` / `twoPhase` en `ask_codebase` y `scope` en `get_modification_plan`.
 
 ## Documentación alineada (no exhaustiva)
 
 - `docs/plan_mcp_grounding_y_retrieval.md`, `docs/MCP_AYUDA.md`, `docs/mcp_server_specs.md`, `docs/CHAT_Y_ANALISIS.md`
 - Raíz: `AGENTS.md`; `frontend/public/AGENTS.md`, `frontend/public/mcp_server_specs.md`, `frontend/public/ayuda-mcp.md`
-- `.cursor/skills/falkorspecs-mcp/SKILL.md`, `services/mcp-falkorspec/README.md`
+- `.cursor/skills/ariadnespecs-mcp/SKILL.md`, `services/mcp-ariadne/README.md`
 
 ## Flujo recomendado para agentes
 

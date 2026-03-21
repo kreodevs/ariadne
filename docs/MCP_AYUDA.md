@@ -1,6 +1,6 @@
-# Ayuda — MCP FalkorSpecs
+# Ayuda — MCP AriadneSpecs
 
-Guía para configurar el MCP FalkorSpecs Oracle en Cursor. Permite a la IA consultar el grafo de FalkorDB **antes** de modificar código legacy, reduciendo alucinaciones y rupturas.
+Guía para configurar el MCP AriadneSpecs Oracle en Cursor. Permite a la IA consultar el grafo de FalkorDB **antes** de modificar código legacy, reduciendo alucinaciones y rupturas.
 
 **Entorno:** [ariadne.kreoint.mx](https://ariadne.kreoint.mx)
 
@@ -17,7 +17,7 @@ En Cursor: **Settings** → **MCP** → editar `~/.cursor/mcp.json`:
 ```json
 {
   "mcpServers": {
-    "falkorspecs": {
+    "ariadnespecs": {
       "url": "https://ariadne.kreoint.mx/mcp"
     }
   }
@@ -29,7 +29,7 @@ En Cursor: **Settings** → **MCP** → editar `~/.cursor/mcp.json`:
 ```json
 {
   "mcpServers": {
-    "falkorspecs": {
+    "ariadnespecs": {
       "url": "https://ariadne.kreoint.mx/mcp",
       "headers": {
         "Authorization": "Bearer m2m_xxx"
@@ -43,7 +43,7 @@ Sustituye `m2m_xxx` por el token que el admin te proporcione (creado en el panel
 
 Reiniciar Cursor. Listo.
 
-> En Dokploy, asegura que la ruta `/mcp` apunte al contenedor `mcp-falkorspec` (puerto **8080**).
+> En Dokploy, asegura que la ruta `/mcp` apunte al contenedor `mcp-ariadne` (puerto **8080**).
 
 ---
 
@@ -51,7 +51,7 @@ Reiniciar Cursor. Listo.
 
 | Caso | Config |
 |------|--------|
-| **Desarrollo local** (Ariadne en tu máquina) | Arrancar MCP: `PORT=8080 node services/mcp-falkorspec/dist/index.js` con env FALKORDB_HOST, INGEST_URL. Luego `url`: `http://localhost:8080/mcp` |
+| **Desarrollo local** (Ariadne en tu máquina) | Arrancar MCP: `PORT=8080 node services/mcp-ariadne/dist/index.js` con env FALKORDB_HOST, INGEST_URL. Luego `url`: `http://localhost:8080/mcp` |
 | **Producción + túnel SSH** | Igual que local, pero `INGEST_URL=https://ariadne.kreoint.mx` y crear túnel: `ssh -L 6379:127.0.0.1:6379 user@servidor` |
 
 ---
@@ -115,9 +115,9 @@ Contenido de `.ariadne-project`:
 
 > Si no existe `.ariadne-project`, la IA inferirá el proyecto por `currentFilePath` (archivo abierto), lo cual puede fallar si cambias de contexto.
 
-**Opcional — Skill Cursor (recomendado):** Copia la skill FalkorSpecs a tu usuario para que aplique en cualquier proyecto:
+**Opcional — Skill Cursor (recomendado):** Copia la skill AriadneSpecs a tu usuario para que aplique en cualquier proyecto:
 ```bash
-cp -r .cursor/skills/falkorspecs-mcp ~/.cursor/skills/
+cp -r .cursor/skills/ariadnespecs-mcp ~/.cursor/skills/
 ```
 La skill encapsula el protocolo completo y se activa cuando usas el MCP. Alternativa: reglas `.mdc` en `.cursor/rules/` del repo.
 
@@ -202,7 +202,7 @@ Ejemplos de qué pedirle a la IA en el chat para que use las herramientas del MC
 
 | Síntoma | Solución |
 |---------|----------|
-| `Unexpected token '<', "<!doctype "... is not valid JSON` | **Rutas no enrutadas al MCP.** Cursor pide `/mcp` y `/.well-known/oauth-*`; si van al frontend, recibe HTML. En Dokploy: añadir rutas path **`/mcp`** y **`/.well-known`** → servicio `mcp-falkorspec` puerto `8080`. Verificar: `curl -s https://ariadne.kreoint.mx/.well-known/oauth-authorization-server` → JSON, no HTML. |
+| `Unexpected token '<', "<!doctype "... is not valid JSON` | **Rutas no enrutadas al MCP.** Cursor pide `/mcp` y `/.well-known/oauth-*`; si van al frontend, recibe HTML. En Dokploy: añadir rutas path **`/mcp`** y **`/.well-known`** → servicio `mcp-ariadne` puerto `8080`. Verificar: `curl -s https://ariadne.kreoint.mx/.well-known/oauth-authorization-server` → JSON, no HTML. |
 | "Token M2M inválido" con token válido | **SSO_API_URL incorrecto.** Debe apuntar al API del SSO: `https://apisso.grupowib.com.mx/api/v1` (apisso), NO a `sso.grupowib.com.mx` (frontend). Si tienes SSO_JWKS_URI, el MCP lo usa como fallback; si no, define SSO_API_URL. APPLICATION_ID debe coincidir con la app en el panel SSO. |
 | "SSO rate limit (429)" | Demasiadas validaciones en poco tiempo. El MCP cachea tokens válidos 5 min (configurable con MCP_TOKEN_CACHE_TTL_SEC). Espera unos minutos o aumenta el límite en el SSO. |
 | "Connection refused" | Verificar que ariadne.kreoint.mx/mcp responda; revisar ruta en Dokploy |
@@ -214,4 +214,4 @@ Ejemplos de qué pedirle a la IA en el chat para que use las herramientas del MC
 
 ---
 
-[Skill FalkorSpecs](/ayuda/skills) · [Manual de uso](/ayuda/manual)
+[Skill AriadneSpecs](/ayuda/skills) · [Manual de uso](/ayuda/manual)

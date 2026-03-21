@@ -2,7 +2,7 @@
 
 **ID:** LL-CORE-001
 
-**IMJ Name:** FalkorSpecs
+**IMJ Name:** AriadneSpecs
 
 **Framework:** Spec-Driven Development (SDD) & Zero-Drift Engineering
 

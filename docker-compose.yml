@@ -4,7 +4,7 @@ services:
   falkordb:
     image: falkordb/falkordb:v4.0.1
     platform: linux/amd64
-    container_name: falkorspecs-db
+    container_name: ariadnespecs-db
     volumes:
       - falkordb_data:/data
     networks:
@@ -19,17 +19,17 @@ services:
   # Sin puertos expuestos: solo accesible desde contenedores de la red
   postgres:
     image: postgres:16-alpine
-    container_name: falkorspecs-postgres
+    container_name: ariadnespecs-postgres
     environment:
-      POSTGRES_USER: falkorspecs
-      POSTGRES_PASSWORD: falkorspecs
-      POSTGRES_DB: falkorspecs
+      POSTGRES_USER: ariadnespecs
+      POSTGRES_PASSWORD: ariadnespecs
+      POSTGRES_DB: ariadnespecs
     volumes:
       - postgres_data:/var/lib/postgresql/data
     networks:
       - falkor-net
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U falkorspecs -d falkorspecs"]
+      test: ["CMD-SHELL", "pg_isready -U ariadnespecs -d ariadnespecs"]
       interval: 5s
       timeout: 3s
       retries: 5
@@ -38,7 +38,7 @@ services:
   # Sin puertos expuestos: solo accesible desde contenedores de la red
   redis:
     image: redis:7-alpine
-    container_name: falkorspecs-redis
+    container_name: ariadnespecs-redis
     volumes:
       - redis_data:/data
     networks:
@@ -54,7 +54,7 @@ services:
     build:
       context: .
       dockerfile: ./services/cartographer/Dockerfile
-    container_name: falkorspecs-cartographer
+    container_name: ariadnespecs-cartographer
     volumes:
       - ./src:/app/src-to-analyze:ro # Monta tu código legacy como solo lectura
       - ./specs:/app/specs
@@ -126,15 +126,15 @@ services:
     build:
       context: .
       dockerfile: ./services/ingest/Dockerfile
-    container_name: falkorspecs-ingest
+    container_name: ariadnespecs-ingest
     environment:
       - PORT=3002
       - CORS_ORIGIN=${CORS_ORIGIN:-}
       - PGHOST=postgres
       - PGPORT=5432
-      - PGUSER=falkorspecs
-      - PGPASSWORD=falkorspecs
-      - PGDATABASE=falkorspecs
+      - PGUSER=ariadnespecs
+      - PGPASSWORD=ariadnespecs
+      - PGDATABASE=ariadnespecs
       - FALKORDB_HOST=falkordb
       - FALKORDB_PORT=6379
       - REDIS_URL=redis://redis:6379
@@ -163,10 +163,10 @@ services:
     build:
       context: .
       dockerfile: ./services/orchestrator/Dockerfile
-    container_name: falkorspecs-orchestrator
+    container_name: ariadnespecs-orchestrator
     environment:
       - PORT=3001
-      - FALKORSPEC_API_URL=http://api:3000/api
+      - ARIADNESPEC_API_URL=http://api:3000/api
     depends_on:
       api:
         condition: service_started
@@ -175,11 +175,11 @@ services:
 
   # Servidor MCP (El Oráculo). Streamable HTTP para producción (Dokploy).
   # Cursor/IA conecta por URL. Auth M2M opcional: MCP_AUTH_TOKEN.
-  mcp-falkorspec:
+  mcp-ariadne:
     build:
       context: .
-      dockerfile: ./services/mcp-falkorspec/Dockerfile
-    container_name: falkorspecs-mcp
+      dockerfile: ./services/mcp-ariadne/Dockerfile
+    container_name: ariadnespecs-mcp
     environment:
       - PORT=8080
       - FALKORDB_HOST=falkordb

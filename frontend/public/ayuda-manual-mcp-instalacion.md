@@ -1,6 +1,6 @@
-# Instalación del MCP FalkorSpecs para Cursor — Mantenimiento de Ariadne
+# Instalación del MCP AriadneSpecs para Cursor — Mantenimiento de Ariadne
 
-Documento de instalación y configuración del servidor MCP FalkorSpecs Oracle para dar mantenimiento al proyecto **Ariadne** con **Cursor** u otros IDEs compatibles con MCP.
+Documento de instalación y configuración del servidor MCP AriadneSpecs Oracle para dar mantenimiento al proyecto **Ariadne** con **Cursor** u otros IDEs compatibles con MCP.
 
 **Deployment:** Frontend [ariadne.kreoint.mx](https://ariadne.kreoint.mx) | Backend [apiariadne.kreoint.mx](https://apiariadne.kreoint.mx)
 
@@ -8,7 +8,7 @@ Documento de instalación y configuración del servidor MCP FalkorSpecs Oracle p
 
 ## 1. Resumen
 
-El MCP FalkorSpecs expone herramientas que permiten a la IA (Cursor, Antigravity, etc.) consultar el grafo de FalkorDB **antes** de modificar código legacy, reduciendo alucinaciones y rupturas. Incluye:
+El MCP AriadneSpecs expone herramientas que permiten a la IA (Cursor, Antigravity, etc.) consultar el grafo de FalkorDB **antes** de modificar código legacy, reduciendo alucinaciones y rupturas. Incluye:
 
 - **validate_before_edit** — Obligatorio antes de editar: impacto + contrato + endpoints de funciones.
 - **get_legacy_impact**, **get_contract_specs** — Impacto y props reales.
@@ -43,8 +43,8 @@ Infraestructura y servicios corriendo en tu máquina. El MCP usa **Streamable HT
 ```bash
 pnpm run dev:infra      # FalkorDB, Postgres, Redis
 pnpm run dev:ingest     # Ingest (puerto 3002)
-pnpm -C services/mcp-falkorspec build
-PORT=8080 node services/mcp-falkorspec/dist/index.js   # MCP en segundo plano
+pnpm -C services/mcp-ariadne build
+PORT=8080 node services/mcp-ariadne/dist/index.js   # MCP en segundo plano
 ```
 
 ---
@@ -152,7 +152,7 @@ Con el túnel activo, inicia el MCP localmente (en otra terminal):
 
 ```bash
 cd ariadne
-FALKORDB_HOST=localhost FALKORDB_PORT=6379 INGEST_URL=https://apiariadne.kreoint.mx PORT=8080 node services/mcp-falkorspec/dist/index.js
+FALKORDB_HOST=localhost FALKORDB_PORT=6379 INGEST_URL=https://apiariadne.kreoint.mx PORT=8080 node services/mcp-ariadne/dist/index.js
 ```
 
 Luego en Cursor usa la URL local:
@@ -160,7 +160,7 @@ Luego en Cursor usa la URL local:
 ```json
 {
   "mcpServers": {
-    "falkorspecs": {
+    "ariadnespecs": {
       "url": "http://localhost:8080/mcp"
     }
   }
@@ -182,8 +182,8 @@ cd ariadne
 
 ```bash
 pnpm install
-pnpm -C services/mcp-falkorspec install
-pnpm -C services/mcp-falkorspec build
+pnpm -C services/mcp-ariadne install
+pnpm -C services/mcp-ariadne build
 ```
 
 ### Paso 3: Configurar el MCP en Cursor
@@ -202,7 +202,7 @@ En Windows:
 %APPDATA%\Cursor\mcp.json
 ```
 
-### Paso 4: Añadir el servidor FalkorSpecs
+### Paso 4: Añadir el servidor AriadneSpecs
 
 Añadir esta entrada al JSON de MCP:
 
@@ -213,7 +213,7 @@ Previo: arrancar el MCP en tu máquina (`PORT=8080 node dist/index.js` con FALKO
 ```json
 {
   "mcpServers": {
-    "falkorspecs": {
+    "ariadnespecs": {
       "url": "http://localhost:8080/mcp"
     }
   }
@@ -224,7 +224,7 @@ Previo: arrancar el MCP en tu máquina (`PORT=8080 node dist/index.js` con FALKO
 ```json
 {
   "mcpServers": {
-    "falkorspecs": {
+    "ariadnespecs": {
       "url": "https://ariadne.kreoint.mx/mcp"
     }
   }
@@ -235,7 +235,7 @@ Previo: arrancar el MCP en tu máquina (`PORT=8080 node dist/index.js` con FALKO
 ```json
 {
   "mcpServers": {
-    "falkorspecs": {
+    "ariadnespecs": {
       "url": "https://ariadne.kreoint.mx/mcp",
       "headers": {
         "Authorization": "Bearer <tu-token-m2m>"
@@ -252,7 +252,7 @@ Previo: túnel SSH activo + arrancar el MCP con `FALKORDB_HOST=localhost`, `INGE
 ```json
 {
   "mcpServers": {
-    "falkorspecs": {
+    "ariadnespecs": {
       "url": "http://localhost:8080/mcp"
     }
   }
@@ -268,7 +268,7 @@ Cerrar y volver a abrir Cursor (o recargar la ventana) para que cargue el MCP.
 ### Paso 6: Verificar
 
 En el chat de Cursor, al pedir algo como:
-- "Lista los proyectos indexados en FalkorSpecs"
+- "Lista los proyectos indexados en AriadneSpecs"
 - "¿Qué impacto tiene modificar el componente X?"
 
 La IA debería poder invocar las herramientas del MCP. Si aparecen errores de conexión, revisar [Troubleshooting](#8-troubleshooting).
@@ -318,7 +318,7 @@ El MCP usa **Streamable HTTP** en todas las configuraciones (puerto 8080, path /
 | FALKORDB_HOST   | Host de FalkorDB                           | `localhost`    |
 | FALKORDB_PORT   | Puerto de FalkorDB                         | `6379`         |
 | INGEST_URL      | URL base del Ingest (get_file_content, etc.) | —           |
-| FALKORSPEC_INGEST_URL | Alias de INGEST_URL                    | = INGEST_URL   |
+| ARIADNESPEC_INGEST_URL | Alias de INGEST_URL                    | = INGEST_URL   |
 | MCP_AUTH_TOKEN  | Legacy: comparación estática Bearer (si SSO no configurado) | — |
 | SSO_API_URL     | Para validar M2M: URL base del API SSO (ej. `https://apisso.grupowib.com.mx/api/v1`). Si vacío, se infiere de SSO_JWKS_URI. | — |
 | APPLICATION_ID  | UUID de la app para `X-Application-Id` al validar con SSO | — |

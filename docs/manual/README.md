@@ -64,7 +64,7 @@ Levantar FalkorDB, PostgreSQL y Redis por tu cuenta (binarios o contenedores sue
 - **Ingest:** `cd services/ingest && npm run build && npm run start` (o `nest start --watch` en dev).
 - **API:** `cd services/api && npm run dev` (o `npm run start`).
 - **Orchestrator:** `cd services/orchestrator && npm run start` (o `nest start --watch`).
-- **MCP:** `cd services/mcp-falkorspec && npm run build && PORT=8080 node dist/index.js` (Streamable HTTP).
+- **MCP:** `cd services/mcp-ariadne && npm run build && PORT=8080 node dist/index.js` (Streamable HTTP).
 - **Frontend:** `cd frontend && npm run dev`.
 
 #### Variables de entorno por servicio

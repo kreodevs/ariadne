@@ -14,4 +14,4 @@ Antes de modificar cualquier componente React, función o clase en código legac
 4. Revisar el impacto (dependientes) antes de editar.
 5. Código actual: `get_file_content` con el path.
 
-No asumas firma ni estructura; consulta siempre al Oracle (MCP FalkorSpecs).
+No asumas firma ni estructura; consulta siempre al Oracle (MCP AriadneSpecs).

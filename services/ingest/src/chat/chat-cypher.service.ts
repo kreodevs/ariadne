@@ -20,6 +20,14 @@ export class ChatCypherService {
   /** Prefijos típicos de monorepos para muestreo estratificado (evita sesgo alfabético hacia apps/admin). */
   private static MONOREPO_PREFIXES = ['apps/admin', 'apps/api', 'apps/worker', 'apps/web', 'packages/'];
 
+  /** Resumen por projectId directo (multi-root). Usado por analyzeByProject. */
+  async getGraphSummaryForProject(projectId: string, full = false): Promise<{
+    counts: Record<string, number>;
+    samples: Record<string, unknown[]>;
+  }> {
+    return this.getGraphSummaryInternal(projectId, full);
+  }
+
   /** Resumen de lo indexado en FalkorDB. full=true devuelve todos los ítems (sin LIMIT); si no, muestras estratificadas por apps/ para monorepos. */
   async getGraphSummary(repositoryId: string, full = false): Promise<{
     counts: Record<string, number>;
@@ -27,6 +35,13 @@ export class ChatCypherService {
   }> {
     const repo = await this.repos.findOne(repositoryId);
     const projectId = await this.resolveProjectIdForRepo(repo.id);
+    return this.getGraphSummaryInternal(projectId, full);
+  }
+
+  private async getGraphSummaryInternal(projectId: string, full = false): Promise<{
+    counts: Record<string, number>;
+    samples: Record<string, unknown[]>;
+  }> {
 
     const config = getFalkorConfig();
     const client = await FalkorDB.connect({

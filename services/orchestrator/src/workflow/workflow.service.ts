@@ -71,7 +71,7 @@ export interface RefactorState {
   shadowCompareResult: ShadowCompareResult | null;
 }
 
-const apiBase = () => process.env.FALKORSPEC_API_URL ?? 'http://api:3000';
+const apiBase = () => process.env.ARIADNESPEC_API_URL ?? 'http://api:3000';
 
 async function validateImpact(state: RefactorState): Promise<Partial<RefactorState>> {
   try {

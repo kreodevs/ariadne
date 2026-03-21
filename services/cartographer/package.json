@@ -1,5 +1,5 @@
 {
-  "name": "falkorspecs-cartographer",
+  "name": "ariadnespecs-cartographer",
   "version": "1.0.0",
   "description": "Static analysis ingestor: Tree-sitter + FalkorDB graph producer",
   "type": "module",

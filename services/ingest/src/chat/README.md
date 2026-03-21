@@ -33,7 +33,8 @@ Patrones usados: **ReAct** (Thought→Action→Observation), **CoT** (análisis 
 - **`POST /repositories/:id/chat`** — Body: `{ message, history?, scope?, twoPhase? }` (`scope`: `repoIds`, `includePathPrefixes`, `excludePathGlobs`; `twoPhase` alinea con `CHAT_TWO_PHASE` en ingest)
 - **`POST /projects/:projectId/chat`** — Igual body (multi-root)
 - **`POST .../modification-plan`** — Body: `{ userDescription, scope? }`
-- **`POST /repositories/:id/analyze`** — Body: `{ mode: 'diagnostico'|'duplicados'|'reingenieria' }`
+- **`POST /repositories/:id/analyze`** — Body: `{ mode: 'diagnostico'|'duplicados'|'reingenieria'|'codigo_muerto'|'agents'|'skill' }`
+- **`POST /projects/:projectId/analyze`** — Body: `{ mode: 'agents'|'skill' }` — Genera AGENTS.md y SKILL.md por proyecto (multi-root)
 - **`GET /repositories/:id/graph-summary`** — Conteos y muestras de nodos
 
 **Requisitos:** `OPENAI_API_KEY`, `CHAT_MODEL` opcional (default `gpt-4o-mini`).

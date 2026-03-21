@@ -16,5 +16,5 @@
 .tmp
 .cache
 
-# Otros servicios (solo necesitamos frontend, mcp-falkorspec, docs)
+# Otros servicios (solo necesitamos frontend, mcp-ariadne, docs)
 # Se incluye todo pero se excluye lo pesado de arriba

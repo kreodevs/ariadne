@@ -12,9 +12,9 @@ const ROOT = path.resolve(__dirname, '..');
 const LOCAL_ENV = {
   PGHOST: 'localhost',
   PGPORT: '5432',
-  PGUSER: 'falkorspecs',
-  PGPASSWORD: 'falkorspecs',
-  PGDATABASE: 'falkorspecs',
+  PGUSER: 'ariadnespecs',
+  PGPASSWORD: 'ariadnespecs',
+  PGDATABASE: 'ariadnespecs',
   FALKORDB_HOST: 'localhost',
   FALKORDB_PORT: '6379',
   REDIS_URL: 'redis://localhost:6380',

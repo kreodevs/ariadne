@@ -42,7 +42,7 @@ Proyecto en la raíz del repo (`frontend/`), independiente de `services/`. UI pa
 - `/credentials/new` — Alta de credencial.
 - `/credentials/:id/edit` — Editar credencial: nombre, valor (token/password) y usuario para app_password (`PATCH /credentials/:id`).
 - `/error` — Página de error genérica.
-- `/ayuda` — Ayuda con 3 subsecciones (navegación in-app, sin descargar): **MCP** (`docs/MCP_AYUDA.md`), **Skills** (Skill FalkorSpecs), **Manual de uso** (`docs/manual/README.md`).
+- `/ayuda` — Ayuda con 3 subsecciones (navegación in-app, sin descargar): **MCP** (`docs/MCP_AYUDA.md`), **Skills** (Skill AriadneSpecs), **Manual de uso** (`docs/manual/README.md`).
 
 ## Docker
 

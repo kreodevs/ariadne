@@ -1,10 +1,10 @@
 /**
- * OpenAPI 3.1 spec - FalkorSpecs Graph API (constitution Módulo 3).
+ * OpenAPI 3.1 spec - AriadneSpecs Graph API (constitution Módulo 3).
  */
 export const openApiSpec = {
   openapi: "3.1.0",
   info: {
-    title: "FalkorSpecs Graph API",
+    title: "AriadneSpecs Graph API",
     description: "API de consulta al grafo de conocimiento estructural. Módulo 3 (constitution).",
     version: "1.0.0",
   },
@@ -137,7 +137,7 @@ export const openApiSpec = {
         operationId: "getGraphCompare",
         summary: "Comparar componente: main vs shadow",
         description:
-          "Tras indexar código propuesto en shadow (POST /graph/shadow), compara props del componente en FalkorSpecs vs FalkorSpecsShadow.",
+          "Tras indexar código propuesto en shadow (POST /graph/shadow), compara props del componente en AriadneSpecs vs AriadneSpecsShadow.",
         parameters: [
           { name: "componentName", in: "path", required: true, schema: { type: "string" } },
         ],
@@ -176,7 +176,7 @@ export const openApiSpec = {
         operationId: "postGraphShadow",
         summary: "Indexar código propuesto en grafo shadow",
         description:
-          "Proxy al Cartographer: indexa archivos en memoria en FalkorSpecsShadow (body.files: [{ path, content }]).",
+          "Proxy al Cartographer: indexa archivos en memoria en AriadneSpecsShadow (body.files: [{ path, content }]).",
         requestBody: {
           required: true,
           content: {

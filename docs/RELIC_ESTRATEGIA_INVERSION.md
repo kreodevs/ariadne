@@ -1,6 +1,6 @@
 # Ariadne — Documentación estratégica para inversión
 
-Filtro de valor ejecutivo. Proyecto: **Ariadne** (ariadne-ai-scout / FalkorSpecs).
+Filtro de valor ejecutivo. Proyecto: **Ariadne** (ariadne-ai-scout / AriadneSpecs).
 
 ---
 

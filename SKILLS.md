@@ -13,7 +13,7 @@ Referencia de skills y protocolos que **todos los devs** deben seguir al trabaja
 
 | Skill | Cuándo usar | Ubicación |
 |-------|-------------|-----------|
-| **falkorspecs-mcp** | Siempre en código legacy: diagnósticos, refactors, análisis de impacto, validación antes de editar | `.cursor/skills/falkorspecs-mcp/` |
+| **ariadnespecs-mcp** | Siempre en código legacy: diagnósticos, refactors, análisis de impacto, validación antes de editar | `.cursor/skills/ariadnespecs-mcp/` |
 
 ---
 

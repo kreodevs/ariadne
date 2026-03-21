@@ -106,8 +106,14 @@ export const api = {
       body: JSON.stringify({ projectId }),
     }),
 
-  analyze: (repoId: string, mode: 'diagnostico' | 'duplicados' | 'reingenieria' | 'codigo_muerto') =>
+  analyze: (repoId: string, mode: 'diagnostico' | 'duplicados' | 'reingenieria' | 'codigo_muerto' | 'agents' | 'skill') =>
     request<{ mode: string; summary: string; details?: unknown }>(`/repositories/${repoId}/analyze`, {
+      method: 'POST',
+      body: JSON.stringify({ mode }),
+    }),
+
+  analyzeProject: (projectId: string, mode: 'agents' | 'skill') =>
+    request<{ mode: string; summary: string; details?: unknown }>(`/projects/${projectId}/analyze`, {
       method: 'POST',
       body: JSON.stringify({ mode }),
     }),

@@ -9,7 +9,7 @@ El **frontend** (UI admin del ingest) es un proyecto independiente en la raíz d
 | **api**        | 3000 | API REST (OpenAPI 3.1): `/graph/impact`, `/graph/component`, `/graph/contract`, `/graph/compare`, proxy a shadow. |
 | **ingest**     | 3002 | Ingesta por Bitbucket: repos, full sync, webhook `POST /webhooks/bitbucket`. NestJS + TypeORM + PostgreSQL + FalkorDB. |
 | **orchestrator** | 3001 | Orquestador NestJS + LangGraph. |
-| **mcp-falkorspec** | — | Servidor MCP (stdio). Consultas al grafo para IA. |
+| **mcp-ariadne** | — | Servidor MCP (stdio). Consultas al grafo para IA. |
 
 Infra (docker-compose): **falkordb** (6379), **postgres** (5432), **redis** (6380 en host).
 

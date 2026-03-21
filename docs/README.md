@@ -1,6 +1,6 @@
 # Docs Ariadne
 
-- **INSTALACION_MCP_CURSOR.md** — Instalación del MCP FalkorSpecs para Cursor.
+- **INSTALACION_MCP_CURSOR.md** — Instalación del MCP AriadneSpecs para Cursor.
 - **MCP_AYUDA.md** — Ayuda resumida: instalación, escenarios, herramientas, troubleshooting. Se muestra en la sección Ayuda del frontend.
 - **DEPLOYMENT_DOKPLOY.md** — Deployment en Dokploy (apiariadne.kreoint.mx / ariadne.kreoint.mx).
 - **manual/README.md** — Manual de uso y validación (puesta en marcha, uso por componente, tests y comprobación).

@@ -27,12 +27,16 @@ const ANALYSIS_MODE_LABELS: Record<string, string> = {
   duplicados: 'Duplicados',
   reingenieria: 'Reingeniería',
   codigo_muerto: 'Código muerto',
+  agents: 'AGENTS',
+  skill: 'SKILL',
 };
 const ANALYSIS_RESULT_TITLES: Record<string, string> = {
   diagnostico: 'Deuda técnica',
   duplicados: 'Código duplicado',
   codigo_muerto: 'Código muerto',
   reingenieria: 'Reingeniería',
+  agents: 'AGENTS.md',
+  skill: 'SKILL.md',
 };
 
 /**
@@ -64,7 +68,7 @@ export function RepoChat() {
   }, [id]);
 
   const runAnalysis = useCallback(
-    (mode: 'diagnostico' | 'duplicados' | 'reingenieria' | 'codigo_muerto') => {
+    (mode: 'diagnostico' | 'duplicados' | 'reingenieria' | 'codigo_muerto' | 'agents' | 'skill') => {
       if (!id) return;
       setLoadingAnalysis(mode);
       setAnalysisError(null);
@@ -219,6 +223,24 @@ export function RepoChat() {
               disabled={!!loadingAnalysis}
             >
               {loadingAnalysis === 'codigo_muerto' ? '…' : 'Código muerto'}
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => runAnalysis('agents')}
+              disabled={!!loadingAnalysis}
+              title="Genera AGENTS.md para agentes AI (protocolo, herramientas, flujos)"
+            >
+              {loadingAnalysis === 'agents' ? '…' : 'AGENTS'}
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => runAnalysis('skill')}
+              disabled={!!loadingAnalysis}
+              title="Genera SKILL.md para Cursor/Claude (instrucciones, ejemplos, troubleshooting)"
+            >
+              {loadingAnalysis === 'skill' ? '…' : 'SKILL'}
             </Button>
             <Button
               variant="outline"

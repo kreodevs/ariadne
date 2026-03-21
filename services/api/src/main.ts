@@ -39,7 +39,7 @@ async function bootstrap() {
 
   const port = parseInt(process.env.PORT ?? '3000', 10);
   await app.listen(port);
-  console.log(`FalkorSpecs API (NestJS + OpenAPI 3.1) listening on port ${port}`);
+  console.log(`AriadneSpecs API (NestJS + OpenAPI 3.1) listening on port ${port}`);
 }
 
 bootstrap().catch((err) => {

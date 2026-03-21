@@ -76,8 +76,8 @@ Si está vacío, se permite cualquier origen (adecuado para desarrollo).
 El MCP usa **Streamable HTTP** en el puerto 8080. FalkorDB e Ingest están en la red interna. **No hace falta túnel SSH.**
 
 1. **En Dokploy** (Domains / Rutas): añadir **dos rutas** para que Cursor funcione:
-   - Path **`/mcp`** (o prefix `/mcp`) → servicio **mcp-falkorspec**, puerto **8080** — conexión MCP
-   - Path **`/.well-known`** (o prefix) → servicio **mcp-falkorspec**, puerto **8080** — discovery OAuth (Cursor pide esto antes de conectar)
+   - Path **`/mcp`** (o prefix `/mcp`) → servicio **mcp-ariadne**, puerto **8080** — conexión MCP
+   - Path **`/.well-known`** (o prefix) → servicio **mcp-ariadne**, puerto **8080** — discovery OAuth (Cursor pide esto antes de conectar)
    - Orden: rutas más específicas primero. Sin esto, `/mcp` devuelve HTML (SPA) → error "Unexpected token '<'"
 2. **Variables**: `MCP_AUTH_TOKEN` (opcional) — si se define, la IA debe enviar `Authorization: Bearer <token>`.
 3. **Cursor** (`~/.cursor/mcp.json`):
@@ -85,7 +85,7 @@ El MCP usa **Streamable HTTP** en el puerto 8080. FalkorDB e Ingest están en la
 ```json
 {
   "mcpServers": {
-    "falkorspecs": {
+    "ariadnespecs": {
       "url": "https://ariadne.kreoint.mx/mcp"
     }
   }
@@ -97,7 +97,7 @@ Con auth M2M (si `MCP_AUTH_TOKEN` está definido en el servidor):
 ```json
 {
   "mcpServers": {
-    "falkorspecs": {
+    "ariadnespecs": {
       "url": "https://ariadne.kreoint.mx/mcp",
       "headers": {
         "Authorization": "Bearer <tu-token-m2m>"
