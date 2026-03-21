@@ -303,6 +303,16 @@ curl -X POST http://localhost:3002/repositories \
 
 Requieren `OPENAI_API_KEY`. Ver [CHAT_Y_ANALISIS.md](../CHAT_Y_ANALISIS.md) para detalles.
 
+#### Monorepos: prefijos para muestreo estratificado
+
+Si tu repo es un monorepo con `apps/admin`, `apps/api`, `apps/worker`, el chat usa muestreo estratificado para que las respuestas incluyan frontend y backend. Si usas otra estructura (ej. `packages/frontend`, `packages/backend`), amplía la lista de prefijos en `services/ingest/src/chat/chat-cypher.service.ts`:
+
+```typescript
+private static MONOREPO_PREFIXES = ['apps/admin', 'apps/api', 'apps/worker', 'apps/web', 'packages/', 'packages/frontend', 'packages/backend'];
+```
+
+Añade tus prefijos según la estructura de tu repo. Ver [services/ingest/src/chat/README.md](../../services/ingest/src/chat/README.md).
+
 ### 2.4 Consultas a la API (api service)
 
 | Recurso | Método | Descripción |

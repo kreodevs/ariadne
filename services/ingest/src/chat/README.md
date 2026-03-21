@@ -40,6 +40,16 @@ Patrones usados: **ReAct** (Thought→Action→Observation), **CoT** (análisis 
 
 **Grounding (pipeline unificado `runUnifiedPipeline`):** el Synthesizer exige sección **## Evidencia** cuando se citan rutas; sin datos en contexto → mensaje **sin datos en índice para este alcance**. Fase 1→2: bloque JSON `retrieval_summary` antes del contexto bruto (`CHAT_TWO_PHASE`, desactivar con `0|false|off`). Filtros multi-root: `chat-scope.util.ts`. Telemetría: `CHAT_TELEMETRY_LOG=1` (incluye ratio de paths en respuesta presentes en retrieval). Plan de modificación: tope `MODIFICATION_PLAN_MAX_FILES` (default 150).
 
+**Monorepos (apps/admin, apps/api, apps/worker):** `get_graph_summary` usa muestreo estratificado por prefijo; el prompt del retriever indica explorar NestController, NestService y todas las apps.
+
+**Otra estructura de monorepo:** Si no usas `apps/` sino, por ejemplo, `packages/frontend` y `packages/backend`, se puede ampliar la lista de prefijos en `chat-cypher.service.ts`:
+
+```typescript
+private static MONOREPO_PREFIXES = ['apps/admin', 'apps/api', 'apps/worker', 'apps/web', 'packages/', 'packages/frontend', 'packages/backend'];
+```
+
+Añade tus prefijos según la estructura de tu repo.
+
 ## Flujo del Chat
 
 1. **Coordinator** clasifica con LLM → `code_analysis` | `knowledge_extraction` | `explorer`
