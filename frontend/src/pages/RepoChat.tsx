@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import { MarkdownBlock } from '@/components/MarkdownBlock';
 import { api } from '../api';
 import type { Repository } from '../types';
 import { Button } from '@/components/ui/button';
@@ -276,38 +277,8 @@ export function RepoChat() {
                     analysisResult.mode === 'codigo_muerto' ? 'max-h-[75vh]' : 'max-h-[50vh]'
                   }`}
                 >
-                  <ReactMarkdown
-                    remarkPlugins={[remarkGfm]}
-                    children={typeof analysisResult.summary === 'string' ? analysisResult.summary : String(analysisResult.summary ?? '')}
-                    components={{
-                      p: ({ children }) => (children ? <p className="mb-1 last:mb-0">{children}</p> : null),
-                      ul: ({ children }) => <ul className="list-disc pl-4 my-1">{children}</ul>,
-                      ol: ({ children }) => <ol className="list-decimal pl-4 my-1">{children}</ol>,
-                      strong: ({ children }) => <strong className="font-semibold">{children}</strong>,
-                      h2: ({ children }) => <h2 className="text-base font-semibold mt-4 mb-2">{children}</h2>,
-                      h3: ({ children }) => <h3 className="text-sm font-medium mt-3 mb-1">{children}</h3>,
-                      table: ({ children }) => (
-                        <div className="overflow-x-auto my-2">
-                          <table className="w-full text-xs border-collapse">{children}</table>
-                        </div>
-                      ),
-                      th: ({ children }) => (
-                        <th className="px-2 py-1 border bg-muted/80 font-medium text-left">{children}</th>
-                      ),
-                      td: ({ children }) => <td className="px-2 py-1 border">{children}</td>,
-                      code: ({ className, children, ...props }) => {
-                        const isBlock = className?.includes('language-');
-                        return isBlock ? (
-                          <pre className="my-2 rounded bg-muted p-2 text-xs font-mono overflow-x-auto">
-                            <code {...props}>{children}</code>
-                          </pre>
-                        ) : (
-                          <code className="rounded bg-muted px-1 py-0.5 text-xs font-mono" {...props}>
-                            {children}
-                          </code>
-                        );
-                      },
-                    }}
+                  <MarkdownBlock
+                    content={typeof analysisResult.summary === 'string' ? analysisResult.summary : String(analysisResult.summary ?? '')}
                   />
                 </div>
               </CardContent>

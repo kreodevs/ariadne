@@ -23,6 +23,7 @@ Componentes basados en el registro Kreo con tema corporate/luxury (negro, carbó
 
 ## Otros
 
+- **MarkdownBlock** — Renderiza markdown a HTML (marked + DOMPurify). Usado en diagnósticos y reingeniería.
 - **StatusBadge** — Badge de estado para jobs/repos (pending, running, completed, error).
 - **ProtectedRoute** — Wrapper para rutas que requieren autenticación.
 - **DocViewer** — Visor de documentación markdown.
