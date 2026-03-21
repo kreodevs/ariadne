@@ -1122,9 +1122,15 @@ PROHIBIDO: instrucciones genéricas tipo "revisa los controladores", "asegúrate
   }
 
   /**
-   * Análisis por proyecto (multi-root). Usa projectId para consultar el grafo.
+   * Análisis por proyecto (multi-root) o repo standalone. Acepta projectId o repoId (roots[].id de list_known_projects).
    */
   async analyzeByProject(projectId: string, mode: 'agents' | 'skill'): Promise<AnalyzeResult> {
+    const maybeRepo = await this.repos.findOptionalById(projectId);
+    if (maybeRepo) {
+      const displayName = `${maybeRepo.projectKey}/${maybeRepo.repoSlug}`;
+      if (mode === 'agents') return this.analyzeAgents(projectId, displayName);
+      return this.analyzeSkill(projectId, displayName);
+    }
     const project = await this.projects.findOne(projectId);
     const displayName =
       project.name ||
@@ -1623,8 +1629,13 @@ PROHIBIDO: instrucciones genéricas tipo "revisa los controladores", "asegúrate
    * @returns {Promise<ChatResponse>} answer, cypher y result.
    */
   async chatByProject(projectId: string, req: ChatRequest): Promise<ChatResponse> {
-    const repos = await this.repos.findAll(projectId);
+    let repos = await this.repos.findAll(projectId);
     if (repos.length === 0) {
+      // Puede ser un repo standalone (id de list_known_projects cuando no hay proyectos)
+      const maybeRepo = await this.repos.findOptionalById(projectId);
+      if (maybeRepo) {
+        return this.chat(projectId, req);
+      }
       return { answer: 'Este proyecto no tiene repositorios indexados. Añade al menos un repo y haz sync.' };
     }
     const firstRepoId = repos[0].id;

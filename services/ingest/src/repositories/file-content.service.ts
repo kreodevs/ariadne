@@ -102,14 +102,18 @@ export class FileContentService {
   }
 
   /**
-   * Obtiene el contenido de un archivo buscando en todos los repos del proyecto (multi-root).
-   * Prueba cada repo hasta que uno devuelva contenido. Útil para chat por proyecto.
-   * @param {string} projectId - ID del proyecto.
+   * Obtiene el contenido de un archivo buscando en todos los repos del proyecto (multi-root) o en un repo standalone.
+   * Acepta projectId o repoId (roots[].id de list_known_projects).
+   * @param {string} projectId - ID del proyecto o del repositorio (standalone).
    * @param {string} path - Ruta del archivo (relativa al repo).
    * @returns {Promise<string | null>} Contenido del archivo o null si no existe en ningún repo.
    */
   async getFileContentSafeByProject(projectId: string, path: string): Promise<string | null> {
-    const repos = await this.repos.findAll(projectId);
+    let repos = await this.repos.findAll(projectId);
+    if (repos.length === 0) {
+      const maybeRepo = await this.repos.findOptionalById(projectId);
+      if (maybeRepo) repos = [maybeRepo];
+    }
     for (const repo of repos) {
       const content = await this.getFileContentSafe(repo.id, path);
       if (content != null) return content;
