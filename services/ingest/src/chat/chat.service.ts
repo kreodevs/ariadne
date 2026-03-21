@@ -1036,14 +1036,27 @@ Estructura OBLIGATORIA (reflejar el diagnóstico):
 
     const systemPrompt = `Eres experto en protocolos para agentes AI (Cursor, Claude, MCP). Genera un archivo AGENTS.md en formato Markdown para este proyecto.
 
-Estructura obligatoria (basada en Model Context Protocol Handbook):
-1. **Protocolo de sesión** — Al iniciar: ejecutar list_known_projects; verificar projectId; usar .ariadne-project si existe.
-2. **Preferencia projectId** — Fijar proyecto; cuando no hay .ariadne-project, pasar projectId explícito; excepciones para get_project_analysis (roots[].id).
-3. **Herramientas por intención** — Tabla: Intención | Herramienta MCP | Flujo. Adapta las intenciones a los componentes/rutas del proyecto mostrado (Components, Routes, Functions, NestController, etc.).
-4. **Flujo SDD (Spec-Driven Development)** — validate_before_edit, get_legacy_impact, no inventar props.
+**HERRAMIENTAS MCP REALES (solo estas existen; NO inventes create_component, create_route, etc.):**
+- list_known_projects — Lista proyectos y roots.
+- get_component_graph, get_legacy_impact, get_definitions, get_references — Diagnóstico de archivo/componente/hook.
+- get_project_analysis — Diagnóstico por repo (mode: diagnostico, duplicados, reingenieria, codigo_muerto).
+- ask_codebase — Preguntas NL sobre el codebase.
+- get_modification_plan — Archivos a modificar + preguntas de afinación.
+- semantic_search, find_similar_implementations — Búsqueda por término.
+- validate_before_edit — Antes de editar componente/función.
+- get_file_content, get_file_context — Contenido y contexto de archivo.
+- get_project_standards — Estándares del proyecto.
+- check_breaking_changes — Verificar cambios rompedores.
+- analyze_local_changes — Revisión pre-commit de cambios en stage.
+
+Estructura obligatoria:
+1. **Protocolo de sesión** — list_known_projects al inicio; verificar projectId; .ariadne-project si existe.
+2. **Preferencia projectId** — Fijar proyecto; excepciones: get_project_analysis usa roots[].id.
+3. **Herramientas por intención** — Tabla con TODAS las herramientas de la lista anterior. Intención | Herramienta MCP | Flujo. Usa intenciones reales (diagnóstico, refactor, preguntas NL, plan de modificación, etc.) y mapea a las herramientas reales. Incluye ejemplos de paths/componentes del proyecto en la columna Flujo.
+4. **Flujo SDD** — validate_before_edit, get_legacy_impact, no inventar props.
 5. **Flujo de refactorización** — semantic_search, get_definitions, get_references, validate_before_edit.
 
-Deriva TODO de los datos del contexto (conteos, muestras). Incluye rutas y nombres reales del proyecto. Salida SOLO markdown, sin explicaciones previas.`;
+OBLIGATORIO: la tabla debe tener al menos 10 filas cubriendo las herramientas listadas. Deriva paths y nombres del contexto. Salida SOLO markdown.`;
 
     const answer = await this.llm.callLlm(
       [{ role: 'system', content: systemPrompt }, { role: 'user', content: context }],
@@ -1060,22 +1073,28 @@ Deriva TODO de los datos del contexto (conteos, muestras). Incluye rutas y nombr
     const summary = await this.cypher.getGraphSummaryForProject(projectId);
     const context = `Proyecto/repo: ${displayName}\nConteos: ${JSON.stringify(summary.counts)}\nMuestras: ${JSON.stringify(summary.samples).slice(0, 4000)}`;
 
-    const systemPrompt = `Eres experto en SKILL.md para agentes AI (Cursor, Claude). Genera un archivo SKILL.md en formato Markdown para este proyecto.
+    const safeName = displayName.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '').slice(0, 40) || 'project';
+    const systemPrompt = `Eres experto en SKILL.md para agentes AI (Cursor, Claude). Genera un SKILL que enseñe a usar el MCP AriadneSpecs Oracle sobre este proyecto.
 
-Estructura obligatoria (Model Context Protocol Handbook):
-1. **YAML frontmatter** (al inicio, entre ---):
-   - name: kebab-case (ej. ${displayName.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '')}-analysis)
-   - description: qué hace y frases trigger (sin XML, máx 1024 chars)
+**HERRAMIENTAS MCP (el skill debe referenciar estas):** list_known_projects, get_component_graph, get_legacy_impact, get_definitions, get_references, get_project_analysis (modes: diagnostico, duplicados, reingenieria, codigo_muerto), ask_codebase, get_modification_plan, semantic_search, find_similar_implementations, validate_before_edit, get_file_content, get_file_context, get_project_standards, check_breaking_changes, analyze_local_changes.
 
-2. **# Nombre del Skill** — Título
+Estructura obligatoria:
+1. **YAML frontmatter** entre ---:
+   - name: ${safeName}-ariadne-specs
+   - description: "Usa MCP AriadneSpecs para [propósito del proyecto]. Frases trigger: 'diagnóstico de X', 'analizar componente Y', 'impacto de Z', 'refactor de W'." (sin XML, máx 1024 chars)
 
-3. **## Instructions** — Pasos concretos: qué herramientas MCP usar, qué consultar, qué validar. Referencia rutas y componentes del proyecto.
+2. **# Título** — Nombre del skill
 
-4. **## Examples** — 2-3 escenarios: "User says: ..." → "Actions: ..." → "Result: ..."
+3. **## Instructions** — Pasos que OBLIGATORIAMENTE incluyan llamadas a herramientas MCP. Ejemplo: "1. list_known_projects para obtener projectId. 2. Para diagnóstico de componente X: get_component_graph(X), get_legacy_impact(X), get_definitions/get_references. 3. Antes de editar: validate_before_edit. 4. Preguntas NL: ask_codebase." Incluye componentes/rutas reales del contexto en los ejemplos.
 
-5. **## Troubleshooting** — Errores típicos: NOT_FOUND_IN_GRAPH, MCP no responde, projectId incorrecto — causas y soluciones.
+4. **## Examples** — 2-4 escenarios donde el USUARIO pide algo y el AGENTE USA HERRAMIENTAS MCP (no llamar funciones del código). Formato:
+   - User says: "diagnóstico de [componente del proyecto]"
+   - Actions: list_known_projects → get_component_graph([nombre]) → get_legacy_impact([nombre]) → get_definitions
+   - Result: [qué obtiene el agente]
 
-Deriva TODO de los datos. Incluye paths y nombres reales. Salida SOLO markdown con frontmatter, sin texto previo.`;
+5. **## Troubleshooting** — NOT_FOUND_IN_GRAPH (reindexar o verificar nombre), MCP no responde (INGEST_URL, servicios), projectId incorrecto (usar roots[].id para get_project_analysis).
+
+PROHIBIDO: instrucciones genéricas tipo "revisa los controladores", "asegúrate de que estén configurados". El skill debe enseñar a USAR las herramientas MCP. Salida SOLO markdown.`;
 
     const answer = await this.llm.callLlm(
       [{ role: 'system', content: systemPrompt }, { role: 'user', content: context }],
