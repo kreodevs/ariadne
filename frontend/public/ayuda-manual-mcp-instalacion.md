@@ -318,7 +318,7 @@ El MCP usa **Streamable HTTP** en todas las configuraciones (puerto 8080, path /
 | FALKORDB_HOST   | Host de FalkorDB                           | `localhost`    |
 | FALKORDB_PORT   | Puerto de FalkorDB                         | `6379`         |
 | INGEST_URL      | URL base del Ingest (get_file_content, etc.) | —           |
-| ARIADNESPEC_INGEST_URL | Alias de INGEST_URL                    | = INGEST_URL   |
+| FALKORSPEC_INGEST_URL | Alias de INGEST_URL                    | = INGEST_URL   |
 | MCP_AUTH_TOKEN  | Token estático Bearer: si está definido, exige `Authorization: Bearer <token>` o `X-M2M-Token` | — |
 
 ---

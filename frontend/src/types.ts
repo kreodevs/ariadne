@@ -17,6 +17,8 @@ export interface Repository {
   lastCommitSha?: string | null;
   status: RepositoryStatus;
   projectId?: string | null;
+  /** IDs de proyectos a los que pertenece (vía project_repositories). Vacío = usa id como projectId en MCP. */
+  projectIds?: string[];
   createdAt: string;
   updatedAt: string;
 }

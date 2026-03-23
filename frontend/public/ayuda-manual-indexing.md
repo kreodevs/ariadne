@@ -1,4 +1,4 @@
-**Proyecto:** Ariadne (Comercial) / FalkorSpecs (Interno)
+**Proyecto:** Ariadne (Comercial) / AriadneSpecs (Interno)
 **Estado:** Definición Técnica
 **Stack:** Node.js, TypeScript, Tree-sitter, FalkorDB
 

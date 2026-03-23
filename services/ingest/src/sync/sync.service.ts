@@ -201,7 +201,8 @@ export class SyncService {
       projectIds = [options.onlyProjectId];
     } else {
       const projectIdsFromJunction = await this.repos.getProjectIdsForRepo(repositoryId);
-      projectIds = [repoId, ...projectIdsFromJunction];
+      projectIds =
+        projectIdsFromJunction.length > 0 ? projectIdsFromJunction : [repoId];
     }
 
     const hasCreds =

@@ -87,7 +87,7 @@ Relaciones: `(File)-[:CONTAINS]->(StrapiContentType|StrapiController|StrapiServi
 
 ### 2. Consultas Cypher para la Ingesta (Scanner)
 
-Cuando el Scanner (usando Tree-sitter) procesa un archivo, ejecutará estas consultas en **FalkorSpecs**:
+Cuando el Scanner (usando Tree-sitter) procesa un archivo, ejecutará estas consultas en **AriadneSpecs**:
 
 ### A. Crear Relación de Importación
 
@@ -145,7 +145,7 @@ Usada por la API `GET /graph/contract/:componentName` y por la herramienta MCP `
 
 ### 4. Implementación en el Backend (FalkorDB + Node.js)
 
-En tu servicio de **FalkorSpecs**, la conexión se vería simplificada así:
+En tu servicio de **AriadneSpecs**, la conexión se vería simplificada así:
 
 ```tsx
 // Ejemplo conceptual de guardado de relación
@@ -155,7 +155,7 @@ async function saveDependency(caller, callee) {
     MERGE (f2:Component {name: '${callee}'})
     MERGE (f1)-[:CALLS]->(f2)
   `;
-  await falkorClient.selectGraph("FalkorSpecs").query(query);
+  await falkorClient.selectGraph("AriadneSpecs").query(query);
 }
 ```
 

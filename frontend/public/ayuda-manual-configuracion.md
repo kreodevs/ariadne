@@ -1,4 +1,4 @@
-# Manual de Configuración y Uso — Ariadne / FalkorSpecs
+# Manual de Configuración y Uso — Ariadne / AriadneSpecs
 
 Guía completa para configurar y usar el sistema: variables de entorno, credenciales, puesta en marcha, flujos de trabajo y consultas.
 

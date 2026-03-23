@@ -128,7 +128,8 @@ export class WebhooksService {
       const graphClient = { query: (cypher: string) => graph.query(cypher) };
 
       const projectIdsFromJunction = await this.repos.getProjectIdsForRepo(repo.id);
-      const allProjectIds = [repo.id, ...projectIdsFromJunction];
+      const allProjectIds =
+        projectIdsFromJunction.length > 0 ? projectIdsFromJunction : [repo.id];
       const repoId = repo.id;
       const projectName = `${repo.projectKey}/${repo.repoSlug}`;
       for (const projectId of allProjectIds) {

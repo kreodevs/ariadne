@@ -90,7 +90,17 @@ export class RepositoriesController {
   }
 
   @Get(':id')
-  findOne(@Param('id') id: string) {
-    return this.service.findOne(id);
+  async findOne(@Param('id') id: string) {
+    return this.service.findOneWithProjectIds(id);
+  }
+
+  /** Regenera el Project ID cuando coincide con el Repository ID (sin perder datos). */
+  @Post(':id/regenerate-project-id')
+  async regenerateProjectId(@Param('id') id: string) {
+    const result = await this.service.regenerateProjectIdIfColliding(id);
+    if (!result) {
+      return { regenerated: false, message: 'Project ID y Repository ID ya son distintos.' };
+    }
+    return { regenerated: true, newProjectId: result.newProjectId };
   }
 }

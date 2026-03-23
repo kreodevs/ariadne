@@ -1,19 +1,19 @@
-# Manual de uso y validación — Ariadne / FalkorSpecs
+# Manual de uso y validación — Ariadne / AriadneSpecs
 
-Este manual describe cómo poner en marcha, usar y validar el monorepo Ariadne (FalkorSpecs): ingesta de repositorios, API de grafo, orquestador, servidor MCP y frontend de administración.
+Este manual describe cómo poner en marcha, usar y validar el monorepo Ariadne (AriadneSpecs): ingesta de repositorios, API de grafo, orquestador, servidor MCP y frontend de administración.
 
 > **Configuración detallada:** Para variables de entorno, credenciales (Bitbucket/GitHub), webhook, MCP y troubleshooting, ver [CONFIGURACION_Y_USO.md](CONFIGURACION_Y_USO.md).
 
 ## 1. Introducción y arquitectura mínima
 
-**Ariadne / FalkorSpecs** mantiene un grafo de conocimiento del código (FalkorDB) a partir de análisis estático (Tree-sitter): dependencias entre archivos, componentes, props, hooks y llamadas entre funciones. La ingesta se hace desde repositorios remotos (Bitbucket/GitHub) con full sync y webhooks; credenciales en BD (cifradas) o variables de entorno; la API y el servidor MCP exponen impacto, contratos y contexto para la IA; el orquestador ejecuta flujos de validación (SDD) para refactors.
+**Ariadne / AriadneSpecs** mantiene un grafo de conocimiento del código (FalkorDB) a partir de análisis estático (Tree-sitter): dependencias entre archivos, componentes, props, hooks y llamadas entre funciones. La ingesta se hace desde repositorios remotos (Bitbucket/GitHub) con full sync y webhooks; credenciales en BD (cifradas) o variables de entorno; la API y el servidor MCP exponen impacto, contratos y contexto para la IA; el orquestador ejecuta flujos de validación (SDD) para refactors.
 
 | Componente | Función |
 |------------|--------|
 | **Ingest** | Registro de repos, credenciales cifradas en BD, full sync (cola Redis), webhook Bitbucket, índice shadow. NestJS + TypeORM + PostgreSQL + FalkorDB + Redis. |
 | **API** | REST OpenAPI: impacto, componente, contrato, compare, proxy shadow. NestJS + FalkorDB + Redis (caché). |
 | **Orchestrator** | Flujos LangGraph: refactor por `nodeId`, validación con props propuestas, pipeline completo (shadow + compare). NestJS. |
-| **MCP FalkorSpecs** | Servidor MCP por Streamable HTTP (puerto 8080): herramientas de grafo para la IA (get_component_graph, get_legacy_impact, etc.). |
+| **MCP AriadneSpecs** | Servidor MCP por Streamable HTTP (puerto 8080): herramientas de grafo para la IA (get_component_graph, get_legacy_impact, etc.). |
 | **Frontend** | UI para ingest: listado de repos, alta (Bitbucket/GitHub), credenciales, detalle, sync manual, jobs, **Chat** (preguntas NL, diagnósticos), **resync**. React + Vite. |
 | **Cartographer** | Legacy: vigilancia de directorio local y `POST /shadow`; el ingest asume full sync + webhook. |
 
@@ -71,7 +71,7 @@ Levantar FalkorDB, PostgreSQL y Redis por tu cuenta (binarios o contenedores sue
 
 - **Ingest:** `PORT` (3002), `PGHOST`, `PGPORT`, `PGUSER`, `PGPASSWORD`, `PGDATABASE`, `FALKORDB_HOST`, `FALKORDB_PORT`, `REDIS_URL` (cola sync). Opcional: `CREDENTIALS_ENCRYPTION_KEY` (si usas credenciales en BD), `BITBUCKET_*`, `GITHUB_TOKEN` (fallback).
 - **API:** `PORT` (3000), `FALKORDB_HOST`, `FALKORDB_PORT`, `REDIS_URL`. Opcional: `INGEST_URL`, `CARTOGRAPHER_URL` para el proxy de shadow (default ingest, fallback cartographer).
-- **Orchestrator:** `PORT` (3001), `ARIADNESPEC_API_URL` (default `http://api:3000` en Docker).
+- **Orchestrator:** `PORT` (3001), `FALKORSPEC_API_URL` (default `http://api:3000` en Docker).
 - **MCP:** `FALKORDB_HOST`, `FALKORDB_PORT`.
 - **Frontend:** `VITE_API_URL` (default `http://localhost:3002`, URL del ingest).
 
@@ -114,7 +114,7 @@ Tras cada sync (normal o resync), se ejecuta automáticamente el indexado de emb
 - **Validar con props propuestas:** `POST /workflow/refactor/validate` con body `{ "nodeId": "...", "proposedProps": [ { "name": "...", "required": true } ] }`.
 - **Pipeline completo (shadow + compare):** `POST /workflow/refactor/full` con body `{ "nodeId", "filePath?", "currentCode?", "proposedProps?", "proposedCode?" }`.
 
-### MCP FalkorSpecs
+### MCP AriadneSpecs
 
 Servidor por **Streamable HTTP** (puerto 8080, path /mcp). Para usarlo en Cursor: arranca `PORT=8080 node dist/index.js` (tras `npm run build`) con `FALKORDB_HOST`, `FALKORDB_PORT`, `INGEST_URL`, y configura `url`: `http://localhost:8080/mcp` en el cliente MCP.
 

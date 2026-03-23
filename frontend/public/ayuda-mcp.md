@@ -204,7 +204,7 @@ Ejemplos de qué pedirle a la IA en el chat para que use las herramientas del MC
 |---------|----------|
 | `Unexpected token '<', "<!doctype "... is not valid JSON` | **Rutas no enrutadas al MCP.** Cursor pide `/mcp` y `/.well-known/oauth-*`; si van al frontend, recibe HTML. En Dokploy: añadir rutas path **`/mcp`** y **`/.well-known`** → servicio `mcp-ariadne` puerto `8080`. Verificar: `curl -s https://ariadne.kreoint.mx/.well-known/oauth-authorization-server` → JSON, no HTML. |
 | "Connection refused" | Verificar que ariadne.kreoint.mx/mcp responda; revisar ruta en Dokploy |
-| 401 Unauthorized / "Token no proporcionado" | El MCP exige token M2M. Añadir en mcp.json: `"headers": { "Authorization": "Bearer m2m_xxx" }` (el admin te da el token) |
+| 401 Unauthorized / "Token no proporcionado" | El MCP exige token. Añadir en mcp.json: `"headers": { "Authorization": "Bearer <token>" }` (el admin te da MCP_AUTH_TOKEN) |
 | "Nodo X no encontrado" | Reindexar: resync del repo desde la UI |
 | Herramientas no aparecen | Reiniciar Cursor tras cambiar mcp.json |
 | `projectId` desconocido | Ejecutar `list_known_projects` al inicio (o pedir *"Lista los proyectos indexados"*) |
