@@ -48,7 +48,6 @@ function getRepoCardProps(state: ReturnType<typeof useRepoDetail>) {
     onDelete: state.onDelete,
     onSync: state.onSync,
     onResync: state.onResync,
-    onRegenerateProjectId: state.onRegenerateProjectId,
   };
 }
 

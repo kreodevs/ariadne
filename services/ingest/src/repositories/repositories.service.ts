@@ -4,8 +4,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
-import { randomUUID } from 'crypto';
-import { FalkorDB } from 'falkordb';
 import { RepositoryEntity } from './entities/repository.entity';
 import { ProjectRepositoryEntity } from './entities/project-repository.entity';
 import { SyncJob } from './entities/sync-job.entity';
@@ -13,7 +11,6 @@ import { ProjectEntity } from '../projects/entities/project.entity';
 import { CreateRepositoryDto } from './dto/create-repository.dto';
 import { UpdateRepositoryDto } from './dto/update-repository.dto';
 import { encrypt, decrypt } from '../credentials/crypto.util';
-import { getFalkorConfig, GRAPH_NAME } from '../pipeline/falkor';
 
 /** Servicio de repositorios: create, findAll, findOne, update, remove, jobs. */
 @Injectable()
@@ -248,60 +245,5 @@ export class RepositoriesService {
     const entity = await this.findOne(id);
     const projectIds = await this.getProjectIdsForRepo(id);
     return { ...entity, projectIds };
-  }
-
-  /**
-   * Regenera el Project ID cuando coincide con el Repository ID (caso 1:1 legacy).
-   * Crea nuevo proyecto, asocia el repo, actualiza FalkorDB y elimina el proyecto viejo.
-   * No pierde información: sync jobs, índice y grafo se preservan.
-   */
-  async regenerateProjectIdIfColliding(repoId: string): Promise<{ newProjectId: string } | null> {
-    await this.findOne(repoId);
-    const projectIds = await this.getProjectIdsForRepo(repoId);
-    const effectiveProjectId = projectIds[0] ?? repoId;
-    if (effectiveProjectId !== repoId) {
-      return null; // ya son distintos, no hay nada que regenerar
-    }
-
-    const newProjectId = randomUUID();
-    if (newProjectId === repoId) {
-      return this.regenerateProjectIdIfColliding(repoId); // colisión improbable, reintentar
-    }
-
-    const repo = await this.repo.findOneOrFail({ where: { id: repoId }, select: ['projectKey', 'repoSlug', 'defaultBranch'] });
-    const projectName = `${repo.projectKey}/${repo.repoSlug}`;
-
-    await this.projectRepo.insert({
-      id: newProjectId,
-      name: projectName,
-      description: null,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    });
-    await this.addRepoToProject(repoId, newProjectId);
-    if (projectIds.includes(repoId)) {
-      await this.removeRepoFromProject(repoId, repoId);
-      await this.projectRepo.delete(repoId);
-    }
-
-    const config = getFalkorConfig();
-    const client = await FalkorDB.connect({
-      socket: { host: config.host, port: config.port },
-    });
-    try {
-      const graph = client.selectGraph(GRAPH_NAME);
-      await graph.query(
-        `MATCH (n) WHERE n.projectId = $oldId SET n.projectId = $newId`,
-        { params: { oldId: repoId, newId: newProjectId } },
-      );
-      await graph.query(
-        `MATCH (p:Project) WHERE p.projectId = $oldId SET p.projectId = $newId`,
-        { params: { oldId: repoId, newId: newProjectId } },
-      );
-    } finally {
-      await client.close();
-    }
-
-    return { newProjectId };
   }
 }

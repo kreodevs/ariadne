@@ -211,29 +211,6 @@ export function useRepoDetail() {
     }
   }, [id, repo, navigate]);
 
-  const onRegenerateProjectId = useCallback(async () => {
-    if (!id) return;
-    const effectiveProjectId = repo?.projectIds?.[0] ?? repo?.id;
-    if (effectiveProjectId !== repo?.id) return;
-    if (
-      !window.confirm(
-        '¿Regenerar Project ID? Se creará un nuevo proyecto distinto del Repository ID. No se pierde información.',
-      )
-    ) {
-      return;
-    }
-    try {
-      const res = await api.regenerateProjectId(id);
-      if (res.regenerated) {
-        await load();
-      } else {
-        setError(res.message ?? 'No se pudo regenerar.');
-      }
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-    }
-  }, [id, repo, load, setError]);
-
   const jobsState = useRepoDetailJobs(id, jobs, load, setError);
   const syncState = useRepoDetailSync(id, load, setError);
 
@@ -251,7 +228,6 @@ export function useRepoDetail() {
     deleting,
     load,
     onDelete,
-    onRegenerateProjectId,
     ...syncState,
     ...jobsState,
     analysisJobId,

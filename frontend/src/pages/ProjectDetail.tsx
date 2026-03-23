@@ -26,7 +26,7 @@ import {
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Skeleton } from '@/components/ui/skeleton';
 import { StatusBadge } from '@/components/StatusBadge';
-import { Pencil } from 'lucide-react';
+import { Pencil, RefreshCw } from 'lucide-react';
 
 /** Modal para asociar un repo existente al proyecto. Extraído para reducir anidamiento en ProjectDetail. */
 function AssociateRepoDialog({
@@ -181,6 +181,7 @@ export function ProjectDetail() {
   const [associateError, setAssociateError] = useState<string | null>(null);
   const [associateSuccess, setAssociateSuccess] = useState<string | null>(null);
   const [deletingProject, setDeletingProject] = useState(false);
+  const [regeneratingProjectId, setRegeneratingProjectId] = useState(false);
   const [resyncForProjectRepoId, setResyncForProjectRepoId] = useState<string | null>(null);
 
   const fetchProject = useCallback(() => {
@@ -262,6 +263,27 @@ export function ProjectDetail() {
   const cancelEditDescription = () => {
     setEditingDescription(false);
     setDescriptionDraft('');
+  };
+
+  /** Regenera el ID del proyecto y redirige al nuevo. */
+  const regenerateProjectId = async () => {
+    if (!id) return;
+    if (
+      !window.confirm(
+        '¿Regenerar el ID del proyecto? Se creará un nuevo UUID. Los repos y el índice se conservan. Serás redirigido al proyecto actualizado.',
+      )
+    ) {
+      return;
+    }
+    setRegeneratingProjectId(true);
+    try {
+      const { newProjectId } = await api.regenerateProjectId(id);
+      navigate(`/projects/${newProjectId}`, { replace: true });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Error al regenerar ID');
+    } finally {
+      setRegeneratingProjectId(false);
+    }
   };
 
   /** Elimina el proyecto (DELETE /projects/:id) tras confirmar; redirige a /. */
@@ -403,6 +425,16 @@ export function ProjectDetail() {
             >
               {id}
             </code>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-6 w-6 shrink-0"
+              onClick={regenerateProjectId}
+              disabled={regeneratingProjectId}
+              title="Regenerar ID del proyecto (sin perder datos)"
+            >
+              <RefreshCw className={`h-3.5 w-3.5 ${regeneratingProjectId ? 'animate-spin' : ''}`} />
+            </Button>
           </div>
         </div>
         <div className="flex gap-2">

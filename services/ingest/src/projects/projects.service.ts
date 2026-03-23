@@ -4,9 +4,12 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
+import { randomUUID } from 'crypto';
+import { FalkorDB } from 'falkordb';
 import { ProjectEntity } from './entities/project.entity';
 import { RepositoryEntity } from '../repositories/entities/repository.entity';
 import { ProjectRepositoryEntity } from '../repositories/entities/project-repository.entity';
+import { getFalkorConfig, GRAPH_NAME } from '../pipeline/falkor';
 
 export interface ProjectWithRepos {
   id: string;
@@ -140,5 +143,55 @@ export class ProjectsService {
     await this.findOne(id);
     await this.projectRepoRepo.delete({ projectId: id });
     await this.projectRepo.delete(id);
+  }
+
+  /**
+   * Regenera el ID del proyecto: nuevo UUID, migra asociaciones y FalkorDB.
+   * No pierde información; los repos y el grafo se conservan.
+   */
+  async regenerateId(projectId: string): Promise<{ newProjectId: string }> {
+    const project = await this.projectRepo.findOne({ where: { id: projectId } });
+    if (!project) throw new NotFoundException(`Project ${projectId} not found`);
+
+    const newProjectId = randomUUID();
+    const prs = await this.projectRepoRepo.find({
+      where: { projectId },
+      select: ['repoId'],
+    });
+
+    await this.projectRepo.insert({
+      id: newProjectId,
+      name: project.name,
+      description: project.description ?? null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+    for (const pr of prs) {
+      await this.projectRepoRepo.save(
+        this.projectRepoRepo.create({ repoId: pr.repoId, projectId: newProjectId }),
+      );
+    }
+    await this.projectRepoRepo.delete({ projectId });
+    await this.projectRepo.delete(projectId);
+
+    const config = getFalkorConfig();
+    const client = await FalkorDB.connect({
+      socket: { host: config.host, port: config.port },
+    });
+    try {
+      const graph = client.selectGraph(GRAPH_NAME);
+      await graph.query(
+        `MATCH (n) WHERE n.projectId = $oldId SET n.projectId = $newId`,
+        { params: { oldId: projectId, newId: newProjectId } },
+      );
+      await graph.query(
+        `MATCH (p:Project) WHERE p.projectId = $oldId SET p.projectId = $newId`,
+        { params: { oldId: projectId, newId: newProjectId } },
+      );
+    } finally {
+      await client.close();
+    }
+
+    return { newProjectId };
   }
 }

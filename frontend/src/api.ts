@@ -60,6 +60,10 @@ export const api = {
       method: 'PATCH',
       body: JSON.stringify(dto),
     }),
+  regenerateProjectId: (projectId: string) =>
+    request<{ newProjectId: string }>(`/projects/${projectId}/regenerate-id`, {
+      method: 'POST',
+    }),
   deleteProject: (id: string) =>
     request<void>(`/projects/${id}`, { method: 'DELETE' }),
 
@@ -89,11 +93,6 @@ export const api = {
       method: 'PATCH',
       body: JSON.stringify(dto),
     }),
-  regenerateProjectId: (repoId: string) =>
-    request<{ regenerated: boolean; newProjectId?: string; message?: string }>(
-      `/repositories/${repoId}/regenerate-project-id`,
-      { method: 'POST' },
-    ),
   deleteRepository: (id: string) =>
     request<void>(`/repositories/${id}`, { method: 'DELETE' }),
   triggerSync: (repoId: string) =>

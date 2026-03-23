@@ -48,4 +48,10 @@ export class ProjectsController {
   async remove(@Param('id') id: string) {
     await this.service.remove(id);
   }
+
+  /** Regenera el ID del proyecto (sin perder datos). Redirigir al cliente al nuevo ID. */
+  @Post(':id/regenerate-id')
+  async regenerateId(@Param('id') id: string) {
+    return this.service.regenerateId(id);
+  }
 }

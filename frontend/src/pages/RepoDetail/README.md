@@ -4,12 +4,12 @@ Detalle de repo: info, Sync, Resync, jobs, acciones (Editar, Chat, Índice, Elim
 
 ## IDs: Repository ID vs Project ID
 
-La card muestra ambos IDs por separado para evitar confusión:
+La card muestra ambos IDs por separado:
 
-- **Repository ID**: UUID del repositorio (PostgreSQL). Usado como `roots[].id` en MCP.
-- **Project ID**: UUID del proyecto asociado (tabla `projects`). Usado como `projectId` en MCP/FalkorDB.
+- **Repository ID**: UUID canónico del repositorio (PostgreSQL). No se regenera — es la identidad del repo.
+- **Project ID**: UUID del proyecto asociado. Si el repo está en proyectos, usa ese; si no (standalone), usa el Repository ID.
 
-Si coinciden (caso legacy 1:1), se muestra advertencia visual y botón **Regenerar** que crea un nuevo proyecto distinto sin perder datos (actualiza FalkorDB en caliente). Los IDs deben ser distintos para evitar ambigüedad en herramientas MCP.
+Si coinciden (caso legacy 1:1), se muestra advertencia visual. La regeneración de Project ID se hace desde la página del proyecto (`/projects/:id`), no desde el detalle del repo.
 
 ## Arquitectura
 

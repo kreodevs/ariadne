@@ -1,10 +1,8 @@
-import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import type { Repository } from '../../types';
 import { Button } from '@/components/ui/button';
 import { Card, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { StatusBadge } from '@/components/StatusBadge';
-import { RefreshCw } from 'lucide-react';
 
 interface RepoDetailRepoCardProps {
   repo: Repository;
@@ -15,61 +13,32 @@ interface RepoDetailRepoCardProps {
   onDelete: () => void;
   onSync: () => void;
   onResync: () => void;
-  onRegenerateProjectId?: () => Promise<void>;
 }
 
 function IdChip({
   label,
   value,
   onCopy,
-  onRegenerate,
   warning,
 }: {
   label: string;
   value: string;
   onCopy: () => void;
-  onRegenerate?: () => Promise<void>;
   warning?: boolean;
 }) {
-  const [regenLoading, setRegenLoading] = useState(false);
-  const handleRegen = onRegenerate
-    ? async () => {
-        setRegenLoading(true);
-        try {
-          await onRegenerate();
-        } finally {
-          setRegenLoading(false);
-        }
-      }
-    : undefined;
-
   return (
-    <span className="inline-flex items-center gap-1">
-      <code
-        role="button"
-        tabIndex={0}
-        onClick={() => onCopy()}
-        onKeyDown={(e) => e.key === 'Enter' && onCopy()}
-        title="Clic para copiar"
-        className={`select-text cursor-pointer rounded px-1.5 py-0.5 text-xs font-mono hover:opacity-90 ${
-          warning ? 'bg-amber-500/20 text-amber-800 dark:text-amber-200' : 'bg-muted'
-        }`}
-      >
-        {label}: {value}
-      </code>
-      {handleRegen && (
-        <Button
-          variant="ghost"
-          size="icon"
-          className="h-6 w-6"
-          onClick={handleRegen}
-          disabled={regenLoading}
-          title="Regenerar Project ID (sin perder datos)"
-        >
-          <RefreshCw className={`h-3.5 w-3.5 ${regenLoading ? 'animate-spin' : ''}`} />
-        </Button>
-      )}
-    </span>
+    <code
+      role="button"
+      tabIndex={0}
+      onClick={() => onCopy()}
+      onKeyDown={(e) => e.key === 'Enter' && onCopy()}
+      title="Clic para copiar"
+      className={`select-text cursor-pointer rounded px-1.5 py-0.5 text-xs font-mono hover:opacity-90 ${
+        warning ? 'bg-amber-500/20 text-amber-800 dark:text-amber-200' : 'bg-muted'
+      }`}
+    >
+      {label}: {value}
+    </code>
   );
 }
 
@@ -83,7 +52,6 @@ export function RepoDetailRepoCard({
   onDelete,
   onSync,
   onResync,
-  onRegenerateProjectId,
 }: RepoDetailRepoCardProps) {
   const effectiveProjectId = repo.projectIds?.[0] ?? repo.id;
   const idsCollide = effectiveProjectId === repo.id;
@@ -119,7 +87,6 @@ export function RepoDetailRepoCard({
               label="Project ID"
               value={effectiveProjectId}
               onCopy={() => copyToClipboard(effectiveProjectId)}
-              onRegenerate={idsCollide ? onRegenerateProjectId : undefined}
               warning={idsCollide}
             />
           </CardDescription>
