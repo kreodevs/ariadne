@@ -138,7 +138,7 @@ function createMcpServer(): Server {
     {
       name: "get_file_content",
       description:
-        "Obtiene el contenido de un archivo del repositorio (Bitbucket/GitHub). Requiere INGEST_URL configurado. projectId es el ID del repo (list_known_projects).",
+        "Obtiene el contenido de un archivo del repo (Bitbucket/GitHub). Requiere INGEST_URL. Esquema BD: Prisma → prisma/schema.prisma; TypeORM → primero execute_cypher MATCH (m:Model) para obtener path. Rutas API: NestController. Env: .env.example.",
       inputSchema: {
         type: "object" as const,
         properties: {

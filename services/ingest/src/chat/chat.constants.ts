@@ -121,6 +121,20 @@ RETURN a.path as fromPath, b.path as toPath
 \`\`\`
 (Usa IMPORTS entre File, NO CONTAINS/Component. Para "lo usa" consulta CALLS entre Function si aplica.)
 
+Pregunta: "tablas de base de datos", "esquema BD", "modelos de datos", "entidades", "schema"
+→ OPCION A (Prisma): get_file_content en "prisma/schema.prisma" (el grafo NO indexa .prisma; path fijo).
+→ OPCION B (TypeORM/u otro ORM): execute_cypher MATCH (m:Model) RETURN m.path; luego get_file_content en cada path.
+→ OPCION C (monorepo): probar apps/api/prisma/schema.prisma, libs/db/prisma/schema.prisma, libs/*/entity*.ts, **/entities/*.ts
+
+Pregunta: "rutas de API", "endpoints", "listado de rutas REST"
+\`\`\`cypher
+MATCH (nc:NestController) WHERE nc.projectId = $projectId RETURN nc.path as path, nc.name as name
+\`\`\`
+(O también Route para frontend. NestController tiene .route en propiedades; get_file_content en path para ver decoradores @Get, @Post.)
+
+Pregunta: "variables de entorno", "configuración env", "qué env vars usa"
+→ get_file_content en: .env.example, env.example, .env.sample, apps/*/.env.example. No están en el grafo.
+
 IMPORTANTE: NO uses LIMIT. Devolver todos los resultados evita perder conocimiento. FalkorDB no soporta NOT EXISTS; usa OPTIONAL MATCH + count(x)=0 para "no usados".
 
 <fin_ejemplos>
@@ -218,11 +232,11 @@ export const EXPLORER_TOOLS_ALL = [
     type: 'function',
     function: {
       name: 'get_file_content',
-      description: 'Lee el contenido de un archivo del repo. OBLIGATORIO usar cuando el usuario pregunta: qué tipos/opciones existen, clasificación, qué cotizaciones hay, algoritmo, cálculos, cómo funciona. Primero busca con execute_cypher/semantic_search, luego lee los paths con esta tool para extraer la info del código.',
+      description: 'Lee el contenido de un archivo del repo. OBLIGATORIO para: tipos/opciones, algoritmo, cálculos. Esquema BD: Prisma → prisma/schema.prisma; TypeORM → execute_cypher MATCH (m:Model) para path. Rutas API: NestController/Route. Env: .env.example.',
       parameters: {
         type: 'object',
         properties: {
-          path: { type: 'string', description: 'Path del archivo (ej. oohbp2/src/cotizador/PlazoYBonusPantallas.handlers.ts). Usar el path que devuelve el grafo.' },
+          path: { type: 'string', description: 'Path del archivo (relativo al repo). Para Prisma: prisma/schema.prisma. Para TypeORM: path de nodo Model.' },
         },
         required: ['path'],
       },

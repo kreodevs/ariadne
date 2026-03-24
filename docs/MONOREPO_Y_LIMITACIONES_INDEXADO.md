@@ -80,7 +80,7 @@ En vez de depender solo de `semantic_search`:
 | Rutas NestJS | `get_graph_summary` (ingest) o Cypher directo | NestController tiene `route` |
 | Componentes | `get_component_graph`, `get_contract_specs` | Mejor que `semantic_search` para componentes |
 | Modelos TS | `get_definitions` con symbol `*Model` | Para clases en `/models/` |
-| Prisma | `get_file_content` | Path fijo `prisma/schema.prisma`; el indexador no parsea `.prisma` |
+| Prisma / esquema BD | `get_file_content` | Path `prisma/schema.prisma`. TypeORM: `execute_cypher` MATCH (m:Model) → `get_file_content` en path. El chat tiene hints ORM-agnósticos. |
 
 ### Scope para acotar búsquedas en monorepos
 

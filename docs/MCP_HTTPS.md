@@ -313,7 +313,31 @@ function extractToolResult(response: {
 
 ---
 
-## 11. Referencias
+## 11. Cómo obtener esquema BD, rutas API y variables de entorno
+
+Estos datos **no están siempre en el grafo** (Prisma no se indexa; .env nunca). La app debe usar rutas convencionales o `execute_cypher` + `get_file_content`:
+
+| Dato | Cómo obtener | ORM-agnóstico |
+|------|--------------|---------------|
+| **Tablas / esquema BD** | `get_file_content` con path fijo; o `execute_cypher` → `get_file_content` | Sí |
+| **Rutas API** | `execute_cypher` NestController/Route; luego `get_file_content` en path | Sí |
+| **Variables de entorno** | `get_file_content` en `.env.example`, `env.example`, etc. | Sí |
+
+**Flujo esquema BD (sin asumir Prisma/TypeORM):**
+
+1. Probar `get_file_content("prisma/schema.prisma")` — si existe, Prisma.
+2. Si falla: `execute_cypher` con `MATCH (m:Model) RETURN m.path` — TypeORM/entities.
+3. Monorepo: `apps/api/prisma/schema.prisma`, `libs/db/prisma/schema.prisma`, `libs/*/entities/*.ts`.
+4. Con cada path obtenido: `get_file_content(path)`.
+
+**Rutas API:** `execute_cypher` con `MATCH (nc:NestController) RETURN nc.path, nc.name` (o `Route` para frontend).
+
+**Env:** `get_file_content(".env.example")`; alternativas: `env.example`, `.env.sample`, `apps/*/.env.example`.
+
+---
+
+## 12. Referencias
 
 - [Especificación MCP — Herramientas](mcp_server_specs.md) — Lista completa de herramientas y descripción.
 - [Transports — Streamable HTTP](https://modelcontextprotocol.io/docs/concepts/transports#streamable-http) — Protocolo oficial.
+- [Monorepos y limitaciones](MONOREPO_Y_LIMITACIONES_INDEXADO.md) — Prisma, scope, path aliases.
