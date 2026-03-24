@@ -20,8 +20,15 @@ const IGNORE_DIRS = new Set([
   '__pycache__',
 ]);
 const IGNORE_FILE = /\.(test|spec)\.(js|jsx|ts|tsx)$|\.log$|\/\.env$|^\.env$/;
+const IGNORE_FILE_WITH_TESTS = /\.log$|\/\.env$|^\.env$/;
+
+function shouldIndexTests(): boolean {
+  const v = process.env.INDEX_TESTS;
+  return v === 'true' || v === '1';
+}
 
 function walkDir(dir: string, base = ''): string[] {
+  const ignoreRe = shouldIndexTests() ? IGNORE_FILE_WITH_TESTS : IGNORE_FILE;
   const files: string[] = [];
   const entries = fs.readdirSync(dir, { withFileTypes: true });
   for (const e of entries) {
@@ -32,7 +39,7 @@ function walkDir(dir: string, base = ''): string[] {
       }
     } else if (e.isFile()) {
       const ext = path.extname(e.name);
-      if (CODE_EXT.includes(ext) && !IGNORE_FILE.test(rel)) {
+      if (CODE_EXT.includes(ext) && !ignoreRe.test(rel)) {
         files.push(rel);
       }
     }

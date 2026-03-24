@@ -18,13 +18,20 @@ const IGNORE_DIRS = new Set([
   '__pycache__',
 ]);
 const IGNORE_FILE = /\.(test|spec)\.(js|jsx|ts|tsx)$|\.log$|\/\.env$|^\.env$/;
+const IGNORE_FILE_WITH_TESTS = /\.log$|\/\.env$|^\.env$/;
 
-/** Comprueba si el path es un archivo fuente relevante (.js,.ts,.jsx,.tsx) y no test/spec. */
+function shouldIndexTests(): boolean {
+  const v = process.env.INDEX_TESTS;
+  return v === 'true' || v === '1';
+}
+
+/** Comprueba si el path es un archivo fuente relevante (.js,.ts,.jsx,.tsx) y no test/spec (salvo INDEX_TESTS=true). */
 function matchesFilter(path: string): boolean {
   const base = path.split('/').pop() ?? '';
   if (IGNORE_DIRS.has(base)) return false;
   const ext = path.slice(path.lastIndexOf('.'));
-  return EXT.includes(ext) && !IGNORE_FILE.test(path);
+  const ignoreRe = shouldIndexTests() ? IGNORE_FILE_WITH_TESTS : IGNORE_FILE;
+  return EXT.includes(ext) && !ignoreRe.test(path);
 }
 
 interface SrcEntry {

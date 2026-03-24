@@ -357,8 +357,16 @@ export interface ParseSourceOptions {
   extractDomainConcepts?: ExtractDomainConceptsFn;
 }
 
-/** Límite aproximado: tree-sitter falla con "Invalid argument" cuando hay ~3300+ sentencias hermanas. */
-const TRUNCATE_PARSE_MAX_BYTES = 25_000;
+/**
+ * Límite para truncar archivos grandes. Tree-sitter falla con "Invalid argument" cuando hay ~3300+ sentencias hermanas.
+ * Configurable vía env TRUNCATE_PARSE_MAX_BYTES (default 25000).
+ */
+function getTruncateParseMaxBytes(): number {
+  const v = process.env.TRUNCATE_PARSE_MAX_BYTES;
+  if (!v) return 25_000;
+  const n = parseInt(v, 10);
+  return Number.isFinite(n) && n >= 5000 ? n : 25_000;
+}
 
 /**
  * Fallback para archivos que fallan por "Invalid argument" (tamaño o muchos nodos hermanos, ej. SVG inline).
@@ -370,9 +378,10 @@ function tryParseTruncated(
   parser: Parser,
   lang: Parameters<Parser['setLanguage']>[0],
 ): ParsedFile | null {
-  let tr = source.slice(0, TRUNCATE_PARSE_MAX_BYTES);
+  const maxBytes = getTruncateParseMaxBytes();
+  let tr = source.slice(0, maxBytes);
   const atLine = tr.lastIndexOf('\n');
-  if (atLine > TRUNCATE_PARSE_MAX_BYTES * 0.6) tr = tr.slice(0, atLine + 1);
+  if (atLine > maxBytes * 0.6) tr = tr.slice(0, atLine + 1);
   const open = (tr.match(/\{/g) || []).length;
   const close = (tr.match(/\}/g) || []).length;
   tr += '\n' + '}'.repeat(Math.max(0, open - close)) + '\nexport default _;';

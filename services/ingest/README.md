@@ -54,6 +54,8 @@ Tras cada sync (normal o resync), se ejecuta automáticamente `embed-index` si h
 - `MODIFICATION_PLAN_MAX_FILES` — Tope de entradas en `get_modification_plan` (default 150, máx. 2000).
 - `GOOGLE_API_KEY` / `GEMINI_API_KEY` — Si provider=google
 - `NODE_ENV` — Si no es `production`, TypeORM usa `synchronize: true`
+- `INDEX_TESTS` — `true` o `1`: incluir archivos `*.test.*` y `*.spec.*` en el indexado (default: excluidos)
+- `TRUNCATE_PARSE_MAX_BYTES` — Límite de bytes para truncar archivos grandes antes de parsear (default 25000). Tree-sitter falla con muchos nodos hermanos; aumentar con cuidado.
 
 **Embeddings:** Si cambias de proveedor (OpenAI ↔ Google), reejecuta `POST /repositories/:id/embed-index`; las dimensiones son distintas (1536 vs 768) y FalkorDB no admite mezclar.
 

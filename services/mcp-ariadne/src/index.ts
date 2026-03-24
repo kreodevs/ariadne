@@ -1093,10 +1093,18 @@ async function fetchFileFromIngest(
       const compQ = `MATCH (n:Component)${projFilter} RETURN n.name AS name LIMIT 100`;
       const funcQ = `MATCH (n:Function)${projFilter} RETURN n.name AS name, n.path AS path LIMIT 100`;
       const fileQ = `MATCH (n:File)${projFilter} RETURN n.path AS path LIMIT 100`;
-      const [compRes, funcRes, fileRes] = await Promise.all([
+      const modelQ = `MATCH (n:Model)${projFilter} RETURN n.name AS name, n.path AS path LIMIT 100`;
+      const nestQ = `MATCH (n) WHERE n:NestController OR n:NestService OR n:NestModule${projectId ? " AND n.projectId = $projectId" : ""} RETURN labels(n)[0] AS typ, n.name AS name, n.path AS path, n.route AS route LIMIT 100`;
+      const routeQ = `MATCH (n:Route)${projFilter} RETURN n.path AS path, n.componentName AS componentName LIMIT 100`;
+      const domainQ = `MATCH (n:DomainConcept)${projFilter} RETURN n.name AS name, n.category AS category LIMIT 100`;
+      const [compRes, funcRes, fileRes, modelRes, nestRes, routeRes, domainRes] = await Promise.all([
         graph.query(compQ, compParams) as Promise<{ data?: unknown[][] }>,
         graph.query(funcQ, compParams) as Promise<{ data?: unknown[][] }>,
         graph.query(fileQ, compParams) as Promise<{ data?: unknown[][] }>,
+        graph.query(modelQ, compParams) as Promise<{ data?: unknown[][] }>,
+        graph.query(nestQ, compParams) as Promise<{ data?: unknown[][] }>,
+        graph.query(routeQ, compParams) as Promise<{ data?: unknown[][] }>,
+        graph.query(domainQ, compParams) as Promise<{ data?: unknown[][] }>,
       ]);
       for (const row of asObjRows(compRes.data)) {
         if (results.length >= limit) break;
@@ -1115,6 +1123,44 @@ async function fetchFileFromIngest(
         if (results.length >= limit) break;
         const path = _rv<string>(row, "path") ?? "";
         if (path?.toLowerCase().includes(qLower)) results.push({ type: "File", name: path ?? "" });
+      }
+      for (const row of asObjRows(modelRes.data)) {
+        if (results.length >= limit) break;
+        const name = _rv<string>(row, "name");
+        const path = _rv<string>(row, "path");
+        if (name?.toLowerCase().includes(qLower) || path?.toLowerCase().includes(qLower)) {
+          results.push({ type: "Model", name: path ? `${name ?? ""} — ${path}` : (name ?? "") });
+        }
+      }
+      for (const row of asObjRows(nestRes.data)) {
+        if (results.length >= limit) break;
+        const typ = _rv<string>(row, "typ");
+        const name = _rv<string>(row, "name");
+        const path = _rv<string>(row, "path");
+        const route = _rv<string>(row, "route");
+        const searchable = [typ, name, path, route].filter(Boolean).join(" ").toLowerCase();
+        if (searchable && searchable.includes(qLower)) {
+          const routeStr = route ? ` [${route}]` : "";
+          results.push({ type: typ ?? "Nest", name: `${name ?? ""} — ${path ?? ""}${routeStr}` });
+        }
+      }
+      for (const row of asObjRows(routeRes.data)) {
+        if (results.length >= limit) break;
+        const path = _rv<string>(row, "path");
+        const comp = _rv<string>(row, "componentName");
+        const searchable = [path, comp].filter(Boolean).join(" ").toLowerCase();
+        if (searchable && searchable.includes(qLower)) {
+          results.push({ type: "Route", name: `${path ?? "/"} → ${comp ?? ""}` });
+        }
+      }
+      for (const row of asObjRows(domainRes.data)) {
+        if (results.length >= limit) break;
+        const name = _rv<string>(row, "name");
+        const cat = _rv<string>(row, "category");
+        const searchable = [name, cat].filter(Boolean).join(" ").toLowerCase();
+        if (searchable && searchable.includes(qLower)) {
+          results.push({ type: "DomainConcept", name: cat ? `${name ?? ""} (${cat})` : (name ?? "") });
+        }
       }
     }
     const lines = [`## Búsqueda: "${query}"${usedVector ? " (vector)" : ""}`, "", ...results.slice(0, limit).map((r) => `- **${r.type}:** ${r.name}`)];

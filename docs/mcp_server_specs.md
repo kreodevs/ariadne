@@ -185,4 +185,6 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 ## 5. Configuración de Seguridad
 
 - **Solo Lectura:** El usuario de FalkorDB vinculado al MCP solo debe tener permisos de `READ`.
+
+- **Llamadas HTTPS desde aplicación:** Para implementar peticiones HTTP/HTTPS al MCP desde una app (fetch, curl, etc.), ver [MCP_HTTPS.md](MCP_HTTPS.md).
 - **Aislamiento de Dominio:** El MCP solo debe exponer archivos dentro del `ROOT` del proyecto definido en la configuración.
