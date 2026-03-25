@@ -8,7 +8,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 
-const CODE_EXT = ['.js', '.jsx', '.ts', '.tsx'];
+const CODE_EXT = ['.js', '.jsx', '.ts', '.tsx', '.mjs', '.cjs'];
 const IGNORE_DIRS = new Set([
   'node_modules',
   '.git',
@@ -19,7 +19,7 @@ const IGNORE_DIRS = new Set([
   '.venv',
   '__pycache__',
 ]);
-const IGNORE_FILE = /\.(test|spec)\.(js|jsx|ts|tsx)$|\.log$|\/\.env$|^\.env$/;
+const IGNORE_FILE = /\.(test|spec)\.(js|jsx|ts|tsx|mjs|cjs)$|\.log$|\/\.env$|^\.env$/;
 const IGNORE_FILE_WITH_TESTS = /\.log$|\/\.env$|^\.env$/;
 
 function shouldIndexTests(): boolean {

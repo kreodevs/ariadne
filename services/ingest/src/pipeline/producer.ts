@@ -19,7 +19,20 @@ import { resolveWithTsconfig } from './tsconfig-resolve';
 export type { GraphClient } from 'ariadne-common';
 
 /** Candidatos de extensión para resolver imports sin extensión. */
-const EXT_CANDIDATES = ['.ts', '.tsx', '.js', '.jsx', '/index.ts', '/index.tsx', '/index.js', '/index.jsx'];
+const EXT_CANDIDATES = [
+  '.ts',
+  '.tsx',
+  '.js',
+  '.jsx',
+  '.mjs',
+  '.cjs',
+  '/index.ts',
+  '/index.tsx',
+  '/index.js',
+  '/index.jsx',
+  '/index.mjs',
+  '/index.cjs',
+];
 
 function tryResolve(basePath: string, existingPaths: Set<string>): string | null {
   const normalized = basePath.replace(/\/index\.(js|jsx|ts|tsx)$/, '');

@@ -30,7 +30,7 @@ Patrones usados: **ReAct** (Thought→Action→Observation), **CoT** (análisis 
 
 ## API
 
-- **`POST /repositories/:id/chat`** — Body: `{ message, history?, scope?, twoPhase? }` (`scope`: `repoIds`, `includePathPrefixes`, `excludePathGlobs`; `twoPhase` alinea con `CHAT_TWO_PHASE` en ingest)
+- **`POST /repositories/:id/chat`** — Body: `{ message, history?, scope?, twoPhase?, responseMode? }` (`scope`: `repoIds`, `includePathPrefixes`, `excludePathGlobs`; `twoPhase` alinea con `CHAT_TWO_PHASE` en ingest). **`responseMode: 'evidence_first'`** — fuerza two-phase, amplía el recorte de contexto hacia el sintetizador (`CHAT_EVIDENCE_FIRST_MAX_CHARS`, default 18000) y aplica prompt SDD (## Evidencia primero, listados anclados). Expuesto en MCP `ask_codebase` para The Forge legacy.
 - **`POST /projects/:projectId/chat`** — Igual body (multi-root)
 - **`POST .../modification-plan`** — Body: `{ userDescription, scope? }`
 - **`POST /repositories/:id/analyze`** — Body: `{ mode: 'diagnostico'|'duplicados'|'reingenieria'|'codigo_muerto'|'agents'|'skill' }`

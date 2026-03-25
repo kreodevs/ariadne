@@ -62,6 +62,11 @@ export interface ChatRequest {
    * Default: true si `process.env.CHAT_TWO_PHASE` es 1/true; si no definido, true en producción recomendado.
    */
   twoPhase?: boolean;
+  /**
+   * `evidence_first`: fuerza two-phase, amplía el recorte de contexto hacia el sintetizador y aplica prompt SDD
+   * (## Evidencia obligatoria primero, listados anclados, poca prosa). Pensado para ask_codebase / The Forge legacy.
+   */
+  responseMode?: 'default' | 'evidence_first';
 }
 
 /** Respuesta del chat con texto, opcional cypher ejecutado y resultados. */
@@ -1613,7 +1618,7 @@ PROHIBIDO: instrucciones genéricas tipo "revisa los controladores", "asegúrate
         projectId,
         req.message,
         historyContent,
-        { scope: req.scope, twoPhase: req.twoPhase },
+        { scope: req.scope, twoPhase: req.twoPhase, responseMode: req.responseMode },
       );
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -1650,7 +1655,7 @@ PROHIBIDO: instrucciones genéricas tipo "revisa los controladores", "asegúrate
         projectId,
         req.message,
         historyContent,
-        { projectScope: true, scope: req.scope, twoPhase: req.twoPhase },
+        { projectScope: true, scope: req.scope, twoPhase: req.twoPhase, responseMode: req.responseMode },
       );
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -1664,16 +1669,23 @@ PROHIBIDO: instrucciones genéricas tipo "revisa los controladores", "asegúrate
    * @param options.projectScope - Si true, get_file_content busca en todos los repos del proyecto (chat por proyecto).
    * @param options.scope - Filtro repoIds / prefijos / globs (§2).
    * @param options.twoPhase - Si true, inyecta JSON de retrieval antes del contexto bruto (§3); default env `CHAT_TWO_PHASE`.
+   * @param options.responseMode - `evidence_first` fuerza two-phase y prompt de listados SDD.
    */
   private async runUnifiedPipeline(
     repositoryId: string,
     projectId: string,
     message: string,
     historyContent?: string,
-    options?: { projectScope?: boolean; scope?: ChatScope; twoPhase?: boolean },
+    options?: {
+      projectScope?: boolean;
+      scope?: ChatScope;
+      twoPhase?: boolean;
+      responseMode?: 'default' | 'evidence_first';
+    },
   ): Promise<ChatResponse> {
     const scope = options?.scope;
-    const useTwoPhase = options?.twoPhase ?? defaultTwoPhaseFromEnv();
+    const evidenceFirst = options?.responseMode === 'evidence_first';
+    const useTwoPhase = evidenceFirst ? true : (options?.twoPhase ?? defaultTwoPhaseFromEnv());
     const tools = EXPLORER_TOOLS_ALL;
     const retrieverSystem = `<instrucciones>
 Eres un RECOLECTOR de datos. Tu única tarea: usar las herramientas para reunir información **proveniente del grafo o archivos leídos**, relevante para la pregunta.
@@ -1817,9 +1829,23 @@ ${SCHEMA}${EXAMPLES}
       collectedResults.length > 0 || gatheredContext.trim().length > 0
         ? buildRetrievalSummaryJson(collectedResults, gatheredContext)
         : '';
+    const evidenceFirstMaxChars = (() => {
+      const n = parseInt(process.env.CHAT_EVIDENCE_FIRST_MAX_CHARS ?? '18000', 10);
+      return Number.isFinite(n) && n >= 4000 ? Math.min(n, 100_000) : 18000;
+    })();
+    const twoPhaseContextCap = evidenceFirst ? evidenceFirstMaxChars : 12_000;
     const rawContextForSynth =
-      useTwoPhase && gatheredContext.trim() ? gatheredContext.slice(0, 12_000) : gatheredContext;
-    const synthesizerSystem = `## Rol
+      useTwoPhase && gatheredContext.trim() ? gatheredContext.slice(0, twoPhaseContextCap) : gatheredContext;
+    const evidenceFirstBlock = evidenceFirst
+      ? `## Modo evidence_first (SDD / documentación)
+- **Primera sección obligatoria:** \`## Evidencia\` — tabla o viñetas: \`path\` | hecho o símbolo **literal** del contexto siguiente.
+- **Segunda sección:** \`## Resumen\` — máximo 6 viñetas; solo repite hechos ya en Evidencia.
+- Prioriza **listas** sobre prosa larga. **PROHIBIDO** añadir archivos, stacks o APIs que no aparezcan en el contexto.
+- Si un tema no está en el contexto: **(no consta en el índice)** — no inventes.
+
+`
+      : '';
+    const synthesizerSystem = `${evidenceFirstBlock}## Rol
 Eres un experto que explica código a colegas. Recibes **solo** datos crudos del contexto (Cypher, archivos, búsquedas) — son la única fuente de verdad para rutas y símbolos.
 
 ## Instrucciones
@@ -1860,7 +1886,7 @@ Sintetiza una respuesta clara. Si no hay datos útiles, di explícitamente **sin
           { role: 'system', content: synthesizerSystem },
           { role: 'user', content: synthesizerUser },
         ],
-        2048,
+        evidenceFirst ? 3072 : 2048,
       );
     } else {
       answer =
@@ -1883,6 +1909,7 @@ Sintetiza una respuesta clara. Si no hay datos útiles, di explícitamente **sin
             scope?.repoIds?.length || scope?.includePathPrefixes?.length || scope?.excludePathGlobs?.length,
           ),
           twoPhase: useTwoPhase,
+          responseMode: evidenceFirst ? 'evidence_first' : 'default',
           messageChars: message.length,
           contextChars: gatheredContext.length,
           toolOutputChunks: collectedToolOutputs.length,

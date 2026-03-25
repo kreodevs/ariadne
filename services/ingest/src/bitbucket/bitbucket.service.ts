@@ -6,7 +6,8 @@ import { Injectable } from '@nestjs/common';
 import type { BitbucketAuth } from '../credentials/credentials.service';
 import { CredentialsService } from '../credentials/credentials.service';
 
-const EXT = ['.js', '.jsx', '.ts', '.tsx'];
+/** Extensiones indexadas (Tree-sitter JS/TS); .mjs/.cjs se parsean como JS. */
+const EXT = ['.js', '.jsx', '.ts', '.tsx', '.mjs', '.cjs'];
 const IGNORE_DIRS = new Set([
   'node_modules',
   '.git',
@@ -17,7 +18,7 @@ const IGNORE_DIRS = new Set([
   '.venv',
   '__pycache__',
 ]);
-const IGNORE_FILE = /\.(test|spec)\.(js|jsx|ts|tsx)$|\.log$|\/\.env$|^\.env$/;
+const IGNORE_FILE = /\.(test|spec)\.(js|jsx|ts|tsx|mjs|cjs)$|\.log$|\/\.env$|^\.env$/;
 const IGNORE_FILE_WITH_TESTS = /\.log$|\/\.env$|^\.env$/;
 
 function shouldIndexTests(): boolean {

@@ -51,6 +51,7 @@ Tras cada sync (normal o resync), se ejecuta automáticamente `embed-index` si h
 - `CHAT_MODEL` — Modelo OpenAI para chat (default `gpt-4o-mini`). Diagnóstico/reingeniería truncan datos automáticamente para evitar context_length_exceeded (128k tokens).
 - `CHAT_TELEMETRY_LOG` — `1` o `true`: log JSON por request del pipeline unificado (tamaños, citas de paths, `pathGroundingRatio` vs retrieval).
 - `CHAT_TWO_PHASE` — `0` / `false` / `off`: desactiva el bloque JSON de retrieval antes del contexto bruto en el sintetizador (default: activo).
+- `CHAT_EVIDENCE_FIRST_MAX_CHARS` — tope de caracteres del contexto bruto hacia el sintetizador cuando el body del chat incluye `responseMode: 'evidence_first'` (default `18000`, mínimo efectivo `4000`, máximo `100000`).
 - `MODIFICATION_PLAN_MAX_FILES` — Tope de entradas en `get_modification_plan` (default 150, máx. 2000).
 - `GOOGLE_API_KEY` / `GEMINI_API_KEY` — Si provider=google
 - `NODE_ENV` — Si no es `production`, TypeORM usa `synchronize: true`

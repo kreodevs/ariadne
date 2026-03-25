@@ -223,6 +223,12 @@ function createMcpServer(): Server {
             type: "boolean",
             description: "Si true, el ingest prioriza un JSON de retrieval antes del contexto bruto (sintetizador). Default: variable CHAT_TWO_PHASE en ingest.",
           },
+          responseMode: {
+            type: "string",
+            enum: ["default", "evidence_first"],
+            description:
+              "evidence_first: modo SDD/documentación — fuerza two-phase, más contexto al sintetizador y salida con ## Evidencia primero (listados anclados). The Forge lo usa en síntesis sobre evidencia indexada.",
+          },
         },
         required: ["question"],
         additionalProperties: false,
@@ -1228,10 +1234,13 @@ async function fetchFileFromIngest(
       scopeRaw && typeof scopeRaw === "object" && !Array.isArray(scopeRaw)
         ? (scopeRaw as Record<string, unknown>)
         : undefined;
+    const rm = args?.responseMode as string | undefined;
+    const responseMode = rm === "evidence_first" ? "evidence_first" : undefined;
     const body = JSON.stringify({
       message: question,
       ...(scope ? { scope } : {}),
       ...(typeof args?.twoPhase === "boolean" ? { twoPhase: args.twoPhase } : {}),
+      ...(responseMode ? { responseMode } : {}),
     });
     const opts = { method: "POST" as const, headers: { "Content-Type": "application/json" }, body };
     try {
