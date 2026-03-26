@@ -174,9 +174,14 @@ export class ChatHandlersService {
         projectId,
         `MATCH (n:Component) WHERE n.projectId = $projectId AND n.embedding IS NOT NULL RETURN count(n) as c`,
       );
+      const countDoc = await this.cypher.executeCypher(
+        projectId,
+        `MATCH (n:Document) WHERE n.projectId = $projectId AND n.embedding IS NOT NULL RETURN count(n) as c`,
+      );
       const hasFn = (countFn as Array<{ c?: number }>)?.[0]?.c ?? 0;
       const hasComp = (countComp as Array<{ c?: number }>)?.[0]?.c ?? 0;
-      if (hasFn === 0 && hasComp === 0) return { cypher: '', result: [] };
+      const hasDoc = (countDoc as Array<{ c?: number }>)?.[0]?.c ?? 0;
+      if (hasFn === 0 && hasComp === 0 && hasDoc === 0) return { cypher: '', result: [] };
 
       const vec = await this.embedding.embed(query.trim());
       const vecStr = `[${vec.join(',')}]`;
@@ -184,14 +189,17 @@ export class ChatHandlersService {
 
       const funcVecQ = `CALL db.idx.vector.queryNodes('Function', 'embedding', ${k}, vecf32(${vecStr})) YIELD node, score RETURN node.name AS name, node.path AS path, node.projectId AS projectId, score`;
       const compVecQ = `CALL db.idx.vector.queryNodes('Component', 'embedding', ${k}, vecf32(${vecStr})) YIELD node, score RETURN node.name AS name, node.projectId AS projectId, score`;
+      const docVecQ = `CALL db.idx.vector.queryNodes('Document', 'embedding', ${k}, vecf32(${vecStr})) YIELD node, score RETURN node.path AS path, node.heading AS heading, node.chunkIndex AS chunkIndex, node.projectId AS projectId, score`;
 
-      const [fRes, cRes] = await Promise.all([
-        hasFn > 0 ? this.cypher.executeCypherRaw(funcVecQ) : Promise.resolve([]),
-        hasComp > 0 ? this.cypher.executeCypherRaw(compVecQ) : Promise.resolve([]),
+      const [fRes, cRes, dRes] = await Promise.all([
+        hasFn > 0 ? this.cypher.executeCypherRaw(funcVecQ, projectId) : Promise.resolve([]),
+        hasComp > 0 ? this.cypher.executeCypherRaw(compVecQ, projectId) : Promise.resolve([]),
+        hasDoc > 0 ? this.cypher.executeCypherRaw(docVecQ, projectId) : Promise.resolve([]),
       ]);
 
       const fData = (Array.isArray(fRes) ? fRes : []) as Array<unknown>;
       const cData = (Array.isArray(cRes) ? cRes : []) as Array<unknown>;
+      const dData = (Array.isArray(dRes) ? dRes : []) as Array<unknown>;
 
       const results: Array<{ tipo: string; path: string; name: string }> = [];
       const seen = new Set<string>();
@@ -223,6 +231,22 @@ export class ChatHandlersService {
         seen.add(key);
         results.push({ tipo: 'Component', path: nameStr, name: nameStr });
       }
+      for (const row of dData) {
+        if (results.length >= limit) break;
+        const obj = Array.isArray(row)
+          ? { path: row[0], heading: row[1], chunkIndex: row[2], projectId: row[3], score: row[4] }
+          : (row as Record<string, unknown>);
+        const pid = obj.projectId;
+        if (pid !== projectId) continue;
+        const pathStr = String(obj.path ?? '');
+        const heading = String(obj.heading ?? '');
+        const ci = obj.chunkIndex != null ? String(obj.chunkIndex) : '';
+        const key = `Document:${pathStr}:${ci}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        const title = heading ? `${heading} — ${pathStr}` : pathStr;
+        results.push({ tipo: 'Document', path: pathStr, name: title });
+      }
 
       return {
         cypher: 'CALL db.idx.vector.queryNodes (semantic search)',
@@ -250,10 +274,15 @@ export class ChatHandlersService {
         projectId,
         `MATCH (n:Component) WHERE n.projectId = $projectId AND n.embedding IS NOT NULL RETURN count(n) as c`,
       );
+      const countDoc = await this.cypher.executeCypher(
+        projectId,
+        `MATCH (n:Document) WHERE n.projectId = $projectId AND n.embedding IS NOT NULL RETURN count(n) as c`,
+      );
       const hasFn = (countFn as Array<{ c?: number }>)?.[0]?.c ?? 0;
       const hasComp = (countComp as Array<{ c?: number }>)?.[0]?.c ?? 0;
-      if (hasFn === 0 && hasComp === 0) {
-        return 'Diagnóstico: ningún Function/Component tiene embedding en este proyecto (índice vectorial vacío). Ejecuta POST /repositories/:id/embed-index tras sync.';
+      const hasDoc = (countDoc as Array<{ c?: number }>)?.[0]?.c ?? 0;
+      if (hasFn === 0 && hasComp === 0 && hasDoc === 0) {
+        return 'Diagnóstico: ningún Function/Component/Document tiene embedding (índice vectorial vacío). Ejecuta POST /repositories/:id/embed-index tras sync.';
       }
       return 'Diagnóstico: hay embeddings pero esta consulta no obtuvo vecinos relevantes; reformula o usa execute_cypher con términos del dominio.';
     } catch (err) {

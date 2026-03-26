@@ -1,26 +1,25 @@
 /**
- * @fileoverview Cliente FalkorDB para MCP FalkorSpecs. Conexión y selección de grafo.
+ * @fileoverview Cliente FalkorDB para MCP. Sharding: getGraph(projectId).
  */
 import { FalkorDB } from "falkordb";
-import { GRAPH_NAME, getFalkorConfig } from "ariadne-common";
+import { GRAPH_NAME, getFalkorConfig, graphNameForProject } from "ariadne-common";
 
 export { GRAPH_NAME, getFalkorConfig };
 export type { FalkorConfig } from "ariadne-common";
 
 let client: Awaited<ReturnType<typeof FalkorDB.connect>> | null = null;
 
-/** Devuelve el grafo FalkorDB (conexión singleton). */
-export async function getGraph() {
+/** Grafo Ariadne; con FALKOR_SHARD_BY_PROJECT usar el projectId del índice. */
+export async function getGraph(projectId?: string | null) {
   if (!client) {
     const config = getFalkorConfig();
     client = await FalkorDB.connect({
       socket: { host: config.host, port: config.port },
     });
   }
-  return client.selectGraph(GRAPH_NAME);
+  return client.selectGraph(graphNameForProject(projectId ?? undefined));
 }
 
-/** Cierra la conexión FalkorDB. */
 export async function closeFalkor() {
   if (client) {
     await client.close();

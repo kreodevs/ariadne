@@ -8,6 +8,7 @@ import { execSync } from "node:child_process";
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { ListToolsRequestSchema, CallToolRequestSchema } from "@modelcontextprotocol/sdk/types.js";
+import { isProjectShardingEnabled } from "ariadne-common";
 import { getGraph, closeFalkor } from "./falkor.js";
 
 const MCP_PATH = "/mcp";
@@ -653,22 +654,80 @@ async function inferProjectIdFromPath(graph: GraphType, currentFilePath: string)
   return null;
 }
 
-/** Resolve path (graph path or IDE path) to graph path + projectId for File queries */
+async function collectCandidateProjectIdsFromIngest(): Promise<string[]> {
+  const ingestUrl = process.env.INGEST_URL ?? process.env.ARIADNESPEC_INGEST_URL ?? "";
+  if (!ingestUrl) return [];
+  const base = ingestUrl.replace(/\/$/, "");
+  const ids: string[] = [];
+  try {
+    const projectsRes = await fetch(`${base}/projects`, { signal: AbortSignal.timeout(5000) });
+    if (projectsRes.ok) {
+      const data = (await projectsRes.json()) as Array<{ id: string }>;
+      for (const p of data) ids.push(p.id);
+    }
+    const reposRes = await fetch(`${base}/repositories`, { signal: AbortSignal.timeout(5000) });
+    if (reposRes.ok) {
+      const repos = (await reposRes.json()) as Array<{ id: string }>;
+      const seen = new Set(ids);
+      for (const r of repos) {
+        if (!seen.has(r.id)) {
+          seen.add(r.id);
+          ids.push(r.id);
+        }
+      }
+    }
+  } catch {
+    /* ignore */
+  }
+  return ids;
+}
+
+async function inferProjectIdWhenSharded(currentFilePath: string): Promise<string | null> {
+  if (!currentFilePath || !isProjectShardingEnabled()) return null;
+  const candidates = await collectCandidateProjectIdsFromIngest();
+  for (const id of candidates) {
+    const g = await getGraph(id);
+    const hit = await inferProjectIdFromPath(g, currentFilePath);
+    if (hit) return hit;
+  }
+  return null;
+}
+
+async function applyShardingInference(
+  explicitProjectId: string | undefined,
+  currentFilePath: string | undefined,
+): Promise<string | undefined> {
+  if (explicitProjectId) return explicitProjectId;
+  if (!currentFilePath) return undefined;
+  if (isProjectShardingEnabled()) {
+    const fromShards = await inferProjectIdWhenSharded(currentFilePath);
+    if (fromShards) return fromShards;
+  }
+  const g = await getGraph(undefined);
+  return (await inferProjectIdFromPath(g, currentFilePath)) ?? undefined;
+}
+
+/** Resolve path (graph path o IDE path). Abre el grafo acorde a projectId (sharding). */
 async function resolveFileForPath(
-  graph: GraphType,
   pathParam: string,
   projectId?: string | null,
-  currentFilePath?: string | null
-): Promise<{ graphPath: string; projectId: string | null }> {
+  currentFilePath?: string | null,
+): Promise<{ graphPath: string; projectId: string | null; graph: GraphType }> {
   const normalized = pathParam.replace(/\\/g, "/");
   const isAbsoluteLike = normalized.startsWith("/") || /^[A-Za-z]:/.test(pathParam);
 
   let resolvedProjectId = projectId ?? null;
   if (!resolvedProjectId && currentFilePath) {
-    resolvedProjectId = await inferProjectIdFromPath(graph, currentFilePath);
+    resolvedProjectId = (await applyShardingInference(undefined, currentFilePath)) ?? null;
   }
 
-  // If path looks like IDE path, try to resolve to graph path
+  let graph = await getGraph(resolvedProjectId ?? undefined);
+
+  if (!resolvedProjectId && isProjectShardingEnabled() && isAbsoluteLike) {
+    resolvedProjectId = (await inferProjectIdWhenSharded(normalized)) ?? null;
+    if (resolvedProjectId) graph = await getGraph(resolvedProjectId);
+  }
+
   if (isAbsoluteLike) {
     const filesQ = resolvedProjectId
       ? `MATCH (f:File {projectId: $projectId}) RETURN f.path AS path`
@@ -689,11 +748,12 @@ async function resolveFileForPath(
       }
     }
     if (best) {
-      return { graphPath: best.path, projectId: resolvedProjectId ?? best.id ?? null };
+      const pid = resolvedProjectId ?? best.id ?? null;
+      const g2 = await getGraph(pid ?? undefined);
+      return { graphPath: best.path, projectId: pid, graph: g2 };
     }
   }
 
-  // Short path (usePauta, usePauta.tsx): buscar File cuyo path termina en ese segmento
   const hasNoSlash = !normalized.includes("/");
   const searchSuffix = hasNoSlash ? normalized : normalized.split("/").pop() ?? normalized;
   if (hasNoSlash && searchSuffix) {
@@ -715,12 +775,13 @@ async function resolveFileForPath(
       }
     }
     if (bestShort) {
-      return { graphPath: bestShort.path, projectId: resolvedProjectId ?? bestShort.id ?? null };
+      const pid = resolvedProjectId ?? bestShort.id ?? null;
+      const g2 = await getGraph(pid ?? undefined);
+      return { graphPath: bestShort.path, projectId: pid, graph: g2 };
     }
   }
 
-  // Use as graph path directly
-  return { graphPath: normalized, projectId: resolvedProjectId };
+  return { graphPath: normalized, projectId: resolvedProjectId, graph };
 }
 
 /** Obtiene contenido de archivo desde ingest: intenta repo (repositories/:id/file) y si 404 intenta proyecto (projects/:id/file). */
@@ -747,7 +808,7 @@ async function fetchFileFromIngest(
 
   srv.setRequestHandler(CallToolRequestSchema, async (request) => {
   const { name, arguments: args } = request.params;
-  const graph = await getGraph();
+  let graph = await getGraph(undefined);
 
   if (name === "list_known_projects") {
     const ingestUrl = process.env.INGEST_URL ?? process.env.ARIADNESPEC_INGEST_URL ?? "";
@@ -812,6 +873,7 @@ async function fetchFileFromIngest(
         // Fallback to graph
       }
     }
+    graph = await getGraph(undefined);
     const q = `MATCH (p:Project) RETURN p.projectId AS id, p.projectName AS name, p.rootPath AS rootPath, p.branch AS branch`;
     const result = (await graph.query(q)) as { data?: Array<Record<string, unknown>> };
     const rows = (result.data ?? []) as Array<Record<string, unknown> | unknown[]>;
@@ -838,8 +900,9 @@ async function fetchFileFromIngest(
     let projectId = args?.projectId as string | undefined;
     const currentFilePath = args?.currentFilePath as string | undefined;
     if (!projectId && currentFilePath) {
-      projectId = (await inferProjectIdFromPath(graph, currentFilePath)) ?? undefined;
+      projectId = (await applyShardingInference(undefined, currentFilePath)) ?? undefined;
     }
+    graph = await getGraph(projectId ?? undefined);
     const exists = await nodeExists(graph, componentName, projectId ?? null);
     if (!exists) {
       return {
@@ -870,8 +933,9 @@ async function fetchFileFromIngest(
     let projectId = args?.projectId as string | undefined;
     const legacyFilePath = args?.currentFilePath as string | undefined;
     if (!projectId && legacyFilePath) {
-      projectId = (await inferProjectIdFromPath(graph, legacyFilePath)) ?? undefined;
+      projectId = (await applyShardingInference(undefined, legacyFilePath)) ?? undefined;
     }
+    graph = await getGraph(projectId ?? undefined);
     const exists = await nodeExists(graph, nodeName, projectId ?? null);
     if (!exists) {
       return {
@@ -906,8 +970,9 @@ async function fetchFileFromIngest(
     let projectId = args?.projectId as string | undefined;
     const currentFilePath = args?.currentFilePath as string | undefined;
     if (!projectId && currentFilePath) {
-      projectId = (await inferProjectIdFromPath(graph, currentFilePath)) ?? undefined;
+      projectId = (await applyShardingInference(undefined, currentFilePath)) ?? undefined;
     }
+    graph = await getGraph(projectId ?? undefined);
     const exists = await nodeExists(graph, componentName, projectId ?? null);
     if (!exists) {
       return {
@@ -944,7 +1009,12 @@ async function fetchFileFromIngest(
         isError: true,
       };
     }
-    const { graphPath, projectId: resolvedProjectId } = await resolveFileForPath(graph, pathParam, projectId, currentFilePath);
+    const { graphPath, projectId: resolvedProjectId, graph: gFile } = await resolveFileForPath(
+      pathParam,
+      projectId,
+      currentFilePath,
+    );
+    graph = gFile;
     const params: Record<string, string> = { path: graphPath };
     const matchProject = resolvedProjectId ? ", projectId: $projectId" : "";
     if (resolvedProjectId) params.projectId = resolvedProjectId;
@@ -973,7 +1043,12 @@ async function fetchFileFromIngest(
         isError: true,
       };
     }
-    const { graphPath, projectId: resolvedProjectId } = await resolveFileForPath(graph, filePathParam, projectId, currentFilePath);
+    const { graphPath, projectId: resolvedProjectId, graph: gImp } = await resolveFileForPath(
+      filePathParam,
+      projectId,
+      currentFilePath,
+    );
+    graph = gImp;
     const params: Record<string, string> = { path: graphPath };
     const matchProject = resolvedProjectId ? ", projectId: $projectId" : "";
     if (resolvedProjectId) params.projectId = resolvedProjectId;
@@ -1003,7 +1078,7 @@ async function fetchFileFromIngest(
     const currentFilePath = args?.currentFilePath as string | undefined;
     const ref = args?.ref as string | undefined;
     if (!projectId && currentFilePath) {
-      projectId = (await inferProjectIdFromPath(graph, currentFilePath)) ?? undefined;
+      projectId = (await applyShardingInference(undefined, currentFilePath)) ?? undefined;
     }
     if (!projectId) {
       return {
@@ -1011,7 +1086,7 @@ async function fetchFileFromIngest(
         isError: true,
       };
     }
-    const { graphPath } = await resolveFileForPath(graph, pathParam, projectId, currentFilePath);
+    const { graphPath } = await resolveFileForPath(pathParam, projectId, currentFilePath);
     const ingestUrl = process.env.INGEST_URL ?? process.env.ARIADNESPEC_INGEST_URL ?? "http://localhost:3002";
     try {
       const result = await fetchFileFromIngest(ingestUrl, projectId, graphPath, ref);
@@ -1043,6 +1118,18 @@ async function fetchFileFromIngest(
         isError: true,
       };
     }
+    if (isProjectShardingEnabled() && !projectId) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: "**Error:** Con `FALKOR_SHARD_BY_PROJECT` activo debes pasar `projectId` en semantic_search.",
+          },
+        ],
+        isError: true,
+      };
+    }
+    graph = await getGraph(projectId ?? undefined);
     const ingestUrl = process.env.INGEST_URL ?? process.env.ARIADNESPEC_INGEST_URL ?? "http://localhost:3002";
     const results: { type: string; name: string; projectId?: string }[] = [];
     let usedVector = false;
@@ -1226,7 +1313,7 @@ async function fetchFileFromIngest(
       return { content: [{ type: "text", text: "**Error:** Se requiere `question`." }], isError: true };
     }
     if (!projectId && currentFilePath) {
-      projectId = (await inferProjectIdFromPath(graph, currentFilePath)) ?? undefined;
+      projectId = (await applyShardingInference(undefined, currentFilePath)) ?? undefined;
     }
     if (!projectId) {
       return {
@@ -1275,7 +1362,7 @@ async function fetchFileFromIngest(
       return { content: [{ type: "text", text: "**Error:** Se requiere `userDescription` (descripción de la modificación)." }], isError: true };
     }
     if (!projectId && currentFilePath) {
-      projectId = (await inferProjectIdFromPath(graph, currentFilePath)) ?? undefined;
+      projectId = (await applyShardingInference(undefined, currentFilePath)) ?? undefined;
     }
     if (!projectId) {
       return {
@@ -1322,8 +1409,9 @@ async function fetchFileFromIngest(
     let projectId = args?.projectId as string | undefined;
     const currentFilePath = args?.currentFilePath as string | undefined;
     if (!projectId && currentFilePath) {
-      projectId = (await inferProjectIdFromPath(graph, currentFilePath)) ?? undefined;
+      projectId = (await applyShardingInference(undefined, currentFilePath)) ?? undefined;
     }
+    graph = await getGraph(projectId ?? undefined);
     const exists = await nodeExists(graph, nodeName, projectId ?? null);
     if (!exists) {
       return {
@@ -1416,8 +1504,9 @@ async function fetchFileFromIngest(
     let projectId = args?.projectId as string | undefined;
     const currentFilePath = args?.currentFilePath as string | undefined;
     if (!projectId && currentFilePath) {
-      projectId = (await inferProjectIdFromPath(graph, currentFilePath)) ?? undefined;
+      projectId = (await applyShardingInference(undefined, currentFilePath)) ?? undefined;
     }
+    graph = await getGraph(projectId ?? undefined);
     const params: Record<string, string> = { symbolName };
     if (projectId) params.projectId = projectId;
     const compProj = projectId ? ", projectId: $projectId" : "";
@@ -1474,8 +1563,9 @@ async function fetchFileFromIngest(
     let projectId = args?.projectId as string | undefined;
     const currentFilePath = args?.currentFilePath as string | undefined;
     if (!projectId && currentFilePath) {
-      projectId = (await inferProjectIdFromPath(graph, currentFilePath)) ?? undefined;
+      projectId = (await applyShardingInference(undefined, currentFilePath)) ?? undefined;
     }
+    graph = await getGraph(projectId ?? undefined);
     const exists = await nodeExists(graph, symbolName, projectId ?? null);
     if (!exists) {
       return {
@@ -1515,8 +1605,9 @@ async function fetchFileFromIngest(
     let projectId = args?.projectId as string | undefined;
     const currentFilePath = args?.currentFilePath as string | undefined;
     if (!projectId && currentFilePath) {
-      projectId = (await inferProjectIdFromPath(graph, currentFilePath)) ?? undefined;
+      projectId = (await applyShardingInference(undefined, currentFilePath)) ?? undefined;
     }
+    graph = await getGraph(projectId ?? undefined);
     const exists = await nodeExists(graph, symbolName, projectId ?? null);
     if (!exists) {
       return {
@@ -1573,7 +1664,7 @@ async function fetchFileFromIngest(
     let resolvedProjectId = projectId;
     const currentFilePath = args?.currentFilePath as string | undefined;
     if (!resolvedProjectId && currentFilePath) {
-      resolvedProjectId = (await inferProjectIdFromPath(graph, currentFilePath)) ?? "";
+      resolvedProjectId = (await applyShardingInference(undefined, currentFilePath)) ?? "";
     }
     if (!resolvedProjectId) {
       return {
@@ -1581,6 +1672,7 @@ async function fetchFileFromIngest(
         isError: true,
       };
     }
+    graph = await getGraph(resolvedProjectId);
     const params = { projectId: resolvedProjectId };
     const entryComponentsQ = `MATCH (r:Route {projectId: $projectId}) RETURN r.componentName AS name`;
     const entryFilesQ = `MATCH (f:File {projectId: $projectId}) WHERE f.path CONTAINS 'index.' OR f.path CONTAINS 'main.' OR f.path CONTAINS 'App.' RETURN f.path AS path`;
@@ -1651,7 +1743,7 @@ async function fetchFileFromIngest(
     let resolvedProjectId = projectId;
     const currentFilePath = args?.currentFilePath as string | undefined;
     if (!resolvedProjectId && currentFilePath) {
-      resolvedProjectId = (await inferProjectIdFromPath(graph, currentFilePath)) ?? "";
+      resolvedProjectId = (await applyShardingInference(undefined, currentFilePath)) ?? "";
     }
     if (!resolvedProjectId) {
       return {
@@ -1659,6 +1751,7 @@ async function fetchFileFromIngest(
         isError: true,
       };
     }
+    graph = await getGraph(resolvedProjectId);
     const params: Record<string, string> = { projectId: resolvedProjectId };
     const fileFilter = filePath ? " AND f.path = $filePath" : "";
     if (filePath) params.filePath = filePath;
@@ -1703,8 +1796,9 @@ async function fetchFileFromIngest(
     const currentFilePath = args?.currentFilePath as string | undefined;
     const includeTestFiles = (args?.includeTestFiles as boolean) ?? true;
     if (!projectId && currentFilePath) {
-      projectId = (await inferProjectIdFromPath(graph, currentFilePath)) ?? undefined;
+      projectId = (await applyShardingInference(undefined, currentFilePath)) ?? undefined;
     }
+    graph = await getGraph(projectId ?? undefined);
     const exists = await nodeExists(graph, nodeName, projectId ?? null);
     if (!exists) {
       return {
@@ -1751,8 +1845,9 @@ async function fetchFileFromIngest(
     let projectId = args?.projectId as string | undefined;
     const currentFilePath = args?.currentFilePath as string | undefined;
     if (!projectId && currentFilePath) {
-      projectId = (await inferProjectIdFromPath(graph, currentFilePath)) ?? undefined;
+      projectId = (await applyShardingInference(undefined, currentFilePath)) ?? undefined;
     }
+    graph = await getGraph(projectId ?? undefined);
     const exists = await nodeExists(graph, nodeName, projectId ?? null);
     if (!exists) {
       return {
@@ -1801,7 +1896,7 @@ async function fetchFileFromIngest(
     const currentFilePath = args?.currentFilePath as string | undefined;
     let resolvedProjectId = projectId;
     if (!resolvedProjectId && currentFilePath) {
-      resolvedProjectId = (await inferProjectIdFromPath(graph, currentFilePath)) ?? undefined;
+      resolvedProjectId = (await applyShardingInference(undefined, currentFilePath)) ?? undefined;
     }
     if (!query.trim()) {
       return {
@@ -1809,6 +1904,18 @@ async function fetchFileFromIngest(
         isError: true,
       };
     }
+    if (isProjectShardingEnabled() && !resolvedProjectId) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: "**Error:** Con `FALKOR_SHARD_BY_PROJECT` activo debes pasar `projectId` o `currentFilePath` en find_similar_implementations.",
+          },
+        ],
+        isError: true,
+      };
+    }
+    graph = await getGraph(resolvedProjectId ?? undefined);
     const ingestUrl = process.env.INGEST_URL ?? process.env.ARIADNESPEC_INGEST_URL ?? "http://localhost:3002";
     const results: { type: string; name: string; projectId?: string }[] = [];
     let usedVector = false;
@@ -1888,7 +1995,7 @@ async function fetchFileFromIngest(
     let resolvedProjectId = projectId;
     const currentFilePath = args?.currentFilePath as string | undefined;
     if (!resolvedProjectId && currentFilePath) {
-      resolvedProjectId = (await inferProjectIdFromPath(graph, currentFilePath)) ?? "";
+      resolvedProjectId = (await applyShardingInference(undefined, currentFilePath)) ?? "";
     }
     if (!resolvedProjectId) {
       return {
@@ -1918,7 +2025,7 @@ async function fetchFileFromIngest(
     const currentFilePath = args?.currentFilePath as string | undefined;
     const ref = args?.ref as string | undefined;
     if (!projectId && currentFilePath) {
-      projectId = (await inferProjectIdFromPath(graph, currentFilePath)) ?? undefined;
+      projectId = (await applyShardingInference(undefined, currentFilePath)) ?? undefined;
     }
     if (!projectId) {
       return {
@@ -1926,7 +2033,8 @@ async function fetchFileFromIngest(
         isError: true,
       };
     }
-    const { graphPath } = await resolveFileForPath(graph, filePathParam, projectId, currentFilePath);
+    const { graphPath, graph: gCtx } = await resolveFileForPath(filePathParam, projectId, currentFilePath);
+    graph = gCtx;
     const ingestUrl = process.env.INGEST_URL ?? process.env.ARIADNESPEC_INGEST_URL ?? "http://localhost:3002";
     const params: Record<string, string> = { path: graphPath };
     const matchProj = projectId ? ", projectId: $projectId" : "";
@@ -1975,7 +2083,7 @@ async function fetchFileFromIngest(
     const stagedDiff = (args?.stagedDiff as string) ?? "";
     let resolvedProjectId = projectId;
     if (!resolvedProjectId && (args?.currentFilePath as string)) {
-      resolvedProjectId = (await inferProjectIdFromPath(graph, (args?.currentFilePath as string) ?? "")) ?? "";
+      resolvedProjectId = (await applyShardingInference(undefined, (args?.currentFilePath as string) ?? "")) ?? "";
     }
     if (!resolvedProjectId) {
       return {
@@ -1983,6 +2091,7 @@ async function fetchFileFromIngest(
         isError: true,
       };
     }
+    graph = await getGraph(resolvedProjectId);
 
     let rawDiff: string;
     if (workspaceRoot.trim()) {

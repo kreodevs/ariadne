@@ -122,7 +122,7 @@ RETURN a.path as fromPath, b.path as toPath
 (Usa IMPORTS entre File, NO CONTAINS/Component. Para "lo usa" consulta CALLS entre Function si aplica.)
 
 Pregunta: "tablas de base de datos", "esquema BD", "modelos de datos", "entidades", "schema"
-→ OPCION A (Prisma): get_file_content en "prisma/schema.prisma" (el grafo NO indexa .prisma; path fijo).
+→ OPCION A (Prisma): execute_cypher nodos Model/Enum (m.source = 'prisma') y get_file_content del schema si hace falta el texto.
 → OPCION B (TypeORM/u otro ORM): execute_cypher MATCH (m:Model) RETURN m.path; luego get_file_content en cada path.
 → OPCION C (monorepo): probar apps/api/prisma/schema.prisma, libs/db/prisma/schema.prisma, libs/*/entity*.ts, **/entities/*.ts
 

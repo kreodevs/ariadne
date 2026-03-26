@@ -11,7 +11,7 @@ import { IndexedFile } from '../repositories/entities/indexed-file.entity';
 import { RepositoriesService } from '../repositories/repositories.service';
 import { BitbucketService } from '../bitbucket/bitbucket.service';
 import { getFalkorConfig } from '../pipeline/falkor';
-import { GRAPH_NAME } from '../pipeline/falkor';
+import { graphNameForProject, isProjectShardingEnabled } from '../pipeline/falkor';
 import { parseSource } from '../pipeline/parser';
 import { extractDomainConcepts } from '../pipeline/domain-extract';
 import {
@@ -21,6 +21,10 @@ import {
   resolveImportPath,
   runCypherBatch,
 } from '../pipeline/producer';
+import { buildCypherForPrismaSchema } from '../pipeline/prisma-extract';
+import { chunkMarkdown } from '../pipeline/markdown-chunk';
+import { buildCypherForMarkdownFile } from '../pipeline/markdown-graph';
+import { loadRepoTsconfigPaths } from '../pipeline/tsconfig-resolve';
 import { buildProjectMergeCypher } from '../pipeline/project';
 import type { ParsedFile } from '../pipeline/parser';
 
@@ -124,15 +128,15 @@ export class WebhooksService {
       const client = await FalkorDB.connect({
         socket: { host: config.host, port: config.port },
       });
-      const graph = client.selectGraph(GRAPH_NAME);
-      const graphClient = { query: (cypher: string) => graph.query(cypher) };
-
       const projectIdsFromJunction = await this.repos.getProjectIdsForRepo(repo.id);
       const allProjectIds =
         projectIdsFromJunction.length > 0 ? projectIdsFromJunction : [repo.id];
       const repoId = repo.id;
       const projectName = `${repo.projectKey}/${repo.repoSlug}`;
       for (const projectId of allProjectIds) {
+        const graph = client.selectGraph(
+          graphNameForProject(isProjectShardingEnabled() ? projectId : undefined),
+        );
         await graph.query(buildProjectMergeCypher({ projectId, projectName, rootPath: repoSlug }));
       }
 
@@ -157,6 +161,10 @@ export class WebhooksService {
           const msg = String(err instanceof Error ? err.message : err);
           if (msg.includes('404') || msg.includes('Not Found')) {
             for (const projectId of allProjectIds) {
+              const g = client.selectGraph(
+                graphNameForProject(isProjectShardingEnabled() ? projectId : undefined),
+              );
+              const graphClient = { query: (cypher: string) => g.query(cypher) };
               await runCypherBatch(graphClient, buildCypherDeleteFile(relPath, projectId, repoId));
             }
             const existing = await this.indexedFileRepo.findOne({
@@ -173,14 +181,89 @@ export class WebhooksService {
         }
 
         if (!content) continue;
+        if (relPath.toLowerCase().endsWith('.prisma')) {
+          for (const projectId of allProjectIds) {
+            const st = await buildCypherForPrismaSchema(relPath, content, projectId, repoId);
+            const g = client.selectGraph(
+              graphNameForProject(isProjectShardingEnabled() ? projectId : undefined),
+            );
+            const graphClient = { query: (cypher: string) => g.query(cypher) };
+            await runCypherBatch(graphClient, st);
+          }
+          const existingPr = await this.indexedFileRepo.findOne({
+            where: { repositoryId: repo.id, path: relPath },
+          });
+          if (existingPr) {
+            await this.indexedFileRepo.update(existingPr.id, {
+              indexedAt: new Date(),
+              revision: commitSha,
+            });
+          } else {
+            await this.indexedFileRepo.save(
+              this.indexedFileRepo.create({
+                repositoryId: repo.id,
+                path: relPath,
+                revision: commitSha,
+                indexedAt: new Date(),
+              }),
+            );
+          }
+          indexed++;
+          continue;
+        }
+        if (relPath.toLowerCase().endsWith('.md')) {
+          const chunks = chunkMarkdown(content);
+          for (const projectId of allProjectIds) {
+            const st = buildCypherForMarkdownFile(relPath, chunks, projectId, repoId);
+            const g = client.selectGraph(
+              graphNameForProject(isProjectShardingEnabled() ? projectId : undefined),
+            );
+            const graphClient = { query: (cypher: string) => g.query(cypher) };
+            await runCypherBatch(graphClient, st);
+          }
+          const existingMd = await this.indexedFileRepo.findOne({
+            where: { repositoryId: repo.id, path: relPath },
+          });
+          if (existingMd) {
+            await this.indexedFileRepo.update(existingMd.id, {
+              indexedAt: new Date(),
+              revision: commitSha,
+            });
+          } else {
+            await this.indexedFileRepo.save(
+              this.indexedFileRepo.create({
+                repositoryId: repo.id,
+                path: relPath,
+                revision: commitSha,
+                indexedAt: new Date(),
+              }),
+            );
+          }
+          indexed++;
+          continue;
+        }
         const out = parseSource(relPath, content, { extractDomainConcepts });
         const parsed = out && 'root' in out ? out.parsed : out;
         if (!parsed) continue;
         parsedFiles.push(parsed);
       }
 
+      const tsconfigPaths = await loadRepoTsconfigPaths(async (p) => {
+        try {
+          return await this.bitbucket.getFileContent(
+            workspace,
+            repoSlug,
+            branch,
+            p,
+            repo.credentialsRef,
+          );
+        } catch {
+          return null;
+        }
+      });
+
       const resolvePath = (from: string, spec: string) =>
-        resolveImportPath(from, spec, pathSet, { prefix: '' });
+        resolveImportPath(from, spec, pathSet, { prefix: '', tsconfig: tsconfigPaths });
       const resolvedCalls = resolveCrossFileCalls(
         parsedFiles,
         pathSet,
@@ -207,6 +290,10 @@ export class WebhooksService {
               repoId,
               chunkingContext,
             );
+            const g = client.selectGraph(
+              graphNameForProject(isProjectShardingEnabled() ? projectId : undefined),
+            );
+            const graphClient = { query: (cypher: string) => g.query(cypher) };
             await runCypherBatch(graphClient, statements);
           }
           const existing = await this.indexedFileRepo.findOne({

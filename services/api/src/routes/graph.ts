@@ -185,8 +185,8 @@ graphRouter.get("/compare/:componentName", async (req: Request, res: Response) =
   }
 });
 
-/** Shadow indexing: ingest (preferred) or cartographer. */
-const SHADOW_URL = process.env.INGEST_URL ?? process.env.CARTOGRAPHER_URL ?? "http://cartographer:4000";
+/** Shadow indexing: microservicio ingest (POST /shadow). */
+const SHADOW_URL = process.env.INGEST_URL ?? "http://ingest:3002";
 
 /**
  * POST /graph/shadow

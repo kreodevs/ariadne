@@ -56,8 +56,8 @@ function ensureColima() {
   return 0;
 }
 
-const INFRA_SERVICES = 'falkordb postgres redis cartographer';
-const BACKEND_SERVICES = 'falkordb postgres redis cartographer ingest api orchestrator';
+const INFRA_SERVICES = 'falkordb postgres redis';
+const BACKEND_SERVICES = 'falkordb postgres redis ingest api orchestrator';
 
 function ensureCompose(backendOnly = false, infraOnly = false) {
   const services = infraOnly ? INFRA_SERVICES : backendOnly ? BACKEND_SERVICES : '';
@@ -72,9 +72,9 @@ function ensureCompose(backendOnly = false, infraOnly = false) {
     return 1;
   }
   const msg = infraOnly
-    ? '[ensure-docker] Infra en ejecución (falkordb, postgres, redis, cartographer). Ejecuta dev:api, dev:ingest, dev:orchestrator en terminales separadas.'
+    ? '[ensure-docker] Infra en ejecución (falkordb, postgres, redis). Ejecuta dev:api, dev:ingest, dev:orchestrator en terminales separadas.'
     : backendOnly
-      ? '[ensure-docker] Backend en ejecución (falkordb, postgres, redis, api, ingest, cartographer, orchestrator).'
+      ? '[ensure-docker] Backend en ejecución (falkordb, postgres, redis, api, ingest, orchestrator).'
       : '[ensure-docker] Stack completo en ejecución.';
   console.log(msg);
   return 0;

@@ -2,8 +2,7 @@
  * Parser Tree-sitter para JS/JSX/TS/TSX (ingest).
  * Extrae imports, componentes, props, hooks, rutas, funciones (con complexity y nestingDepth), llamadas.
  * domainConcepts se rellenan solo si se inyecta extractDomainConcepts en las opciones (ver ParseSourceOptions).
- * Contrato: el servicio cartographer tiene su propio parser "light" (sin domain, sin routes) para indexación;
- * no comparten código; este es el parser completo para ingest/sync/webhooks.
+ * Parser completo para ingest/sync/webhooks/shadow; dominio y rutas opcionales vía extractDomainConcepts.
  * @module pipeline/parser
  */
 

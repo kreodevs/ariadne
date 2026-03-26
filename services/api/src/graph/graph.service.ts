@@ -2,6 +2,7 @@
  * @fileoverview Servicio de consultas al grafo FalkorDB: impacto, componente, contrato, compare (API).
  */
 import { Injectable } from '@nestjs/common';
+import { isProjectShardingEnabled } from 'ariadne-common';
 import { FalkorService } from '../falkor.service';
 import { CacheService } from '../cache.service';
 
@@ -10,10 +11,48 @@ interface FalkorResult {
   data?: unknown[][];
 }
 
-/**
- * Servicio que expone consultas al grafo (impacto de un nodo, dependencias de componente, contrato de props, compare shadow).
- * Usa caché para reducir carga en FalkorDB.
- */
+export interface GraphNodeDto {
+  id: string;
+  kind: string;
+  name?: string;
+  path?: string;
+}
+
+export interface GraphEdgeDto {
+  source: string;
+  target: string;
+  kind: string;
+}
+
+function parseGraphNodeCell(cell: unknown): GraphNodeDto | null {
+  if (cell == null) return null;
+  let labels: string[] = ['Node'];
+  let props: Record<string, unknown> = {};
+  if (Array.isArray(cell) && cell.length >= 2 && typeof cell[1] === 'object' && cell[1] !== null) {
+    const lbl = cell[0];
+    labels = Array.isArray(lbl) ? lbl.map(String) : typeof lbl === 'string' ? [lbl] : ['Node'];
+    props = cell[1] as Record<string, unknown>;
+  } else if (typeof cell === 'object' && !Array.isArray(cell)) {
+    const o = cell as Record<string, unknown>;
+    const lr = o.labels ?? o.label;
+    labels = Array.isArray(lr) ? lr.map(String) : lr != null ? [String(lr)] : ['Node'];
+    props = o;
+  } else {
+    return null;
+  }
+  const kind = labels[0] ?? 'Node';
+  const name = props.name != null ? String(props.name) : undefined;
+  const path = props.path != null ? String(props.path) : undefined;
+  const id = `${kind}|${path ?? ''}|${name ?? ''}`;
+  return { id, kind, name, path };
+}
+
+function impactNode(name: unknown, labels: unknown): GraphNodeDto {
+  const kind = Array.isArray(labels) && labels.length ? String(labels[0]) : 'Node';
+  const n = name != null ? String(name) : 'unknown';
+  return { id: `${kind}||${n}`, kind, name: n };
+}
+
 @Injectable()
 export class GraphService {
   constructor(
@@ -21,20 +60,18 @@ export class GraphService {
     private readonly cache: CacheService,
   ) {}
 
-  /**
-   * Obtiene los dependientes de un nodo (qué se rompe si se modifica). Resultado cacheado.
-   * @param {string} nodeId - Nombre del nodo (componente o función).
-   * @returns {Promise<{ nodeId: string; dependents: Array<{ name: unknown; labels: unknown }> }>}
-   */
-  async getImpact(nodeId: string) {
+  async getImpact(nodeId: string, projectId?: string) {
     const cached = await this.cache.get<{ nodeId: string; dependents: unknown[] }>(
-      this.cache.impactKey(nodeId),
+      this.cache.impactKey(nodeId, projectId),
     );
     if (cached) return cached;
-    const graph = await this.falkor.getGraph();
+    const graph = await this.falkor.getGraph(projectId);
+    const matchProj = projectId ? ', projectId: $projectId' : '';
+    const params: Record<string, string> = { nodeName: nodeId };
+    if (projectId) params.projectId = projectId;
     const result = (await graph.query(
-      `MATCH (n {name: $nodeName})<-[:CALLS|RENDERS*]-(dependent) RETURN dependent.name AS name, labels(dependent) AS labels`,
-      { params: { nodeName: nodeId } },
+      `MATCH (n {name: $nodeName${matchProj}})<-[:CALLS|RENDERS*]-(dependent) RETURN dependent.name AS name, labels(dependent) AS labels`,
+      { params },
     )) as FalkorResult;
     const data = result.data ?? [];
     const headers = result.headers ?? ['name', 'labels'];
@@ -48,68 +85,116 @@ export class GraphService {
       };
     });
     const payload = { nodeId, dependents };
-    await this.cache.set(this.cache.impactKey(nodeId), payload, this.cache.TTL.impact);
+    await this.cache.set(this.cache.impactKey(nodeId, projectId), payload, this.cache.TTL.impact);
     return payload;
   }
 
-  /**
-   * Obtiene el grafo de dependencias de un componente hasta una profundidad. Resultado cacheado.
-   * @param {string} name - Nombre del componente.
-   * @param {number} depth - Profundidad máxima de relaciones (1..depth).
-   * @returns {Promise<{ componentName: string; depth: number; dependencies: Array<{ name?: string; path?: string }> }>}
-   */
-  async getComponent(name: string, depth: number) {
+  async getComponent(name: string, depth: number, projectId?: string) {
     const cached = await this.cache.get<{
       componentName: string;
       depth: number;
+      projectId?: string;
       dependencies: unknown[];
-    }>(this.cache.componentKey(name, depth));
+      nodes: GraphNodeDto[];
+      edges: GraphEdgeDto[];
+    }>(this.cache.componentKey(name, depth, projectId));
     if (cached) return cached;
-    const graph = await this.falkor.getGraph();
+
+    const graph = await this.falkor.getGraph(projectId);
+    const compMatch = projectId ? ', projectId: $projectId' : '';
+    const params: Record<string, string> = { componentName: name };
+    if (projectId) params.projectId = projectId;
+    const whereFilter = projectId
+      ? ` WHERE (dependency.projectId = $projectId OR dependency.projectId IS NULL)`
+      : '';
     const result = (await graph.query(
-      `MATCH (c:Component {name: $componentName})-[*1..${depth}]->(dependency) RETURN c, dependency`,
-      { params: { componentName: name } },
+      `MATCH (c:Component {name: $componentName${compMatch}})-[*1..${depth}]->(dependency)${whereFilter} RETURN c, dependency`,
+      { params },
     )) as FalkorResult;
     const data = result.data ?? [];
     const headers = result.headers ?? ['c', 'dependency'];
+    const cIdx = headers.indexOf('c');
     const depIdx = headers.indexOf('dependency');
     const seen = new Set<string>();
     const dependencies: { name?: string; path?: string }[] = [];
+    const nodes = new Map<string, GraphNodeDto>();
+    const edgeKey = new Set<string>();
+    const edges: GraphEdgeDto[] = [];
+
+    let centerId: string | null = null;
+
     for (const row of data as unknown[]) {
       const arr = Array.isArray(row) ? row : [row];
+      const centerCell = cIdx >= 0 && arr[cIdx] != null ? arr[cIdx] : arr[0];
       const dep = depIdx >= 0 && arr[depIdx] != null ? arr[depIdx] : arr[1];
+      const centerNode = parseGraphNodeCell(centerCell);
+      if (centerNode && !centerId) {
+        centerId = centerNode.id;
+        nodes.set(centerNode.id, centerNode);
+      }
+      const depParsed = parseGraphNodeCell(dep);
       const obj =
-        dep && typeof dep === 'object' ? (dep as Record<string, unknown>) : { name: String(dep) };
+        dep && typeof dep === 'object' && !Array.isArray(dep)
+          ? (dep as Record<string, unknown>)
+          : { name: String(dep) };
       const key = String(obj.name ?? obj.path ?? JSON.stringify(obj));
       if (seen.has(key)) continue;
       seen.add(key);
       dependencies.push({ name: obj.name as string, path: obj.path as string });
+      if (depParsed) {
+        nodes.set(depParsed.id, depParsed);
+        if (centerId) {
+          const ek = `${centerId}|${depParsed.id}|depends`;
+          if (!edgeKey.has(ek)) {
+            edgeKey.add(ek);
+            edges.push({ source: centerId, target: depParsed.id, kind: 'depends' });
+          }
+        }
+      }
     }
-    const payload = { componentName: name, depth, dependencies };
+
+    const impact = await this.getImpact(name, projectId);
+    if (!centerId) {
+      centerId = `Component||${name}`;
+      nodes.set(centerId, { id: centerId, kind: 'Component', name });
+    }
+    for (const d of impact.dependents as { name?: unknown; labels?: unknown }[]) {
+      const gn = impactNode(d.name, d.labels);
+      nodes.set(gn.id, gn);
+      const ek = `${gn.id}|${centerId}|legacy_impact`;
+      if (!edgeKey.has(ek)) {
+        edgeKey.add(ek);
+        edges.push({ source: gn.id, target: centerId, kind: 'legacy_impact' });
+      }
+    }
+
+    const payload = {
+      componentName: name,
+      depth,
+      ...(projectId ? { projectId } : {}),
+      dependencies,
+      nodes: [...nodes.values()],
+      edges,
+    };
     await this.cache.set(
-      this.cache.componentKey(name, depth),
+      this.cache.componentKey(name, depth, projectId),
       payload,
       this.cache.TTL.component,
     );
     return payload;
   }
 
-  /**
-   * Obtiene el contrato (props) de un componente desde el grafo. Resultado cacheado.
-   * @param {string} componentName - Nombre del componente.
-   * @returns {Promise<{ componentName: string; props: Array<{ name: string; required: boolean }> }>}
-   */
-  async getContract(componentName: string) {
+  async getContract(componentName: string, projectId?: string) {
     const cached = await this.cache.get<{
       componentName: string;
       props: { name: string; required: boolean }[];
-    }>(this.cache.contractKey(componentName));
+    }>(this.cache.contractKey(componentName, projectId));
     if (cached) return cached;
-    const graph = await this.falkor.getGraph();
-    const props = await this.getPropsForComponent(graph, componentName);
+    const graph = await this.falkor.getGraph(projectId);
+    const props = await this.getPropsForComponent(graph, componentName, projectId);
     const payload = { componentName, props };
     await this.cache.set(
-      this.cache.contractKey(componentName),
+      this.cache.contractKey(componentName, projectId),
       payload,
       this.cache.TTL.contract,
     );
@@ -142,14 +227,14 @@ export class GraphService {
     });
   }
 
-  async compare(componentName: string) {
+  async compare(componentName: string, projectId?: string) {
     const [mainGraph, shadowGraph] = await Promise.all([
-      this.falkor.getGraph(),
+      this.falkor.getGraph(projectId),
       this.falkor.getShadowGraph(),
     ]);
     const [mainProps, shadowProps] = await Promise.all([
-      this.getPropsForComponent(mainGraph, componentName),
-      this.getPropsForComponent(shadowGraph, componentName),
+      this.getPropsForComponent(mainGraph, componentName, projectId),
+      this.getPropsForComponent(shadowGraph, componentName, undefined),
     ]);
     const mainSet = new Set(mainProps.map((p) => p.name));
     const shadowSet = new Set(shadowProps.map((p) => p.name));
@@ -166,9 +251,15 @@ export class GraphService {
     };
   }
 
-  /** Genera un manual en markdown a partir del grafo (proyectos, componentes con descripciones y props). */
   async getManual(projectId?: string): Promise<string> {
-    const graph = await this.falkor.getGraph();
+    if (isProjectShardingEnabled() && !projectId) {
+      return [
+        '# Manual de componentes',
+        '',
+        '_Con `FALKOR_SHARD_BY_PROJECT` activo indica `?projectId=` en GET /graph/manual._',
+      ].join('\n');
+    }
+    const graph = await this.falkor.getGraph(projectId);
     const projFilter = projectId ? ' WHERE p.projectId = $projectId' : '';
     const projParams = projectId ? { params: { projectId } } : {};
     const projectsRes = (await graph.query(
@@ -220,7 +311,7 @@ export class GraphService {
   }
 
   async shadowProxy(files: { path: string; content: string }[]) {
-    const url = process.env.INGEST_URL ?? process.env.CARTOGRAPHER_URL ?? 'http://cartographer:4000';
+    const url = process.env.INGEST_URL ?? 'http://ingest:3002';
     const r = await fetch(`${url}/shadow`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

@@ -1,10 +1,10 @@
 /**
- * @fileoverview Indexa embeddings en nodos Function y Component del grafo para RAG vectorial. Requiere EMBEDDING_PROVIDER + API key y FalkorDB 4.0+.
+ * @fileoverview Indexa embeddings en Function, Component y Document (chunks .md) para RAG. Requiere EMBEDDING_PROVIDER + FalkorDB 4.0+.
  */
 import { Injectable } from '@nestjs/common';
 import { FalkorDB } from 'falkordb';
 import { getFalkorConfig } from '../pipeline/falkor';
-import { GRAPH_NAME } from '../pipeline/falkor';
+import { graphNameForProject, isProjectShardingEnabled } from '../pipeline/falkor';
 import { RepositoriesService } from '../repositories/repositories.service';
 import { FileContentService } from '../repositories/file-content.service';
 import { EmbeddingService } from './embedding.service';
@@ -34,7 +34,9 @@ export class EmbedIndexService {
     const client = await FalkorDB.connect({
       socket: { host: config.host, port: config.port },
     });
-    const graph = client.selectGraph(GRAPH_NAME);
+    const graph = client.selectGraph(
+      graphNameForProject(isProjectShardingEnabled() ? projectId : undefined),
+    );
     const dim = this.embedding.getDimension();
     let indexed = 0;
     let errors = 0;
@@ -114,6 +116,43 @@ export class EmbedIndexService {
     } catch {
       /* index may already exist */
     }
+
+    const docRes = (await graph.query(
+      `MATCH (d:Document) WHERE d.projectId = $projectId AND d.chunkText IS NOT NULL AND trim(d.chunkText) <> '' RETURN d.path AS path, d.chunkIndex AS chunkIndex, d.heading AS heading, d.chunkText AS chunkText`,
+      { params: { projectId } },
+    )) as { data?: unknown[] };
+    for (const row of docRes.data ?? []) {
+      const arr = Array.isArray(row) ? row : [row];
+      const path = String(arr[0] ?? '');
+      const chunkIndex = typeof arr[1] === 'number' ? arr[1] : Number(arr[1]);
+      const heading = arr[2] != null ? String(arr[2]) : '';
+      const chunkText = String(arr[3] ?? '');
+      const text = [heading, path, chunkText].filter(Boolean).join('\n').slice(0, 8000);
+      if (text.length < 20) continue;
+      try {
+        const vec = await this.embedding.embed(text);
+        const vecStr = `[${vec.join(',')}]`;
+        await graph.query(
+          `MATCH (d:Document {path: $path, chunkIndex: $chunkIndex, projectId: $projectId}) SET d.embedding = vecf32(${vecStr})`,
+          { params: { path, chunkIndex, projectId } },
+        );
+        indexed++;
+      } catch (e) {
+        errors++;
+        if (errors <= 3) {
+          console.warn(`[embed-index] Document ${path}#${chunkIndex} failed:`, e instanceof Error ? e.message : e);
+        }
+      }
+    }
+
+    try {
+      await graph.query(
+        `CREATE VECTOR INDEX FOR (n:Document) ON (n.embedding) OPTIONS {dimension: ${dim}, similarityFunction: 'cosine'}`,
+      );
+    } catch {
+      /* index may already exist */
+    }
+
     await client.close();
     if (errors > 0) {
       console.warn(

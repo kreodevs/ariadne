@@ -13,9 +13,13 @@ import {
   runCypherBatch,
 } from '../pipeline/producer';
 import { buildProjectMergeCypher } from '../pipeline/project';
+import { buildCypherForPrismaSchema } from '../pipeline/prisma-extract';
+import { loadTsconfigPathsFromShadowFiles } from '../pipeline/tsconfig-resolve';
+import { chunkMarkdown } from '../pipeline/markdown-chunk';
+import { buildCypherForMarkdownFile } from '../pipeline/markdown-graph';
+import type { ParsedFile } from '../pipeline/parser';
 
 const SHADOW_PROJECT_ID = '00000000-0000-0000-0000-000000000000';
-import type { ParsedFile } from '../pipeline/parser';
 
 /** Archivo a indexar en shadow (path + contenido). */
 export interface ShadowFile {
@@ -35,15 +39,30 @@ export class ShadowService {
     if (!Array.isArray(files) || files.length === 0) {
       throw new Error('body.files array required');
     }
-    const pathSet = new Set(files.map((f) => f.path));
+    const norm = (p: string) => p.replace(/\\/g, '/');
+    const pathSet = new Set(files.map((f) => norm(f.path)));
     const parsedByPath = new Map<string, ParsedFile>();
+    const prismaFiles: { path: string; content: string }[] = [];
+    const markdownFiles: { path: string; content: string }[] = [];
     for (const { path, content } of files) {
-      const out = parseSource(path, content);
+      const p = norm(path);
+      if (p.toLowerCase().endsWith('.prisma')) {
+        prismaFiles.push({ path: p, content });
+        continue;
+      }
+      if (p.toLowerCase().endsWith('.md')) {
+        markdownFiles.push({ path: p, content });
+        continue;
+      }
+      const out = parseSource(p, content);
       const parsed = out && 'root' in out ? out.parsed : out;
-      if (parsed) parsedByPath.set(path, parsed);
+      if (parsed) parsedByPath.set(p, { ...parsed, path: p });
     }
     const parsedFiles = Array.from(parsedByPath.values());
-    const resolvePath = (from: string, spec: string) => resolveImportPath(from, spec, pathSet);
+    const tsconfigPaths = loadTsconfigPathsFromShadowFiles(files.map((f) => ({ path: norm(f.path), content: f.content })));
+    const resolveOpts = tsconfigPaths ? { tsconfig: tsconfigPaths, prefix: '' } : { prefix: '' };
+    const resolvePath = (from: string, spec: string) =>
+      resolveImportPath(norm(from), spec, pathSet, resolveOpts);
     const resolvedCalls = resolveCrossFileCalls(parsedFiles, pathSet, resolvePath);
 
     const allStatements: string[] = [];
@@ -63,6 +82,15 @@ export class ShadowService {
         SHADOW_PROJECT_ID,
       );
       allStatements.push(...statements);
+    }
+    for (const pf of prismaFiles) {
+      const st = await buildCypherForPrismaSchema(pf.path, pf.content, SHADOW_PROJECT_ID, SHADOW_PROJECT_ID);
+      allStatements.push(...st);
+    }
+    for (const mf of markdownFiles) {
+      const chunks = chunkMarkdown(mf.content);
+      const st = buildCypherForMarkdownFile(mf.path, chunks, SHADOW_PROJECT_ID, SHADOW_PROJECT_ID);
+      allStatements.push(...st);
     }
 
     const config = getFalkorConfig();

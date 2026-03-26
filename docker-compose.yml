@@ -49,26 +49,6 @@ services:
       timeout: 3s
       retries: 5
 
-  # Servicio de Ingesta Estática (El Cartógrafo)
-  cartographer:
-    build:
-      context: .
-      dockerfile: ./services/cartographer/Dockerfile
-    container_name: ariadnespecs-cartographer
-    volumes:
-      - ./src:/app/src-to-analyze:ro # Monta tu código legacy como solo lectura
-      - ./specs:/app/specs
-    environment:
-      - FALKORDB_HOST=falkordb
-      - FALKORDB_PORT=6379
-      - SCAN_PATH=/app/src-to-analyze
-      - SHADOW_SERVER_PORT=4000
-    depends_on:
-      falkordb:
-        condition: service_healthy
-    networks:
-      - falkor-net
-
   # Frontend — UI admin del ingest (repos, sync, jobs)
   # Dokploy Domains UI: ariadne.kreoint.mx path / → 80
   frontend:
@@ -93,10 +73,10 @@ services:
     environment:
       - FALKORDB_HOST=falkordb
       - FALKORDB_PORT=6379
+      - FALKOR_SHARD_BY_PROJECT=${FALKOR_SHARD_BY_PROJECT:-false}
       - PORT=3000
       - REDIS_URL=redis://redis:6379
       - INGEST_URL=http://ingest:3002
-      - CARTOGRAPHER_URL=http://cartographer:4000
       - CORS_ORIGIN=${CORS_ORIGIN:-}
       - JWT_SECRET=${JWT_SECRET:-}
       - JWT_EXPIRES=${JWT_EXPIRES:-604800}
@@ -137,6 +117,8 @@ services:
       - PGDATABASE=falkorspecs
       - FALKORDB_HOST=falkordb
       - FALKORDB_PORT=6379
+      # Partición por projectId: un grafo Redis por proyecto (AriadneSpecs:<uuid>)
+      - FALKOR_SHARD_BY_PROJECT=${FALKOR_SHARD_BY_PROJECT:-false}
       - REDIS_URL=redis://redis:6379
       - NODE_ENV=production
       - EMBEDDING_PROVIDER=${EMBEDDING_PROVIDER:-openai}
@@ -167,6 +149,8 @@ services:
     environment:
       - PORT=3001
       - ARIADNESPEC_API_URL=http://api:3000/api
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - ORCHESTRATOR_LLM_MODEL=${ORCHESTRATOR_LLM_MODEL:-gpt-4o-mini}
     depends_on:
       api:
         condition: service_started

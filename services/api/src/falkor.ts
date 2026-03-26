@@ -1,19 +1,16 @@
 /**
- * @fileoverview Cliente FalkorDB para la API. Conexión singleton al grafo principal y al grafo shadow.
+ * @fileoverview Cliente FalkorDB (rutas Express legacy). Nest usa FalkorService.
  */
 import { FalkorDB } from "falkordb";
+import {
+  SHADOW_GRAPH_NAME,
+  graphNameForProject,
+} from "ariadne-common";
 
-/** Nombre del grafo principal (índice de repositorios). */
-export const GRAPH_NAME = "AriadneSpecs";
+export { GRAPH_NAME, SHADOW_GRAPH_NAME } from "ariadne-common";
 
-/** Nombre del grafo shadow usado para comparar código propuesto (flujo SDD). */
-export const SHADOW_GRAPH_NAME = "AriadneSpecsShadow";
+let client: Awaited<ReturnType<typeof FalkorDB.connect>> | null = null;
 
-/**
- * Obtiene la configuración de conexión desde variables de entorno.
- * @returns {{ host: string; port: number }} Host y puerto de FalkorDB.
- * @internal
- */
 function getConfig() {
   return {
     host: process.env.FALKORDB_HOST ?? "localhost",
@@ -21,26 +18,17 @@ function getConfig() {
   };
 }
 
-let client: Awaited<ReturnType<typeof FalkorDB.connect>> | null = null;
-
-/**
- * Devuelve el grafo principal FalkorDB (conexión singleton).
- * @returns {Promise<Graph>} Instancia del grafo FalkorSpecs.
- */
-export async function getGraph() {
+/** Grafo principal; con sharding indicar projectId (UUID índice). */
+export async function getGraph(projectId?: string | null) {
   if (!client) {
     const config = getConfig();
     client = await FalkorDB.connect({
       socket: { host: config.host, port: config.port },
     });
   }
-  return client.selectGraph(GRAPH_NAME);
+  return client.selectGraph(graphNameForProject(projectId ?? undefined));
 }
 
-/**
- * Devuelve el grafo shadow FalkorDB para comparación de código propuesto (conexión singleton).
- * @returns {Promise<Graph>} Instancia del grafo FalkorSpecsShadow.
- */
 export async function getShadowGraph() {
   if (!client) {
     const config = getConfig();
@@ -51,10 +39,6 @@ export async function getShadowGraph() {
   return client.selectGraph(SHADOW_GRAPH_NAME);
 }
 
-/**
- * Cierra la conexión a FalkorDB y libera el cliente singleton.
- * @returns {Promise<void>}
- */
 export async function closeFalkor() {
   if (client) {
     await client.close();

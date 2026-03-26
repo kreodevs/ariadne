@@ -20,12 +20,12 @@ export class GraphController {
 
   /** GET /graph/impact/:nodeId — Dependientes del nodo (componente/función) en el grafo. */
   @Get('impact/:nodeId')
-  async impact(@Param('nodeId') nodeId: string) {
+  async impact(@Param('nodeId') nodeId: string, @Query('projectId') projectId?: string) {
     if (!nodeId) {
       throw new HttpException('nodeId required', HttpStatus.BAD_REQUEST);
     }
     try {
-      return this.graph.getImpact(nodeId);
+      return this.graph.getImpact(nodeId, projectId || undefined);
     } catch (err) {
       throw new HttpException(String(err), HttpStatus.INTERNAL_SERVER_ERROR);
     }
@@ -36,6 +36,7 @@ export class GraphController {
   async component(
     @Param('name') name: string,
     @Query('depth') depthStr?: string,
+    @Query('projectId') projectId?: string,
   ) {
     if (!name) {
       throw new HttpException('name required', HttpStatus.BAD_REQUEST);
@@ -45,7 +46,7 @@ export class GraphController {
       Math.max(1, parseInt(depthStr ?? '2', 10) || 2),
     );
     try {
-      return this.graph.getComponent(name, depth);
+      return this.graph.getComponent(name, depth, projectId || undefined);
     } catch (err) {
       throw new HttpException(String(err), HttpStatus.INTERNAL_SERVER_ERROR);
     }
@@ -53,12 +54,15 @@ export class GraphController {
 
   /** GET /graph/contract/:componentName — Props del contrato del componente. */
   @Get('contract/:componentName')
-  async contract(@Param('componentName') componentName: string) {
+  async contract(
+    @Param('componentName') componentName: string,
+    @Query('projectId') projectId?: string,
+  ) {
     if (!componentName) {
       throw new HttpException('componentName required', HttpStatus.BAD_REQUEST);
     }
     try {
-      return this.graph.getContract(componentName);
+      return this.graph.getContract(componentName, projectId || undefined);
     } catch (err) {
       throw new HttpException(String(err), HttpStatus.INTERNAL_SERVER_ERROR);
     }
@@ -77,12 +81,15 @@ export class GraphController {
 
   /** GET /graph/compare/:componentName — Compara props del grafo principal vs shadow (SDD). */
   @Get('compare/:componentName')
-  async compare(@Param('componentName') componentName: string) {
+  async compare(
+    @Param('componentName') componentName: string,
+    @Query('projectId') projectId?: string,
+  ) {
     if (!componentName) {
       throw new HttpException('componentName required', HttpStatus.BAD_REQUEST);
     }
     try {
-      return this.graph.compare(componentName);
+      return this.graph.compare(componentName, projectId || undefined);
     } catch (err) {
       throw new HttpException(String(err), HttpStatus.INTERNAL_SERVER_ERROR);
     }

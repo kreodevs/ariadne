@@ -5,7 +5,7 @@
 
 import { Injectable } from '@nestjs/common';
 import { FalkorDB } from 'falkordb';
-import { getFalkorConfig, GRAPH_NAME } from '../pipeline/falkor';
+import { getFalkorConfig, graphNameForProject, isProjectShardingEnabled } from '../pipeline/falkor';
 import { RepositoriesService } from '../repositories/repositories.service';
 
 @Injectable()
@@ -55,7 +55,9 @@ export class ChatCypherService {
     const samples: Record<string, unknown[]> = {};
 
     try {
-      const graph = client.selectGraph(GRAPH_NAME);
+      const graph = client.selectGraph(
+        graphNameForProject(isProjectShardingEnabled() ? projectId : undefined),
+      );
       const params = { projectId };
 
       for (const label of labels) {
@@ -150,7 +152,9 @@ export class ChatCypherService {
       socket: { host: config.host, port: config.port },
     });
     try {
-      const graph = client.selectGraph(GRAPH_NAME);
+      const graph = client.selectGraph(
+        graphNameForProject(isProjectShardingEnabled() ? projectId : undefined),
+      );
       const params = { projectId, ...extraParams };
       const res = await graph.query(cypher, { params });
       return (res as { data?: Record<string, unknown>[] })?.data ?? [];
@@ -160,13 +164,18 @@ export class ChatCypherService {
   }
 
   /** Ejecuta Cypher sin params (para vector query con vecf32 inline). */
-  async executeCypherRaw(cypher: string): Promise<unknown[]> {
+  /** Cypher sin params (p. ej. vector). Con sharding, indica el projectId del shard. */
+  async executeCypherRaw(cypher: string, shardProjectId?: string): Promise<unknown[]> {
     const config = getFalkorConfig();
     const client = await FalkorDB.connect({
       socket: { host: config.host, port: config.port },
     });
     try {
-      const graph = client.selectGraph(GRAPH_NAME);
+      const graph = client.selectGraph(
+        graphNameForProject(
+          isProjectShardingEnabled() && shardProjectId ? shardProjectId : undefined,
+        ),
+      );
       const res = await graph.query(cypher);
       return (res as { data?: Record<string, unknown>[] })?.data ?? [];
     } finally {

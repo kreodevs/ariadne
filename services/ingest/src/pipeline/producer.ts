@@ -375,10 +375,14 @@ const FALKOR_INDEXES = [
   'CREATE INDEX FOR (fn:Function) ON (fn.name)',
   'CREATE INDEX FOR (c:Component) ON (c.projectId)',
   'CREATE INDEX FOR (c:Component) ON (c.name)',
+  'CREATE INDEX FOR (e:Enum) ON (e.projectId)',
+  'CREATE INDEX FOR (e:Enum) ON (e.name)',
   'CREATE INDEX FOR (dc:DomainConcept) ON (dc.projectId)',
   'CREATE INDEX FOR (dc:DomainConcept) ON (dc.category)',
   'CREATE INDEX FOR (ctx:Context) ON (ctx.projectId)',
   'CREATE INDEX FOR (ctx:Context) ON (ctx.name)',
+  'CREATE INDEX FOR (d:Document) ON (d.projectId)',
+  'CREATE INDEX FOR (d:Document) ON (d.path)',
 ];
 
 /**
@@ -405,6 +409,7 @@ const REPOID_BACKFILL_LABELS = [
   'Function',
   'Route',
   'Model',
+  'Enum',
   'NestModule',
   'NestController',
   'NestService',
@@ -415,6 +420,7 @@ const REPOID_BACKFILL_LABELS = [
   'Prop',
   'Hook',
   'Context',
+  'Document',
 ];
 
 /**
@@ -447,6 +453,7 @@ export function buildCypherDeleteFile(relativePath: string, projectId: string, r
   const rid = cypherSafe(repoId);
   return [
     `MATCH (dc:DomainConcept {sourcePath: ${path}, projectId: ${pid}, repoId: ${rid}})-[:DEFINED_IN]->(:File {path: ${path}, projectId: ${pid}, repoId: ${rid}}) DETACH DELETE dc`,
+    `MATCH (d:Document {path: ${path}, projectId: ${pid}, repoId: ${rid}}) DETACH DELETE d`,
     `MATCH (f:File {path: ${path}, projectId: ${pid}, repoId: ${rid}}) OPTIONAL MATCH (f)-[:CONTAINS]->(child) DETACH DELETE child, f`,
   ];
 }

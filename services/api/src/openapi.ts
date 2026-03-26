@@ -176,7 +176,7 @@ export const openApiSpec = {
         operationId: "postGraphShadow",
         summary: "Indexar código propuesto en grafo shadow",
         description:
-          "Proxy al Cartographer: indexa archivos en memoria en AriadneSpecsShadow (body.files: [{ path, content }]).",
+          "Proxy al servicio ingest: indexa archivos en memoria en AriadneSpecsShadow (body.files: [{ path, content }]).",
         requestBody: {
           required: true,
           content: {
@@ -204,7 +204,7 @@ export const openApiSpec = {
         responses: {
           "200": { description: "ok, indexed, statements" },
           "400": { description: "body.files array required" },
-          "502": { description: "Error proxy Cartographer" },
+          "502": { description: "Error proxy ingest" },
         },
       },
     },

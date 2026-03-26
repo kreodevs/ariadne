@@ -3,7 +3,16 @@
  */
 
 export { escapeCypherString, cypherSafe } from './cypher.js';
-export { GRAPH_NAME, getFalkorConfig, type FalkorConfig } from './falkor.js';
+export {
+  GRAPH_NAME,
+  SHADOW_GRAPH_NAME,
+  getFalkorConfig,
+  graphNameForProject,
+  isProjectShardingEnabled,
+  externalGraphName,
+  isExternalGraphRoutingEnabled,
+  type FalkorConfig,
+} from './falkor.js';
 export {
   type ResolvedCallInfo,
   type ParsedFileMinimal,

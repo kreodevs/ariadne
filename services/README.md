@@ -5,9 +5,8 @@ El **frontend** (UI admin del ingest) es un proyecto independiente en la raíz d
 | Servicio       | Puerto | Responsabilidad |
 |----------------|--------|-----------------|
 | **frontend**   | 5173 | UI admin del ingest: repos, sync, jobs. React + Vite. *(código en `../frontend`)* |
-| **cartographer** | Interno (solo red Docker), shadow en 4000 | Ingesta por directorio local (chokidar), shadow server `POST /shadow`. Tree-sitter + FalkorDB. |
-| **api**        | 3000 | API REST (OpenAPI 3.1): `/graph/impact`, `/graph/component`, `/graph/contract`, `/graph/compare`, proxy a shadow. |
-| **ingest**     | 3002 | Ingesta por Bitbucket: repos, full sync, webhook `POST /webhooks/bitbucket`. NestJS + TypeORM + PostgreSQL + FalkorDB. |
+| **api**        | 3000 | API REST (OpenAPI 3.1): `/graph/impact`, `/graph/component`, `/graph/contract`, `/graph/compare`, proxy `POST /graph/shadow` → ingest. |
+| **ingest**     | 3002 | Sync Bitbucket/GitHub, webhook, `POST /shadow`, Prisma/tsconfig en pipeline → FalkorDB. NestJS + TypeORM + PostgreSQL. |
 | **orchestrator** | 3001 | Orquestador NestJS + LangGraph. |
 | **mcp-ariadne** | — | Servidor MCP (stdio). Consultas al grafo para IA. |
 

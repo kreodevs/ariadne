@@ -10,8 +10,7 @@ import { EmbedIndexService } from '../embedding/embed-index.service';
 import { BitbucketService } from '../bitbucket/bitbucket.service';
 import { GitHubService } from '../providers/github.service';
 import { runShallowClone } from '../providers/git-clone.provider';
-import { getFalkorConfig } from '../pipeline/falkor';
-import { GRAPH_NAME } from '../pipeline/falkor';
+import { getFalkorConfig, graphNameForProject, isProjectShardingEnabled } from '../pipeline/falkor';
 import { parseSource } from '../pipeline/parser';
 import { extractDomainConcepts, inferDomainConfig } from '../pipeline/domain-extract';
 import {
@@ -22,7 +21,10 @@ import {
   runCypherBatch,
   ensureFalkorIndexes,
 } from '../pipeline/producer';
-import { parseTsconfigPaths } from '../pipeline/tsconfig-resolve';
+import { buildCypherForPrismaSchema } from '../pipeline/prisma-extract';
+import { loadRepoTsconfigPaths } from '../pipeline/tsconfig-resolve';
+import { chunkMarkdown } from '../pipeline/markdown-chunk';
+import { buildCypherForMarkdownFile } from '../pipeline/markdown-graph';
 import { buildProjectMergeCypher } from '../pipeline/project';
 import type { ParsedFile } from '../pipeline/parser';
 
@@ -105,7 +107,9 @@ export class SyncService {
       socket: { host: config.host, port: config.port },
     });
     try {
-      const graph = client.selectGraph(GRAPH_NAME);
+      const graph = client.selectGraph(
+        graphNameForProject(isProjectShardingEnabled() ? projectId : undefined),
+      );
       const countRes = (await graph.query(
         `MATCH (n) WHERE n.projectId = $projectId RETURN count(n) as c`,
         { params: { projectId } },
@@ -134,7 +138,9 @@ export class SyncService {
       socket: { host: config.host, port: config.port },
     });
     try {
-      const graph = client.selectGraph(GRAPH_NAME);
+      const graph = client.selectGraph(
+        graphNameForProject(isProjectShardingEnabled() ? projectId : undefined),
+      );
       const countRes = (await graph.query(
         `MATCH (n) WHERE n.projectId = $projectId AND n.repoId = $repoId RETURN count(n) as c`,
         { params: { projectId, repoId } },
@@ -291,16 +297,13 @@ export class SyncService {
       const client = await FalkorDB.connect({
         socket: { host: config.host, port: config.port },
       });
-      const graph = client.selectGraph(GRAPH_NAME);
-      const graphClient = { query: (cypher: string) => graph.query(cypher) };
-
-      await ensureFalkorIndexes(graphClient);
-
       const projectName = `${repo.projectKey}/${repo.repoSlug}`;
       const rootPath = repoSlug;
 
       await this.updateJobProgress(job.id, { phase: 'indexing', total: paths.length });
       const parsedByPath = new Map<string, ParsedFile>();
+      const prismaFiles: { path: string; content: string }[] = [];
+      const markdownFiles: { path: string; content: string }[] = [];
       const isFirstSync = repo.domainConfig == null;
       let fetchedCount = 0;
       const withAst: Array<{ parsed: ParsedFile; root: import('tree-sitter').SyntaxNode; source: string }> = [];
@@ -320,6 +323,14 @@ export class SyncService {
           }
           if (!content) {
             skipped.fetch.push(relPath);
+            continue;
+          }
+          if (relPath.toLowerCase().endsWith('.prisma')) {
+            prismaFiles.push({ path: relPath, content });
+            continue;
+          }
+          if (relPath.toLowerCase().endsWith('.md')) {
+            markdownFiles.push({ path: relPath, content });
             continue;
           }
           if (isFirstSync) {
@@ -359,14 +370,9 @@ export class SyncService {
 
       const parsedFiles = Array.from(parsedByPath.values());
 
-      let tsconfigPaths: ReturnType<typeof parseTsconfigPaths> = null;
+      let tsconfigPaths: Awaited<ReturnType<typeof loadRepoTsconfigPaths>> = null;
       try {
-        const tsContent =
-          (await getContent('tsconfig.json')) ?? (await getContent('jsconfig.json'));
-        if (tsContent) {
-          const parsed = JSON.parse(tsContent) as unknown;
-          tsconfigPaths = parseTsconfigPaths(parsed);
-        }
+        tsconfigPaths = await loadRepoTsconfigPaths(getContent);
       } catch {
         /* ignore */
       }
@@ -387,6 +393,12 @@ export class SyncService {
       });
 
       for (const projectId of projectIds) {
+        const graph = client.selectGraph(
+          graphNameForProject(isProjectShardingEnabled() ? projectId : undefined),
+        );
+        const graphClient = { query: (cypher: string) => graph.query(cypher) };
+        await ensureFalkorIndexes(graphClient);
+
         await graph.query(
           buildProjectMergeCypher({
             projectId,
@@ -420,6 +432,27 @@ export class SyncService {
           } catch (err) {
             console.error(`Sync: error indexing ${parsed.path}:`, err);
             if (projectId === projectIds[0]) skippedIndex.push(parsed.path);
+          }
+        }
+        for (const pf of prismaFiles) {
+          try {
+            const statements = await buildCypherForPrismaSchema(pf.path, pf.content, projectId, repoId);
+            await runCypherBatch(graphClient, statements);
+            if (projectId === projectIds[0]) indexedPaths.push(pf.path);
+          } catch (err) {
+            console.error(`Sync: error indexing Prisma ${pf.path}:`, err);
+            if (projectId === projectIds[0]) skippedIndex.push(pf.path);
+          }
+        }
+        for (const mf of markdownFiles) {
+          try {
+            const chunks = chunkMarkdown(mf.content);
+            const statements = buildCypherForMarkdownFile(mf.path, chunks, projectId, repoId);
+            await runCypherBatch(graphClient, statements);
+            if (projectId === projectIds[0]) indexedPaths.push(mf.path);
+          } catch (err) {
+            console.error(`Sync: error indexing Markdown ${mf.path}:`, err);
+            if (projectId === projectIds[0]) skippedIndex.push(mf.path);
           }
         }
         const currentSet = new Set(indexedPaths);

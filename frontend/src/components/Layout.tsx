@@ -11,6 +11,7 @@ import {
   Plus,
   Key,
   HelpCircle,
+  Share2,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { SidebarModern, type SidebarGroup } from "./layout/SidebarModern"
@@ -23,6 +24,7 @@ const navigationGroups: SidebarGroup[] = [
       { label: "Repositorios", href: "/repos", icon: FolderGit2 },
       { label: "+ Nuevo repo", href: "/repos/new", icon: Plus },
       { label: "Credenciales", href: "/credentials", icon: Key },
+      { label: "Grafo", href: "/graph-explorer", icon: Share2 },
       { label: "Ayuda", href: "/ayuda", icon: HelpCircle },
     ],
   },
@@ -44,9 +46,11 @@ export function Layout({ children }: { children: React.ReactNode }) {
             ? "/credentials"
             : path.startsWith("/repos")
               ? "/repos"
-              : path.startsWith("/projects")
-                ? "/"
-                : "/"
+              : path.startsWith("/graph-explorer")
+                ? "/graph-explorer"
+                : path.startsWith("/projects")
+                  ? "/"
+                  : "/"
 
   return (
     <div className="flex h-screen bg-[var(--background)] overflow-hidden">

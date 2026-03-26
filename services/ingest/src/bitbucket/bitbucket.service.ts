@@ -7,7 +7,7 @@ import type { BitbucketAuth } from '../credentials/credentials.service';
 import { CredentialsService } from '../credentials/credentials.service';
 
 /** Extensiones indexadas (Tree-sitter JS/TS); .mjs/.cjs se parsean como JS. */
-const EXT = ['.js', '.jsx', '.ts', '.tsx', '.mjs', '.cjs'];
+const EXT = ['.js', '.jsx', '.ts', '.tsx', '.mjs', '.cjs', '.prisma', '.md'];
 const IGNORE_DIRS = new Set([
   'node_modules',
   '.git',

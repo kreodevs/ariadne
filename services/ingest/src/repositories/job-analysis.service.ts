@@ -9,7 +9,7 @@ import { SyncJob } from './entities/sync-job.entity';
 import { RepositoryEntity } from './entities/repository.entity';
 import { FileContentService } from './file-content.service';
 import { getFalkorConfig } from '../pipeline/falkor';
-import { GRAPH_NAME } from '../pipeline/falkor';
+import { graphNameForProject, isProjectShardingEnabled } from '../pipeline/falkor';
 
 export interface JobAnalysisResult {
   jobId: string;
@@ -115,7 +115,9 @@ export class JobAnalysisService {
     });
 
     try {
-      const graph = client.selectGraph(GRAPH_NAME);
+      const graph = client.selectGraph(
+        graphNameForProject(isProjectShardingEnabled() ? projectId : undefined),
+      );
       const dependents: Array<{ path: string; dependents: string[] }> = [];
 
       for (const filePath of paths.slice(0, 30)) {

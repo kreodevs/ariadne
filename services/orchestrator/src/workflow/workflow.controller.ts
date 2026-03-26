@@ -12,6 +12,8 @@ export interface RefactorFullBody {
   currentCode?: string;
   proposedProps?: PropSpec[];
   proposedCode?: string;
+  /** Reintentos LLM ante error de indexación shadow (default 3). */
+  maxRevisions?: number;
 }
 
 @Controller('workflow')
@@ -50,6 +52,7 @@ export class WorkflowController {
       currentCode: body.currentCode,
       proposedProps: body.proposedProps,
       proposedCode: body.proposedCode,
+      maxRevisions: body.maxRevisions,
     });
   }
 }

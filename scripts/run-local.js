@@ -19,8 +19,8 @@ const LOCAL_ENV = {
   FALKORDB_PORT: "6379",
   REDIS_URL: "redis://localhost:6380",
   INGEST_URL: "http://localhost:3002",
-  CARTOGRAPHER_URL: "http://localhost:4000",
   FALKORSPEC_API_URL: "http://localhost:3000/api",
+  ARIADNESPEC_API_URL: "http://localhost:3000/api",
 };
 
 const SERVICES = {

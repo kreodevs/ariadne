@@ -6,7 +6,7 @@ Arquitectura de agentes: **Coordinator** (clasificación LLM) → **CodeAnalysis
 
 - **`chat.constants.ts`** — SCHEMA, EXAMPLES, GENERIC_FUNCTION_NAMES, MAX_*, SEARCH_SYNONYMS, FULL_AUDIT_SECRET_PATTERNS, EXPLORER_TOOLS_ALL, getExplorerToolsKnowledge(), truncateAntipatterns()
 - **`chat-analysis.utils.ts`** — Funciones puras: computeRiskScore, groupDuplicates, formatDuplicatesSummary, findImportCycles, normalizeOptions, extractSearchTerms, getSearchTermsWithSynonyms
-- **`chat-cypher.service.ts`** — Ejecución Cypher y formateo: executeCypher, executeCypherRaw, formatResultsHuman, getGraphSummary (inyectado en ChatService)
+- **`chat-cypher.service.ts`** — Ejecución Cypher y formateo: executeCypher, executeCypherRaw(cypher, shardProjectId?), formatResultsHuman, getGraphSummary (inyectado en ChatService). Con `FALKOR_SHARD_BY_PROJECT`, los shards usan `graphNameForProject(projectId)`.
 - **`chat-llm.service.ts`** — Llamadas OpenAI: callLlm, callLlmWithTools
 - **`chat-antipatterns.service.ts`** — Detección de anti-patrones: detectAntipatterns (spaghetti, god functions, circularImports, etc.)
 - **`chat-handlers.service.ts`** — Handlers: answer*, `semanticSearchFallback`, `getSemanticSearchDiagnostics` (por qué semantic devolvió 0 filas)

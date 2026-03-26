@@ -196,4 +196,20 @@ export const api = {
     }),
   deleteCredential: (id: string) =>
     request<void>(`/credentials/${id}`, { method: 'DELETE' }),
+
+  /** Grafo de dependencias + aristas de impacto legacy (API Nest /graph/component/:name). */
+  getComponentGraph: (name: string, opts?: { depth?: number; projectId?: string }) => {
+    const q = new URLSearchParams();
+    if (opts?.depth != null) q.set('depth', String(opts.depth));
+    if (opts?.projectId) q.set('projectId', opts.projectId);
+    const qs = q.toString();
+    return request<{
+      componentName: string;
+      depth: number;
+      projectId?: string;
+      dependencies: Array<{ name?: string; path?: string }>;
+      nodes: Array<{ id: string; kind: string; name?: string; path?: string }>;
+      edges: Array<{ source: string; target: string; kind: string }>;
+    }>(`/graph/component/${encodeURIComponent(name)}${qs ? `?${qs}` : ''}`);
+  },
 };

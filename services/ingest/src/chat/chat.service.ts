@@ -5,7 +5,7 @@
 
 import { Injectable, Logger } from '@nestjs/common';
 import { FalkorDB } from 'falkordb';
-import { getFalkorConfig, GRAPH_NAME } from '../pipeline/falkor';
+import { getFalkorConfig, graphNameForProject, isProjectShardingEnabled } from '../pipeline/falkor';
 import { RepositoriesService } from '../repositories/repositories.service';
 import { FileContentService } from '../repositories/file-content.service';
 import { EmbeddingService } from '../embedding/embedding.service';
@@ -545,7 +545,9 @@ Sé conciso. Usa bullet points y tablas. Incluye TODOS los ítems de los datos e
     if (this.embedding.isAvailable()) {
       const config = getFalkorConfig();
       const client = await FalkorDB.connect({ socket: { host: config.host, port: config.port } });
-      const graph = client.selectGraph(GRAPH_NAME);
+      const graph = client.selectGraph(
+        graphNameForProject(isProjectShardingEnabled() ? projectId : undefined),
+      );
 
       const limitClause = limit > 0 ? ` LIMIT ${limit}` : '';
       const funcsRes = (await graph.query(
@@ -583,6 +585,7 @@ Sé conciso. Usa bullet points y tablas. Incluye TODOS los ítems de los datos e
           const res = await this.cypher.executeCypherRaw(
             `CALL db.idx.vector.queryNodes('Function', 'embedding', 25, vecf32(${vecStr})) YIELD node, score
              RETURN node.path AS path, node.name AS name, node.projectId AS projectId, score`,
+            projectId,
           );
           for (const row of (res as Array<{ path: string; name: string; projectId: string; score: number }>).filter(
             (r) => r.projectId === projectId && r.score >= threshold && r.score < 0.999,
@@ -1740,7 +1743,7 @@ Eres un RECOLECTOR de datos. Tu única tarea: usar las herramientas para reunir 
 
 Plan: 1) execute_cypher o get_graph_summary para ubicar archivos/funciones/componentes. 2) get_file_content en paths relevantes para leer el código. 3) semantic_search si aplica.
 
-**Tablas / esquema BD / modelos:** Prisma → get_file_content("prisma/schema.prisma") (no está en grafo). TypeORM → execute_cypher MATCH (m:Model) RETURN m.path, luego get_file_content. **Rutas API:** NestController/Route. **Variables de entorno:** get_file_content(".env.example") u otros paths convencionales.
+**Tablas / esquema BD / modelos:** Prisma → execute_cypher MATCH (m:Model) WHERE m.source = 'prisma' (y :Enum / RELATES_TO); get_file_content del schema para detalle. TypeORM u otras clases → MATCH (m:Model). **Rutas API:** NestController/Route. **Variables de entorno:** get_file_content(".env.example") u otros paths convencionales.
 
 **Monorepos (apps/, packages/):** Si get_graph_summary muestra paths como apps/admin, apps/api, apps/worker o packages/*, el repo es un monorepo. Explora TODAS las apps, no solo la primera. Para "qué hace el proyecto" o descripciones generales: incluye frontend (Component, Route) Y backend (NestController, NestService, NestModule, Function en apps/api, apps/worker). Consulta execute_cypher buscando NestController, NestService si hay conteos de esos nodos.
 

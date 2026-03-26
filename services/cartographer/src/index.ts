@@ -16,7 +16,7 @@ import {
   runCypherBatch,
 } from "./graph/producer.js";
 import type { ParsedFile } from "./parser/parser.js";
-import { GRAPH_NAME, getFalkorConfig } from "./graph/falkor.js";
+import { getFalkorConfig, graphNameForProject, isProjectShardingEnabled } from "./graph/falkor.js";
 import { getProjectInfo, buildProjectMergeCypher } from "./graph/project.js";
 import { createShadowServer, SHADOW_GRAPH_NAME } from "./shadow-server.js";
 
@@ -100,14 +100,18 @@ async function main(): Promise<void> {
   const client = await FalkorDB.connect({
     socket: { host: config.host, port: config.port },
   });
-  const graph = client.selectGraph(GRAPH_NAME);
+  const projectInfo = await getProjectInfo(SCAN_PATH);
+  const graph = client.selectGraph(
+    graphNameForProject(isProjectShardingEnabled() ? projectInfo.projectId : undefined),
+  );
   const graphClient = { query: (cypher: string) => graph.query(cypher) };
   const pathSet = new Set<string>();
 
-  const projectInfo = await getProjectInfo(SCAN_PATH);
   await graph.query(buildProjectMergeCypher(projectInfo));
   await runFullScan(graphClient, pathSet, projectInfo.projectId);
-  console.log(`Cartographer: full scan indexed ${pathSet.size} files into ${GRAPH_NAME} (project ${projectInfo.projectName})`);
+  console.log(
+    `Cartographer: full scan indexed ${pathSet.size} files into ${graphNameForProject(isProjectShardingEnabled() ? projectInfo.projectId : undefined)} (project ${projectInfo.projectName})`,
+  );
 
   if (!WATCH) {
     await client.close();

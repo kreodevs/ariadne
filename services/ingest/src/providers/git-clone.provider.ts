@@ -8,7 +8,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 
-const CODE_EXT = ['.js', '.jsx', '.ts', '.tsx', '.mjs', '.cjs'];
+const CODE_EXT = ['.js', '.jsx', '.ts', '.tsx', '.mjs', '.cjs', '.prisma', '.md'];
 const IGNORE_DIRS = new Set([
   'node_modules',
   '.git',

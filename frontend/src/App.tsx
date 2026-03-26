@@ -20,6 +20,7 @@ import { CreateCredential } from './pages/CreateCredential';
 import { EditCredential } from './pages/EditCredential';
 import { Ayuda } from './pages/Ayuda';
 import { ErrorPage } from './pages/ErrorPage';
+import { ComponentGraphExplorer } from './pages/ComponentGraph';
 
 /** Componente raíz con enrutamiento. */
 function App() {
@@ -47,6 +48,7 @@ function App() {
                   <Route path="/credentials" element={<CredentialsList />} />
                   <Route path="/credentials/new" element={<CreateCredential />} />
                   <Route path="/credentials/:id/edit" element={<EditCredential />} />
+                  <Route path="/graph-explorer" element={<ComponentGraphExplorer />} />
                   <Route path="/ayuda/*" element={<Ayuda />} />
                 </Routes>
               </ProtectedRoute>

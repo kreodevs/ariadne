@@ -5,8 +5,7 @@ import { DataSource } from 'typeorm';
 import { NestFactory } from '@nestjs/core';
 import { FalkorDB } from 'falkordb';
 import { AppModule } from './app.module';
-import { getFalkorConfig } from './pipeline/falkor';
-import { GRAPH_NAME } from './pipeline/falkor';
+import { getFalkorConfig, GRAPH_NAME, isProjectShardingEnabled } from './pipeline/falkor';
 import { runFalkorRepoIdBackfill } from './pipeline/producer';
 import * as express from 'express';
 
@@ -41,6 +40,12 @@ async function runMigrations(): Promise<void> {
  * Si Falkor no está disponible, solo se registra y se sigue (no bloquea arranque).
  */
 async function runFalkorRepoIdMigration(): Promise<void> {
+  if (isProjectShardingEnabled()) {
+    console.warn(
+      '[ingest] Falkor repoId backfill omitido: FALKOR_SHARD_BY_PROJECT activo (migrar por shard si aplica).',
+    );
+    return;
+  }
   const config = getFalkorConfig();
   let client: Awaited<ReturnType<typeof FalkorDB.connect>> | null = null;
   try {

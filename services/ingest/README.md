@@ -4,9 +4,9 @@ Microservicio NestJS que reemplaza la ingesta basada en directorio local (chokid
 
 ## Flujo de Ingesta
 
-1. **Fase Mapping:** Escaneo del repo (árbol, lenguajes).
+1. **Fase Mapping:** Escaneo del repo (árbol, lenguajes); incluye `.prisma` cuando aplica.
 2. **Fase Deps:** Lectura de `package.json` para `manifestDeps` en Project.
-3. **Fase Chunking:** Parse Tree-sitter con metadata `line_range` y `commit_sha`. Incluye **domain-extract** (DomainConcept: enums, constantes, componentes por patrón).
+3. **Fase Chunking:** Parse Tree-sitter con metadata `line_range` y `commit_sha`; **Prisma** vía `@prisma/internals` (getDMMF) → nodos `:Model`, `:Enum`, relaciones `RELATES_TO` / `USES_ENUM`; **tsconfig** con TypeScript API (`extends` merge) para aliases en `IMPORTS`. Incluye **domain-extract** (DomainConcept).
 4. **Cola Redis/BullMQ:** Sync se encola; worker procesa en background.
 5. **Orphan cleanup:** Archivos borrados se eliminan del grafo.
 
@@ -22,7 +22,7 @@ Microservicio NestJS que reemplaza la ingesta basada en directorio local (chokid
 - `GET /repositories` — Listar repositorios
 - `GET /repositories/:id` — Detalle de un repositorio
 - `GET /repositories/:id/file?path=&ref=` — Contenido de un archivo (Bitbucket/GitHub). `path` relativo o del grafo (repo-slug/src/foo.ts)
-- `POST /repositories/:id/embed-index` — Indexa embeddings en Function/Component (RAG; requiere EMBEDDING_PROVIDER + API key, FalkorDB 4.0+)
+- `POST /repositories/:id/embed-index` — Embeddings en Function, Component y **Document** (chunks `.md`) para RAG; EMBEDDING_PROVIDER + API key, FalkorDB 4.0+
 - `GET /repositories/:id/jobs` — Listar sync_jobs del repositorio
 - `GET /embed?text=` — Vector de embedding para RAG (requiere EMBEDDING_PROVIDER + OPENAI_API_KEY o GOOGLE_API_KEY)
 - `POST /repositories/:id/sync` — Encola job de full sync; retorna `{ jobId, queued: true }`
@@ -32,7 +32,7 @@ Microservicio NestJS que reemplaza la ingesta basada en directorio local (chokid
 - `GET /repositories/:id/graph-summary` — Conteos y muestras de nodos indexados.
 
 Tras cada sync (normal o resync), se ejecuta automáticamente `embed-index` si hay EMBEDDING_PROVIDER configurado; si no, se ignora sin fallar.
-- `POST /shadow` — Indexar archivos en el grafo **FalkorSpecsShadow** (mismo pipeline que sync: parse → producer). Body: `{ files: [{ path, content }] }`. Usado por la API para compare; si `INGEST_URL` está definida, la API envía aquí en lugar de al Cartographer.
+- `POST /shadow` — Indexar archivos en **FalkorSpecsShadow** (parse + tsconfig + Prisma + producer). Body: `{ files: [{ path, content }] }`. La API proxifica aquí (`INGEST_URL`).
 - `POST /webhooks/bitbucket` — Webhook para push/PR (ver módulo Webhook)
 
 ## Variables de entorno

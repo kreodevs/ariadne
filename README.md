@@ -11,7 +11,7 @@ Ver [docs/DEPLOYMENT_DOKPLOY.md](docs/DEPLOYMENT_DOKPLOY.md).
 ## Servicios
 
 - **falkordb** — Base de datos de grafos (puerto 6379).
-- **cartographer** — Ingesta estática + shadow (solo red Docker, sin puertos expuestos).
+- **ingest** — Sync repos, webhooks, shadow `POST /shadow`, índice FalkorDB (sin cartographer separado).
 - **redis** — Cola BullMQ (sync) y caché (puerto 6380).
 - **postgres** — Repos, sync_jobs, indexed_files, credentials (puerto 5432).
 - **ingest** — NestJS: repos Bitbucket/GitHub, full sync, resync, webhook, **Chat** (NL→Cypher), **Análisis** (diagnóstico, duplicados, reingeniería), embed-index automático (puerto 3002). Ver [docs/bitbucket_webhook.md](docs/bitbucket_webhook.md).
@@ -33,7 +33,7 @@ Ver [docs/DEPLOYMENT_DOKPLOY.md](docs/DEPLOYMENT_DOKPLOY.md).
 
 ## Documentación
 
-- [ariadne-common](docs/ariadne-common.md) — Paquete compartido (FalkorDB/Cypher) entre ingest, cartographer y MCP; uso y **deployment**.
+- [ariadne-common](docs/ariadne-common.md) — Paquete compartido (FalkorDB/Cypher) entre ingest y MCP; uso y **deployment**.
 - [Arquitectura](docs/architecture.md)
 - [Motor de indexado](docs/indexing_engine.md)
 - [Chat y Análisis](docs/CHAT_Y_ANALISIS.md) — Flujo NL→Cypher, diagnósticos, antipatrones, métricas
@@ -46,7 +46,7 @@ Ver [docs/DEPLOYMENT_DOKPLOY.md](docs/DEPLOYMENT_DOKPLOY.md).
 Infraestructura (una vez): pnpm run dev:infra
 
 - Inicia Colima si hace falta
-- Sube falkordb, postgres, redis, cartographer en Docker
+- Sube falkordb, postgres, redis en Docker (ingest/API en el mismo compose)
 - No arranca api, ingest ni orchestrator
 - Servicios en local (una terminal por servicio):
   - pnpm run dev:api — API (puerto 3000) con watch

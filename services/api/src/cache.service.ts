@@ -56,18 +56,18 @@ export class CacheService implements OnModuleDestroy {
   }
 
   /** Genera la clave de cache para impacto de un nodo. */
-  impactKey(nodeId: string): string {
-    return `impact:${nodeId}`;
+  impactKey(nodeId: string, projectId?: string): string {
+    return projectId ? `impact:${projectId}:${nodeId}` : `impact:${nodeId}`;
   }
 
   /** Genera la clave de cache para dependencias de componente (nombre + profundidad). */
-  componentKey(name: string, depth: number): string {
-    return `component:${name}:${depth}`;
+  componentKey(name: string, depth: number, projectId?: string): string {
+    return projectId ? `component:${projectId}:${name}:${depth}` : `component:${name}:${depth}`;
   }
 
   /** Genera la clave de cache para contrato (props) de un componente. */
-  contractKey(componentName: string): string {
-    return `contract:${componentName}`;
+  contractKey(componentName: string, projectId?: string): string {
+    return projectId ? `contract:${projectId}:${componentName}` : `contract:${componentName}`;
   }
 
   readonly TTL = { impact: TTL_IMPACT, component: TTL_COMPONENT, contract: TTL_CONTRACT };

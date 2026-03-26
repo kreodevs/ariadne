@@ -1,13 +1,11 @@
 /**
- * @fileoverview Cliente FalkorDB: grafo principal y shadow.
+ * @fileoverview Cliente FalkorDB: grafo principal (opcional shard por projectId) y shadow.
  */
 import { Injectable, OnModuleDestroy } from '@nestjs/common';
 import { FalkorDB } from 'falkordb';
+import { SHADOW_GRAPH_NAME, graphNameForProject } from 'ariadne-common';
 
-const GRAPH_NAME = 'FalkorSpecs';
-const SHADOW_GRAPH_NAME = 'FalkorSpecsShadow';
-
-/** Servicio de conexión FalkorDB (getGraph, getShadowGraph). */
+/** Servicio de conexión FalkorDB (getGraph(projectId?), getShadowGraph). */
 @Injectable()
 export class FalkorService implements OnModuleDestroy {
   private client: Awaited<ReturnType<typeof FalkorDB.connect>> | null = null;
@@ -22,18 +20,14 @@ export class FalkorService implements OnModuleDestroy {
   }
 
   /**
-   * Devuelve el grafo principal FalkorSpecs (conexión singleton).
-   * @returns {Promise<Graph>}
+   * Grafo principal. Con FALKOR_SHARD_BY_PROJECT, pasar projectId del índice Ariadne/repo.
    */
-  async getGraph() {
+  async getGraph(projectId?: string | null) {
     const client = await this.getClient();
-    return client.selectGraph(GRAPH_NAME);
+    return client.selectGraph(graphNameForProject(projectId ?? undefined));
   }
 
-  /**
-   * Devuelve el grafo shadow FalkorSpecsShadow para compare SDD.
-   * @returns {Promise<Graph>}
-   */
+  /** Grafo shadow (SDD / compare). */
   async getShadowGraph() {
     const client = await this.getClient();
     return client.selectGraph(SHADOW_GRAPH_NAME);

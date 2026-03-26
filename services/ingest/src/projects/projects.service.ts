@@ -9,7 +9,7 @@ import { FalkorDB } from 'falkordb';
 import { ProjectEntity } from './entities/project.entity';
 import { RepositoryEntity } from '../repositories/entities/repository.entity';
 import { ProjectRepositoryEntity } from '../repositories/entities/project-repository.entity';
-import { getFalkorConfig, GRAPH_NAME } from '../pipeline/falkor';
+import { getFalkorConfig, graphNameForProject, isProjectShardingEnabled } from '../pipeline/falkor';
 
 export interface ProjectWithRepos {
   id: string;
@@ -179,7 +179,9 @@ export class ProjectsService {
       socket: { host: config.host, port: config.port },
     });
     try {
-      const graph = client.selectGraph(GRAPH_NAME);
+      const graph = client.selectGraph(
+        graphNameForProject(isProjectShardingEnabled() ? projectId : undefined),
+      );
       await graph.query(
         `MATCH (n) WHERE n.projectId = $oldId SET n.projectId = $newId`,
         { params: { oldId: projectId, newId: newProjectId } },
