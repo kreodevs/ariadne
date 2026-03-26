@@ -86,8 +86,15 @@ export interface ModificationPlanResult {
   questionsToRefine: string[];
 }
 
-/** Modos de análisis estructurado (diagnóstico, duplicados, reingeniería, código muerto, AGENTS.md, SKILL.md). */
-export type AnalyzeMode = 'diagnostico' | 'duplicados' | 'reingenieria' | 'codigo_muerto' | 'agents' | 'skill';
+/** Modos de análisis estructurado (diagnóstico, duplicados, reingeniería, código muerto, seguridad, AGENTS.md, SKILL.md). */
+export type AnalyzeMode =
+  | 'diagnostico'
+  | 'duplicados'
+  | 'reingenieria'
+  | 'codigo_muerto'
+  | 'seguridad'
+  | 'agents'
+  | 'skill';
 
 /** Resultado de un análisis (summary markdown + detalles opcionales). */
 export interface AnalyzeResult {
@@ -703,6 +710,44 @@ Estructura OBLIGATORIA (reflejar el diagnóstico):
   }
 
   /**
+   * Auditoría de seguridad: escaneo heurístico (secretos / higiene en fuentes indexadas) + síntesis LLM.
+   * Complementa Full Audit; no sustituye SAST ni pentest.
+   */
+  async analyzeSeguridad(repositoryId: string): Promise<AnalyzeResult> {
+    const repo = await this.repos.findOne(repositoryId);
+    const projectId = await this.resolveProjectIdForRepo(repo.id);
+    const leakedSecrets = await this.runSecurityScan(repositoryId, projectId, repo.repoSlug, { maxFiles: 160 });
+
+    const context = `
+Repositorio ${repo.projectKey}/${repo.repoSlug} — hallazgos automáticos (regex sobre hasta 160 archivos .ts/.tsx/.js/.json/.env del índice):
+
+**leakedSecrets** (path relativo al repo, severidad, fragmento coincidente truncado, línea): ${JSON.stringify(leakedSecrets)}
+`;
+
+    const systemPrompt = `<rol>Especialista AppSec. Evidencia única: JSON del escaneo.</rol>
+
+<instrucciones>
+- NO inventes CVEs ni vulnerabilidades sin filas en leakedSecrets.
+- Si leakedSecrets está vacío: indica que no hubo coincidencias con los patrones en ESTA corrida y recalca el alcance (muestra de archivos indexados, heurística).
+- Con hallazgos: prioriza severidad; tabla Path | Línea | Severidad | Qué remediar.
+- Remediación: variables de entorno, secret manager, rotación, pre-commit/CI, nunca commit de secretos.
+</instrucciones>
+
+<formato_salida>Markdown: 1) Resumen ejecutivo 2) Hallazgos (tabla o lista) 3) Plan de remediación 4) Alcance y límites del análisis</formato_salida>`;
+
+    const prompt = `${context}\n\nGenera la auditoría en markdown.`;
+    const answer = await this.llm.callLlm(
+      [{ role: 'system', content: systemPrompt }, { role: 'user', content: prompt }],
+      8192,
+    );
+    return {
+      mode: 'seguridad',
+      summary: answer,
+      details: { leakedSecrets },
+    };
+  }
+
+  /**
    * Análisis de código muerto: propósito, referencias y conclusión por archivo.
    * Formato detallado: ruta, quién lo importa/renderiza/llama, detalle funcional, conclusión.
    */
@@ -1044,7 +1089,7 @@ Estructura OBLIGATORIA (reflejar el diagnóstico):
 **HERRAMIENTAS MCP REALES (solo estas existen; NO inventes create_component, create_route, etc.):**
 - list_known_projects — Lista proyectos y roots.
 - get_component_graph, get_legacy_impact, get_definitions, get_references — Diagnóstico de archivo/componente/hook.
-- get_project_analysis — Diagnóstico por repo (mode: diagnostico, duplicados, reingenieria, codigo_muerto).
+- get_project_analysis — Diagnóstico por repo (mode: diagnostico, duplicados, reingenieria, codigo_muerto, seguridad).
 - ask_codebase — Preguntas NL sobre el codebase.
 - get_modification_plan — Archivos a modificar + preguntas de afinación.
 - semantic_search, find_similar_implementations — Búsqueda por término.
@@ -1081,7 +1126,7 @@ OBLIGATORIO: la tabla debe tener al menos 10 filas cubriendo las herramientas li
     const safeName = displayName.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '').slice(0, 40) || 'project';
     const systemPrompt = `Eres experto en SKILL.md para agentes AI (Cursor, Claude). Genera un SKILL que enseñe a usar el MCP AriadneSpecs Oracle sobre este proyecto.
 
-**HERRAMIENTAS MCP (el skill debe referenciar estas):** list_known_projects, get_component_graph, get_legacy_impact, get_definitions, get_references, get_project_analysis (modes: diagnostico, duplicados, reingenieria, codigo_muerto), ask_codebase, get_modification_plan, semantic_search, find_similar_implementations, validate_before_edit, get_file_content, get_file_context, get_project_standards, check_breaking_changes, analyze_local_changes.
+**HERRAMIENTAS MCP (el skill debe referenciar estas):** list_known_projects, get_component_graph, get_legacy_impact, get_definitions, get_references, get_project_analysis (modes: diagnostico, duplicados, reingenieria, codigo_muerto, seguridad), ask_codebase, get_modification_plan, semantic_search, find_similar_implementations, validate_before_edit, get_file_content, get_file_context, get_project_standards, check_breaking_changes, analyze_local_changes.
 
 Estructura obligatoria:
 1. **YAML frontmatter** entre ---:
@@ -1118,6 +1163,7 @@ PROHIBIDO: instrucciones genéricas tipo "revisa los controladores", "asegúrate
     if (mode === 'duplicados') return this.analyzeDuplicados(repositoryId);
     if (mode === 'codigo_muerto') return this.analyzeCodigoMuerto(repositoryId);
     if (mode === 'reingenieria') return this.analyzeReingenieria(repositoryId);
+    if (mode === 'seguridad') return this.analyzeSeguridad(repositoryId);
     const repo = await this.repos.findOne(repositoryId);
     const projectId = await this.resolveProjectIdForRepo(repo.id);
     const displayName = `${repo.projectKey}/${repo.repoSlug}`;
@@ -1307,8 +1353,10 @@ PROHIBIDO: instrucciones genéricas tipo "revisa los controladores", "asegúrate
   private async runSecurityScan(
     repositoryId: string,
     projectId: string,
-    repoSlug: string,
+    _repoSlug: string,
+    opts?: { maxFiles?: number },
   ): Promise<Array<{ path: string; severity: string; pattern: string; line?: number }>> {
+    const maxFiles = opts?.maxFiles ?? 80;
     const files = (await this.cypher.executeCypher(
       projectId,
       `MATCH (f:File) WHERE f.projectId = $projectId RETURN f.path as path ORDER BY f.path`,
@@ -1317,7 +1365,7 @@ PROHIBIDO: instrucciones genéricas tipo "revisa los controladores", "asegúrate
     const toScan = files
       .map((r) => r.path)
       .filter((p) => /\.(tsx?|jsx?|js|json|env)$/.test(p.replace(/^[^/]+\//, '')))
-      .slice(0, 80);
+      .slice(0, maxFiles);
 
     const findings: Array<{ path: string; severity: string; pattern: string; line?: number }> = [];
     for (const p of toScan) {

@@ -28,7 +28,7 @@ Cuando no hay `.ariadne-project`:
 | Intención del usuario | Herramienta MCP | Flujo |
 |----------------------|-----------------|-------|
 | Diagnóstico de archivo/componente/hook específico | **`get_component_graph`**, **`get_legacy_impact`**, **`get_definitions`**, **`get_references`** | `list_known_projects` → projectId → get_component_graph + get_legacy_impact + get_definitions/get_references. |
-| Diagnóstico de deuda técnica, duplicados, reingeniería, código muerto (**por repositorio**) | **`get_project_analysis`** | `list_known_projects` → elegir **`roots[].id`** del repo objetivo → `get_project_analysis(projectId, mode)` (el nombre del parámetro es `projectId` en el MCP pero el backend es **id de repo**). |
+| Diagnóstico de deuda técnica, duplicados, reingeniería, código muerto, auditoría heurística de seguridad (`seguridad`) (**por repositorio**) | **`get_project_analysis`** | `list_known_projects` → elegir **`roots[].id`** del repo objetivo → `get_project_analysis(projectId, mode)` (el nombre del parámetro es `projectId` en el MCP pero el backend es **id de repo**). |
 | Plan de modificación (archivos a tocar + preguntas de afinación) | **`get_modification_plan`** | `POST /projects/:projectId/modification-plan` con `projectId` = `roots[].id` en multi-root. Body: `userDescription`, opcional **`scope`** (`repoIds`, `includePathPrefixes`, `excludePathGlobs`). |
 | Preguntas abiertas en lenguaje natural ("¿cómo funciona X?", "explica el flujo de Y") | **`ask_codebase`** | Chat del ingest. Opcional **`scope`** y **`twoPhase`**. Requiere INGEST_URL y OPENAI_API_KEY. |
 | Búsqueda por término, exploración | `semantic_search`, `find_similar_implementations` | Consulta directa al grafo. |

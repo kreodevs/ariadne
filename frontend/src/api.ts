@@ -110,7 +110,10 @@ export const api = {
       body: JSON.stringify({ projectId }),
     }),
 
-  analyze: (repoId: string, mode: 'diagnostico' | 'duplicados' | 'reingenieria' | 'codigo_muerto' | 'agents' | 'skill') =>
+  analyze: (
+    repoId: string,
+    mode: 'diagnostico' | 'duplicados' | 'reingenieria' | 'codigo_muerto' | 'seguridad' | 'agents' | 'skill',
+  ) =>
     request<{ mode: string; summary: string; details?: unknown }>(`/repositories/${repoId}/analyze`, {
       method: 'POST',
       body: JSON.stringify({ mode }),

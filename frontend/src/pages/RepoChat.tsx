@@ -1,5 +1,5 @@
 /**
- * @fileoverview Página de chat con repo: NL→Cypher, Diagnóstico, Duplicados, Reingeniería, Full Audit, Ver índice.
+ * @fileoverview Página de chat con repo: NL→Cypher, análisis (diagnóstico, duplicados, reingeniería, código muerto, seguridad, AGENTS, SKILL), Full Audit, Ver índice.
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
@@ -27,6 +27,7 @@ const ANALYSIS_MODE_LABELS: Record<string, string> = {
   duplicados: 'Duplicados',
   reingenieria: 'Reingeniería',
   codigo_muerto: 'Código muerto',
+  seguridad: 'Seguridad',
   agents: 'AGENTS',
   skill: 'SKILL',
 };
@@ -35,12 +36,13 @@ const ANALYSIS_RESULT_TITLES: Record<string, string> = {
   duplicados: 'Código duplicado',
   codigo_muerto: 'Código muerto',
   reingenieria: 'Reingeniería',
+  seguridad: 'Auditoría de seguridad',
   agents: 'AGENTS.md',
   skill: 'SKILL.md',
 };
 
 /**
- * Página de chat con repo: preguntas NL→Cypher, botones de análisis (Diagnóstico, Duplicados, Reingeniería, Código muerto, Full Audit) y visor de índice.
+ * Página de chat con repo: preguntas NL→Cypher, botones de análisis (incl. Seguridad) y Full Audit, visor de índice.
  * Layout split: izquierda = resultado del análisis; derecha = historial de mensajes y input.
  */
 export function RepoChat() {
@@ -68,7 +70,9 @@ export function RepoChat() {
   }, [id]);
 
   const runAnalysis = useCallback(
-    (mode: 'diagnostico' | 'duplicados' | 'reingenieria' | 'codigo_muerto' | 'agents' | 'skill') => {
+    (
+      mode: 'diagnostico' | 'duplicados' | 'reingenieria' | 'codigo_muerto' | 'seguridad' | 'agents' | 'skill',
+    ) => {
       if (!id) return;
       setLoadingAnalysis(mode);
       setAnalysisError(null);
@@ -223,6 +227,15 @@ export function RepoChat() {
               disabled={!!loadingAnalysis}
             >
               {loadingAnalysis === 'codigo_muerto' ? '…' : 'Código muerto'}
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => runAnalysis('seguridad')}
+              disabled={!!loadingAnalysis}
+              title="Heurística: secretos expuestos en fuentes indexadas (no sustituye SAST/pentest)"
+            >
+              {loadingAnalysis === 'seguridad' ? '…' : 'Seguridad'}
             </Button>
             <Button
               variant="outline"

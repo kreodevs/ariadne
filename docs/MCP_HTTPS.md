@@ -206,7 +206,7 @@ Si hay error en la ejecución de la herramienta:
 | `get_file_content`      | `path`                | `projectId`, `currentFilePath`, `ref`                         |
 | `semantic_search`       | `query`               | `projectId`, `limit`                                          |
 | `validate_before_edit`  | `nodeName`            | `projectId`, `currentFilePath`                                |
-| `get_project_analysis`  | `projectId`           | `mode` (diagnostico, duplicados, reingenieria, codigo_muerto) |
+| `get_project_analysis`  | `projectId`           | `mode` (diagnostico, duplicados, reingenieria, codigo_muerto, seguridad) |
 | `ask_codebase`          | `question`            | `projectId`, `currentFilePath`, `scope`, `twoPhase`           |
 | `get_modification_plan` | `userDescription`     | `projectId`, `currentFilePath`, `scope`                       |
 | `get_definitions`       | `symbol`              | `projectId`, `currentFilePath`                                |

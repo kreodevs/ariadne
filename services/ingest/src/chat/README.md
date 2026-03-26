@@ -33,7 +33,7 @@ Patrones usados: **ReAct** (Thought→Action→Observation), **CoT** (análisis 
 - **`POST /repositories/:id/chat`** — Body: `{ message, history?, scope?, twoPhase?, responseMode? }` (`scope`: `repoIds`, `includePathPrefixes`, `excludePathGlobs`; `twoPhase` alinea con `CHAT_TWO_PHASE` en ingest). **`responseMode: 'evidence_first'`** — fuerza two-phase, amplía el recorte de contexto hacia el sintetizador (`CHAT_EVIDENCE_FIRST_MAX_CHARS`, default 18000) y aplica prompt SDD (## Evidencia primero, listados anclados). Expuesto en MCP `ask_codebase` para The Forge legacy.
 - **`POST /projects/:projectId/chat`** — Igual body (multi-root)
 - **`POST .../modification-plan`** — Body: `{ userDescription, scope? }`
-- **`POST /repositories/:id/analyze`** — Body: `{ mode: 'diagnostico'|'duplicados'|'reingenieria'|'codigo_muerto'|'agents'|'skill' }`
+- **`POST /repositories/:id/analyze`** — Body: `{ mode: 'diagnostico'|'duplicados'|'reingenieria'|'codigo_muerto'|'seguridad'|'agents'|'skill' }`
 - **`POST /projects/:projectId/analyze`** — Body: `{ mode: 'agents'|'skill' }` — Genera AGENTS.md y SKILL.md por proyecto (multi-root)
 - **`GET /repositories/:id/graph-summary`** — Conteos y muestras de nodos
 
@@ -75,6 +75,11 @@ Añade tus prefijos según la estructura de tu repo.
 ## Reingeniería (mode=reingenieria)
 
 - Orquesta diagnóstico + duplicados → plan priorizado (documentar, refactorizar, estándares, pruebas)
+
+## Seguridad (mode=seguridad)
+
+- Reutiliza el escaneo heurístico de `FULL_AUDIT_SECRET_PATTERNS` sobre una muestra ampliada de archivos `.ts/.tsx/.js/.json/.env` del índice → `details.leakedSecrets` + informe markdown vía LLM.
+- Distinto de **Full Audit** (`POST .../full-audit`): aquí solo seguridad + narrativa; Full Audit sigue siendo el informe integral (arquitectura, salud, secretos, etc.).
 
 ## Métricas en el grafo (Function)
 

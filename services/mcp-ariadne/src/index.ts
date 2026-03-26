@@ -184,15 +184,15 @@ function createMcpServer(): Server {
     {
       name: "get_project_analysis",
       description:
-        "Obtiene diagnóstico de deuda técnica, código duplicado o recomendaciones de reingeniería. Requiere INGEST_URL. Duplicados requiere embed-index previo.",
+        "Obtiene diagnóstico de deuda técnica, código duplicado, recomendaciones de reingeniería o auditoría heurística de seguridad (secretos). Requiere INGEST_URL. Duplicados requiere embed-index previo.",
       inputSchema: {
         type: "object" as const,
         properties: {
           projectId: { type: "string", description: "ID del proyecto (list_known_projects)" },
           mode: {
             type: "string",
-            description: "diagnostico | duplicados | reingenieria | codigo_muerto (default: diagnostico)",
-            enum: ["diagnostico", "duplicados", "reingenieria", "codigo_muerto"],
+            description: "diagnostico | duplicados | reingenieria | codigo_muerto | seguridad (default: diagnostico)",
+            enum: ["diagnostico", "duplicados", "reingenieria", "codigo_muerto", "seguridad"],
           },
         },
         required: ["projectId"],
@@ -1176,7 +1176,12 @@ async function fetchFileFromIngest(
 
   if (name === "get_project_analysis") {
     const projectId = (args?.projectId as string) ?? "";
-    const mode = ((args?.mode as string) ?? "diagnostico") as "diagnostico" | "duplicados" | "reingenieria" | "codigo_muerto";
+    const mode = ((args?.mode as string) ?? "diagnostico") as
+      | "diagnostico"
+      | "duplicados"
+      | "reingenieria"
+      | "codigo_muerto"
+      | "seguridad";
     if (!projectId) {
       return {
         content: [{ type: "text", text: "**Error:** Se requiere `projectId` (list_known_projects)." }],
@@ -1199,7 +1204,9 @@ async function fetchFileFromIngest(
       const title =
         data.mode === "diagnostico" ? "Deuda técnica" :
         data.mode === "duplicados" ? "Código duplicado" :
-        data.mode === "codigo_muerto" ? "Código muerto" : "Reingeniería";
+        data.mode === "codigo_muerto" ? "Código muerto" :
+        data.mode === "seguridad" ? "Auditoría de seguridad" :
+        "Reingeniería";
       const passthrough =
         data.mode === "codigo_muerto"
           ? "[Presentar este análisis tal cual, sin reformatear ni añadir categorías. Es la clasificación oficial.]\n\n"
