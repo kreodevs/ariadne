@@ -128,7 +128,9 @@ function edgeStatsForNode(
 /** Solo aristas cuyos extremos existen (evita paths rotos en React Flow). */
 export function filterValidEdges(graphNodes: GraphNode[], graphEdges: GraphEdge[]): GraphEdge[] {
   const ids = new Set(graphNodes.map((n) => n.id));
-  return graphEdges.filter((e) => ids.has(e.source) && ids.has(e.target));
+  return graphEdges.filter(
+    (e) => e.source !== e.target && ids.has(e.source) && ids.has(e.target),
+  );
 }
 
 export function toFlowElements(

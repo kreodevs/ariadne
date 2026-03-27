@@ -100,7 +100,10 @@ function ComponentGraphFlowView({
   }
 
   return (
-    <div className="w-full rounded-lg overflow-hidden border border-[var(--border)] bg-[var(--background)]" style={{ height: 560 }}>
+    <div
+      className="component-graph-rf w-full rounded-lg overflow-hidden border border-[var(--border)] bg-[var(--background)]"
+      style={{ height: 560 }}
+    >
       <ReactFlow
         key={graphKey}
         nodes={rfNodes}

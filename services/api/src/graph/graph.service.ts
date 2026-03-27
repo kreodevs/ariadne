@@ -16,6 +16,9 @@ export interface GraphNodeDto {
   kind: string;
   name?: string;
   path?: string;
+  /** Copiados del grafo Falkor (ingest) — forman parte del id para evitar colisiones multi-repo. */
+  projectId?: string;
+  repoId?: string;
 }
 
 export interface GraphEdgeDto {
@@ -55,6 +58,22 @@ function falkorScalarToString(value: unknown): string | undefined {
   return String(value);
 }
 
+/** Id estable por nodo: multi-repo puede repetir `name`; sin projectId/repoId colisionan en React Flow. */
+function graphNodeKey(parts: {
+  kind: string;
+  projectId?: string;
+  repoId?: string;
+  path?: string;
+  name?: string;
+}): string {
+  const kind = parts.kind;
+  const projectId = parts.projectId ?? '';
+  const repoId = parts.repoId ?? '';
+  const path = parts.path ?? '';
+  const name = parts.name ?? '';
+  return `${kind}|${projectId}|${repoId}|${path}|${name}`;
+}
+
 function parseGraphNodeCell(cell: unknown): GraphNodeDto | null {
   if (cell == null) return null;
   let labels: string[] = ['Node'];
@@ -80,8 +99,10 @@ function parseGraphNodeCell(cell: unknown): GraphNodeDto | null {
     falkorScalarToString(props.component) ??
     falkorScalarToString((props as { displayName?: unknown }).displayName);
   const path = falkorScalarToString(props.path);
-  const id = `${kind}|${path ?? ''}|${name ?? ''}`;
-  return { id, kind, name, path };
+  const projectId = falkorScalarToString((props as { projectId?: unknown }).projectId);
+  const repoId = falkorScalarToString((props as { repoId?: unknown }).repoId);
+  const id = graphNodeKey({ kind, projectId, repoId, path, name });
+  return { id, kind, name, path, projectId, repoId };
 }
 
 /** Corrige nodo foco mal parseado (label Node, sin name) y alinea con el nombre pedido al API. */
@@ -116,12 +137,28 @@ function normalizeComponentGraphFocal(
   });
 }
 
-function impactNode(name: unknown, labels: unknown): GraphNodeDto {
+function impactNode(name: unknown, labels: unknown, projectId?: string): GraphNodeDto {
   const labelArr = Array.isArray(labels) ? labels : labels != null ? [labels] : [];
   const kindRaw = labelArr.length ? labelArr[0] : 'Node';
   const kind = falkorScalarToString(kindRaw) ?? 'Node';
   const n = falkorScalarToString(name) ?? 'unknown';
-  return { id: `${kind}||${n}`, kind, name: n };
+  const pid = projectId ?? '';
+  const id = graphNodeKey({ kind, projectId: pid, name: n });
+  return { id, kind, name: n, ...(projectId ? { projectId } : {}) };
+}
+
+function addGraphEdge(
+  edges: GraphEdgeDto[],
+  edgeKey: Set<string>,
+  source: string,
+  target: string,
+  kind: GraphEdgeDto['kind'],
+): void {
+  if (source === target) return;
+  const ek = `${source}|${target}|${kind}`;
+  if (edgeKey.has(ek)) return;
+  edgeKey.add(ek);
+  edges.push({ source, target, kind });
 }
 
 @Injectable()
@@ -209,8 +246,14 @@ export class GraphService {
           ? (dep as Record<string, unknown>)
           : { name: dep != null ? falkorScalarToString(dep) ?? String(dep) : undefined };
       const key =
-        falkorScalarToString(obj.name) ??
-        falkorScalarToString(obj.path) ??
+        [
+          falkorScalarToString((obj as { repoId?: unknown }).repoId),
+          falkorScalarToString((obj as { projectId?: unknown }).projectId),
+          falkorScalarToString(obj.name),
+          falkorScalarToString(obj.path),
+        ]
+          .filter(Boolean)
+          .join('\0') ||
         (typeof dep === 'object' && dep != null ? JSON.stringify(dep) : String(dep));
       if (seen.has(key)) continue;
       seen.add(key);
@@ -220,20 +263,14 @@ export class GraphService {
       });
       if (depParsed) {
         nodes.set(depParsed.id, depParsed);
-        if (centerId) {
-          const ek = `${centerId}|${depParsed.id}|depends`;
-          if (!edgeKey.has(ek)) {
-            edgeKey.add(ek);
-            edges.push({ source: centerId, target: depParsed.id, kind: 'depends' });
-          }
-        }
+        if (centerId) addGraphEdge(edges, edgeKey, centerId, depParsed.id, 'depends');
       }
     }
 
     const impact = await this.getImpact(name, projectId);
     if (!centerId) {
-      centerId = `Component||${name}`;
-      nodes.set(centerId, { id: centerId, kind: 'Component', name });
+      centerId = graphNodeKey({ kind: 'Component', projectId: projectId ?? '', name });
+      nodes.set(centerId, { id: centerId, kind: 'Component', name, projectId });
     }
 
     /** Hijos directos RENDERS tras fijar centerId (incl. fallback si el path variable devolvió 0 filas). */
@@ -254,25 +291,42 @@ export class GraphService {
           const ch = parseGraphNodeCell(cell);
           if (!ch) continue;
           nodes.set(ch.id, ch);
-          const ek = `${centerId}|${ch.id}|depends`;
-          if (!edgeKey.has(ek)) {
-            edgeKey.add(ek);
-            edges.push({ source: centerId!, target: ch.id, kind: 'depends' });
-          }
+          addGraphEdge(edges, edgeKey, centerId!, ch.id, 'depends');
         }
       } catch {
         /* RENDERS opcional si el esquema difiere */
       }
     }
 
-    for (const d of impact.dependents as { name?: unknown; labels?: unknown }[]) {
-      const gn = impactNode(d.name, d.labels);
-      nodes.set(gn.id, gn);
-      const ek = `${gn.id}|${centerId}|legacy_impact`;
-      if (!edgeKey.has(ek)) {
-        edgeKey.add(ek);
-        edges.push({ source: gn.id, target: centerId, kind: 'legacy_impact' });
+    /** Padres que RENDERS al foco (arista parent → center; el foco tiene dep in ≥ 1). */
+    {
+      const parentParams: Record<string, string> = { componentName: name };
+      if (projectId) parentParams.projectId = projectId;
+      const parentWhere = projectId
+        ? ` WHERE (parent.projectId = $projectId OR parent.projectId IS NULL)`
+        : '';
+      const parentQ = projectId
+        ? `MATCH (parent:Component)-[:RENDERS]->(c:Component {name: $componentName, projectId: $projectId})${parentWhere} RETURN parent`
+        : `MATCH (parent:Component)-[:RENDERS]->(c:Component {name: $componentName}) RETURN parent`;
+      try {
+        const parentRes = (await graph.query(parentQ, { params: parentParams })) as FalkorResult;
+        for (const row of parentRes.data ?? []) {
+          const arr = Array.isArray(row) ? row : [row];
+          const cell = arr[0];
+          const pr = parseGraphNodeCell(cell);
+          if (!pr) continue;
+          nodes.set(pr.id, pr);
+          addGraphEdge(edges, edgeKey, pr.id, centerId!, 'depends');
+        }
+      } catch {
+        /* Padres opcional */
       }
+    }
+
+    for (const d of impact.dependents as { name?: unknown; labels?: unknown }[]) {
+      const gn = impactNode(d.name, d.labels, projectId);
+      nodes.set(gn.id, gn);
+      addGraphEdge(edges, edgeKey, gn.id, centerId!, 'legacy_impact');
     }
 
     normalizeComponentGraphFocal(nodes, edges, name, centerId);

@@ -71,3 +71,11 @@
     outline-offset: 2px;
   }
 }
+
+/* Grafo de componente (React Flow): las aristas quedan por debajo de los nodos por defecto; súbelas para ver depends/legacy. */
+.component-graph-rf .react-flow .react-flow__edges {
+  z-index: 10 !important;
+}
+.component-graph-rf .react-flow .react-flow__nodes {
+  z-index: 20 !important;
+}
