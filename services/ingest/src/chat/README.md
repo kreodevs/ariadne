@@ -28,9 +28,15 @@ Patrones usados: **ReAct** (Thought→Action→Observation), **CoT** (análisis 
 - **KnowledgeExtraction**: Respuestas en LENGUAJE NATURAL — tipos, opciones, algoritmos extraídos del código
 - **ReAct**: Explorer con tools (Cypher, semantic_search, get_file_content) — CoT, Self-Refine
 
+## Control plane agéntico (orchestrator)
+
+Si **`ORCHESTRATOR_URL`** está definido (p. ej. `http://orchestrator:3001` en Docker), **`POST .../chat`** **no ejecuta LLM en ingest**: hace proxy a **`POST /codebase/chat/repository|project/...`** del orchestrator (LangGraph: retrieve → synthesize). El ingest sigue exponiendo **`POST /internal/repositories/:repoId/retriever-tool`** (header **`X-Internal-API-Key`** = **`INTERNAL_API_KEY`**) para que el orchestrator ejecute Cypher/RAG/archivos sin duplicar la capa de datos.
+
+Sin `ORCHESTRATOR_URL`, el pipeline unificado legacy sigue en este servicio (`runUnifiedPipeline` + `ChatRetrieverToolsService`).
+
 ## API
 
-- **`POST /repositories/:id/chat`** — Body: `{ message, history?, scope?, twoPhase?, responseMode? }` (`scope`: `repoIds`, `includePathPrefixes`, `excludePathGlobs`; `twoPhase` alinea con `CHAT_TWO_PHASE` en ingest). **`responseMode: 'evidence_first'`** — fuerza two-phase, amplía el recorte de contexto hacia el sintetizador (`CHAT_EVIDENCE_FIRST_MAX_CHARS`, default 18000) y aplica prompt SDD (## Evidencia primero, listados anclados). Expuesto en MCP `ask_codebase` para The Forge legacy.
+- **`POST /repositories/:id/chat`** — Body: `{ message, history?, scope?, twoPhase?, responseMode?, threadId? }` (`scope`: `repoIds`, `includePathPrefixes`, `excludePathGlobs`; `twoPhase` alinea con `CHAT_TWO_PHASE` en ingest). **`responseMode: 'evidence_first'`** — fuerza two-phase, amplía el recorte de contexto hacia el sintetizador (`CHAT_EVIDENCE_FIRST_MAX_CHARS`, default 18000) y aplica prompt SDD (## Evidencia primero, listados anclados). Expuesto en MCP `ask_codebase` para The Forge legacy. Con orchestrator, `threadId` opcional se usa en el servicio remoto para Redis.
 - **`POST /projects/:projectId/chat`** — Igual body (multi-root)
 - **`POST .../modification-plan`** — Body: `{ userDescription, scope? }`
 - **`POST /repositories/:id/analyze`** — Body: `{ mode: 'diagnostico'|'duplicados'|'reingenieria'|'codigo_muerto'|'seguridad'|'agents'|'skill' }`

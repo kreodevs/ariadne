@@ -9,7 +9,15 @@ import { FalkorDB } from 'falkordb';
 import { ProjectEntity } from './entities/project.entity';
 import { RepositoryEntity } from '../repositories/entities/repository.entity';
 import { ProjectRepositoryEntity } from '../repositories/entities/project-repository.entity';
-import { getFalkorConfig, graphNameForProject, isProjectShardingEnabled } from '../pipeline/falkor';
+import {
+  getFalkorConfig,
+  graphNameForProject,
+  isProjectShardingEnabled,
+  effectiveShardMode,
+  getGraphNodeSoftLimit,
+  listGraphNamesForProjectRouting,
+  type FalkorShardMode,
+} from '../pipeline/falkor';
 
 export interface ProjectWithRepos {
   id: string;
@@ -84,6 +92,25 @@ export class ProjectsService {
           lastSyncAt: r!.lastSyncAt?.toISOString() ?? null,
         })),
     }));
+  }
+
+  /** Metadatos de enrutamiento Falkor (MCP/API): modo mono vs dominio y segmentos conocidos. */
+  async getGraphRouting(id: string): Promise<{
+    projectId: string;
+    shardMode: FalkorShardMode;
+    domainSegments: string[];
+    graphNodeSoftLimit: number;
+  }> {
+    const project = await this.projectRepo.findOne({ where: { id } });
+    if (!project) throw new NotFoundException(`Project ${id} not found`);
+    const shardMode = effectiveShardMode(project.falkorShardMode);
+    const domainSegments = Array.isArray(project.falkorDomainSegments) ? project.falkorDomainSegments : [];
+    return {
+      projectId: id,
+      shardMode,
+      domainSegments,
+      graphNodeSoftLimit: getGraphNodeSoftLimit(),
+    };
   }
 
   async findOne(id: string): Promise<ProjectWithRepos> {
@@ -163,6 +190,8 @@ export class ProjectsService {
       id: newProjectId,
       name: project.name,
       description: project.description ?? null,
+      falkorShardMode: project.falkorShardMode,
+      falkorDomainSegments: project.falkorDomainSegments,
       createdAt: new Date(),
       updatedAt: new Date(),
     });
@@ -179,17 +208,26 @@ export class ProjectsService {
       socket: { host: config.host, port: config.port },
     });
     try {
-      const graph = client.selectGraph(
-        graphNameForProject(isProjectShardingEnabled() ? projectId : undefined),
+      const shardMode = effectiveShardMode(project.falkorShardMode);
+      const segments = Array.isArray(project.falkorDomainSegments) ? project.falkorDomainSegments : [];
+      const graphNames = listGraphNamesForProjectRouting(
+        projectId,
+        shardMode === 'domain' ? 'domain' : 'project',
+        segments,
       );
-      await graph.query(
-        `MATCH (n) WHERE n.projectId = $oldId SET n.projectId = $newId`,
-        { params: { oldId: projectId, newId: newProjectId } },
-      );
-      await graph.query(
-        `MATCH (p:Project) WHERE p.projectId = $oldId SET p.projectId = $newId`,
-        { params: { oldId: projectId, newId: newProjectId } },
-      );
+      for (const gName of graphNames) {
+        const graph = client.selectGraph(gName);
+        try {
+          await graph.query(`MATCH (n) WHERE n.projectId = $oldId SET n.projectId = $newId`, {
+            params: { oldId: projectId, newId: newProjectId },
+          });
+          await graph.query(`MATCH (p:Project) WHERE p.projectId = $oldId SET p.projectId = $newId`, {
+            params: { oldId: projectId, newId: newProjectId },
+          });
+        } catch {
+          /* grafo ausente */
+        }
+      }
     } finally {
       await client.close();
     }

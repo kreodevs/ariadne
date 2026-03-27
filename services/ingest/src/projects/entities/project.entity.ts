@@ -9,6 +9,7 @@ import {
   UpdateDateColumn,
   OneToMany,
 } from 'typeorm';
+import type { FalkorShardMode } from 'ariadne-common';
 import { ProjectRepositoryEntity } from '../../repositories/entities/project-repository.entity';
 
 @Entity('projects')
@@ -21,6 +22,12 @@ export class ProjectEntity {
 
   @Column({ type: 'text', nullable: true })
   description!: string | null;
+
+  @Column({ name: 'falkor_shard_mode', type: 'varchar', length: 16, default: 'project' })
+  falkorShardMode!: FalkorShardMode;
+
+  @Column({ name: 'falkor_domain_segments', type: 'jsonb', nullable: true })
+  falkorDomainSegments!: string[] | null;
 
   @OneToMany(() => ProjectRepositoryEntity, (pr) => pr.project)
   projectRepos!: ProjectRepositoryEntity[];

@@ -30,16 +30,21 @@ Microservicio NestJS que reemplaza la ingesta basada en directorio local (chokid
 - `POST /repositories/:id/chat` — Chat NL→Cypher. Body: `{ message, history? }`. Requiere `OPENAI_API_KEY`. Ver [src/chat/README.md](src/chat/README.md).
 - `POST /repositories/:id/analyze` — Análisis estructurado. Body: `{ mode: 'diagnostico'|'duplicados'|'reingenieria'|'codigo_muerto'|'seguridad'|... }`. Diagnóstico: top riesgo, antipatrones; Duplicados: embeddings; Reingeniería: plan priorizado; Código muerto: detalle de uso por archivo; **seguridad:** escaneo heurístico de secretos + informe LLM (complementa Full Audit).
 - `GET /repositories/:id/graph-summary` — Conteos y muestras de nodos indexados.
+- `GET /projects/:id/graph-routing` — Metadatos Falkor para MCP/API: `shardMode` (`project` \| `domain`), `domainSegments` (último sync), `graphNodeSoftLimit`. Usado para abrir el subgrafo correcto (`AriadneSpecs:<uuid>:<segmento>`).
 
 Tras cada sync (normal o resync), se ejecuta automáticamente `embed-index` si hay EMBEDDING_PROVIDER configurado; si no, se ignora sin fallar.
-- `POST /shadow` — Indexar archivos en **FalkorSpecsShadow** (parse + tsconfig + Prisma + producer). Body: `{ files: [{ path, content }] }`. La API proxifica aquí (`INGEST_URL`).
+- `POST /shadow` — Shadow SDD: indexa archivos en un **grafo FalkorDB por sesión** `FalkorSpecsShadow:<shadowSessionId>` (namespace aislado; sin chokidar ni FS). Body: `{ files: [{ path, content }], shadowSessionId?: string }`. Si omites `shadowSessionId`, el servicio genera un UUID y lo devuelve junto con `shadowGraphName`. Para comparar props: `GET /api/graph/compare/:componentName?shadowSessionId=…` (proxificado por la API).
 - `POST /webhooks/bitbucket` — Webhook para push/PR (ver módulo Webhook)
 
 ## Variables de entorno
 
 - `PORT` — Puerto HTTP (default 3002)
 - `PGHOST`, `PGPORT`, `PGUSER`, `PGPASSWORD`, `PGDATABASE` — PostgreSQL
-- `FALKORDB_HOST`, `FALKORDB_PORT` — FalkorDB (sync escribe en grafo `FalkorSpecs`, shadow en `FalkorSpecsShadow`)
+- `FALKORDB_HOST`, `FALKORDB_PORT` — FalkorDB (sync en `FalkorSpecs`; shadow en `FalkorSpecsShadow:<sesión>` por request)
+- `FALKOR_SHARD_BY_PROJECT` — Un grafo Redis por `projectId` (`AriadneSpecs:<uuid>`).
+- `FALKOR_SHARD_BY_DOMAIN` — Partición adicional por **primer segmento** de la ruta relativa al repo (`apps/foo` → grafo `AriadneSpecs:<uuid>:apps`). Requiere sharding por proyecto. Alternativa a nivel BD: columna `projects.falkor_shard_mode = 'domain'` (p. ej. tras desborde).
+- `FALKOR_AUTO_DOMAIN_OVERFLOW` — Si está activo y el grafo monolítico supera `FALKOR_GRAPH_NODE_SOFT_LIMIT`, se actualiza `falkor_shard_mode` a `domain`; hace falta **resync** para repartir datos.
+- `FALKOR_GRAPH_NODE_SOFT_LIMIT` — Umbral de nodos (default 100000) para el disparador anterior.
 - `FALKORDB_BATCH_SIZE` — Tamaño de batch para Cypher (default 500)
 - `DOMAIN_COMPONENT_PATTERNS`, `DOMAIN_CONST_NAMES` — Fallback global si el proyecto no tiene `domain_config` (por defecto se infiere en primera ingesta)
 - `REDIS_URL` — Redis para cola BullMQ (default `redis://localhost:6380`)

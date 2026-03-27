@@ -56,18 +56,25 @@ export class CacheService implements OnModuleDestroy {
   }
 
   /** Genera la clave de cache para impacto de un nodo. */
-  impactKey(nodeId: string, projectId?: string): string {
-    return projectId ? `impact:${projectId}:${nodeId}` : `impact:${nodeId}`;
+  impactKey(nodeId: string, projectId?: string, scopePath?: string): string {
+    const tail = scopePath ? `:${encodeURIComponent(scopePath).slice(0, 200)}` : '';
+    return projectId ? `impact:${projectId}:${nodeId}${tail}` : `impact:${nodeId}${tail}`;
   }
 
   /** Genera la clave de cache para dependencias de componente (nombre + profundidad). */
-  componentKey(name: string, depth: number, projectId?: string): string {
-    return projectId ? `component:${projectId}:${name}:${depth}` : `component:${name}:${depth}`;
+  componentKey(name: string, depth: number, projectId?: string, scopePath?: string): string {
+    const tail = scopePath ? `:${encodeURIComponent(scopePath).slice(0, 200)}` : '';
+    return projectId
+      ? `component:${projectId}:${name}:${depth}${tail}`
+      : `component:${name}:${depth}${tail}`;
   }
 
   /** Genera la clave de cache para contrato (props) de un componente. */
-  contractKey(componentName: string, projectId?: string): string {
-    return projectId ? `contract:${projectId}:${componentName}` : `contract:${componentName}`;
+  contractKey(componentName: string, projectId?: string, scopePath?: string): string {
+    const tail = scopePath ? `:${encodeURIComponent(scopePath).slice(0, 200)}` : '';
+    return projectId
+      ? `contract:${projectId}:${componentName}${tail}`
+      : `contract:${componentName}${tail}`;
   }
 
   readonly TTL = { impact: TTL_IMPACT, component: TTL_COMPONENT, contract: TTL_CONTRACT };

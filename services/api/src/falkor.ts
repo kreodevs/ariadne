@@ -5,6 +5,7 @@ import { FalkorDB } from "falkordb";
 import {
   SHADOW_GRAPH_NAME,
   graphNameForProject,
+  shadowGraphNameForSession,
 } from "ariadne-common";
 
 export { GRAPH_NAME, SHADOW_GRAPH_NAME } from "ariadne-common";
@@ -29,14 +30,18 @@ export async function getGraph(projectId?: string | null) {
   return client.selectGraph(graphNameForProject(projectId ?? undefined));
 }
 
-export async function getShadowGraph() {
+export async function getShadowGraph(shadowSessionId?: string | null) {
   if (!client) {
     const config = getConfig();
     client = await FalkorDB.connect({
       socket: { host: config.host, port: config.port },
     });
   }
-  return client.selectGraph(SHADOW_GRAPH_NAME);
+  const name =
+    shadowSessionId && String(shadowSessionId).trim()
+      ? shadowGraphNameForSession(String(shadowSessionId).trim())
+      : SHADOW_GRAPH_NAME;
+  return client.selectGraph(name);
 }
 
 export async function closeFalkor() {

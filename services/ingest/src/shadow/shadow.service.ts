@@ -1,10 +1,10 @@
 /**
- * @fileoverview Indexa archivos en grafo FalkorSpecsShadow para compare SDD.
+ * @fileoverview Indexa archivos en un grafo FalkorDB por sesión (namespace shadow) para compare SDD.
  */
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
+import { randomUUID } from 'crypto';
 import { FalkorDB } from 'falkordb';
-import { getFalkorConfig } from '../pipeline/falkor';
-import { SHADOW_GRAPH_NAME } from '../pipeline/falkor';
+import { getFalkorConfig, shadowGraphNameForSession } from '../pipeline/falkor';
 import { parseSource } from '../pipeline/parser';
 import {
   buildCypherForFile,
@@ -31,11 +31,21 @@ export interface ShadowFile {
 @Injectable()
 export class ShadowService {
   /**
-   * Parsea e indexa los archivos en el grafo FalkorSpecsShadow para compare SDD.
+   * Parsea e indexa los archivos en un grafo shadow por sesión (`FalkorSpecsShadow:<shadowSessionId>`).
    * @param {ShadowFile[]} files - Array de { path, content } (código propuesto).
-   * @returns {Promise<{ ok: boolean; indexed: number; statements: number }>} ok, número de archivos indexados y sentencias Cypher ejecutadas.
+   * @param {{ shadowSessionId?: string }} [opts] - Opcional: reutilizar namespace; si no se pasa, se genera UUID.
+   * @returns {Promise<{ ok: boolean; indexed: number; statements: number; shadowSessionId: string; shadowGraphName: string }>}
    */
-  async indexShadow(files: ShadowFile[]): Promise<{ ok: boolean; indexed: number; statements: number }> {
+  async indexShadow(
+    files: ShadowFile[],
+    opts?: { shadowSessionId?: string },
+  ): Promise<{
+    ok: boolean;
+    indexed: number;
+    statements: number;
+    shadowSessionId: string;
+    shadowGraphName: string;
+  }> {
     if (!Array.isArray(files) || files.length === 0) {
       throw new Error('body.files array required');
     }
@@ -93,12 +103,21 @@ export class ShadowService {
       allStatements.push(...st);
     }
 
+    const rawSession = opts?.shadowSessionId?.trim();
+    const shadowSessionId = rawSession && rawSession.length > 0 ? rawSession : randomUUID();
+    let shadowGraphName: string;
+    try {
+      shadowGraphName = shadowGraphNameForSession(shadowSessionId);
+    } catch {
+      throw new BadRequestException({ error: 'invalid shadowSessionId' });
+    }
+
     const config = getFalkorConfig();
     const client = await FalkorDB.connect({
       socket: { host: config.host, port: config.port },
     });
     try {
-      const graph = client.selectGraph(SHADOW_GRAPH_NAME);
+      const graph = client.selectGraph(shadowGraphName);
       const graphClient = { query: (cypher: string) => graph.query(cypher) };
       await graphClient.query('MATCH (n) DETACH DELETE n');
       await graph.query(
@@ -109,7 +128,13 @@ export class ShadowService {
         }),
       );
       await runCypherBatch(graphClient, allStatements);
-      return { ok: true, indexed: files.length, statements: allStatements.length };
+      return {
+        ok: true,
+        indexed: files.length,
+        statements: allStatements.length,
+        shadowSessionId,
+        shadowGraphName,
+      };
     } finally {
       await client.close();
     }

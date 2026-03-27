@@ -8,10 +8,13 @@ import {
   CreateDateColumn,
   UpdateDateColumn,
   OneToMany,
+  ManyToOne,
+  JoinColumn,
 } from 'typeorm';
 import { SyncJob } from './sync-job.entity';
 import { IndexedFile } from './indexed-file.entity';
 import { ProjectRepositoryEntity } from './project-repository.entity';
+import { EmbeddingSpaceEntity } from '../../embedding/entities/embedding-space.entity';
 
 export type RepositoryStatus = 'pending' | 'syncing' | 'ready' | 'error';
 
@@ -52,6 +55,25 @@ export class RepositoryEntity {
   /** Patrones de dominio inferidos en primera ingesta (componentPatterns, constNames). Por proyecto. */
   @Column({ name: 'domain_config', type: 'jsonb', nullable: true })
   domainConfig!: { componentPatterns?: string[]; constNames?: string[] } | null;
+
+  /** Espacio vectorial activo para búsqueda RAG (query embedding + propiedad en Falkor). Null = legado `embedding` + EMBEDDING_PROVIDER. */
+  @Column({ name: 'read_embedding_space_id', type: 'uuid', nullable: true })
+  readEmbeddingSpaceId!: string | null;
+
+  @ManyToOne(() => EmbeddingSpaceEntity, { onDelete: 'SET NULL', nullable: true })
+  @JoinColumn({ name: 'read_embedding_space_id' })
+  readEmbeddingSpace?: EmbeddingSpaceEntity | null;
+
+  /**
+   * Destino del job embed-index durante migración de modelo. Null = mismo que lectura (o legado).
+   * Permite rellenar una propiedad nueva mientras la lectura sigue en la antigua.
+   */
+  @Column({ name: 'write_embedding_space_id', type: 'uuid', nullable: true })
+  writeEmbeddingSpaceId!: string | null;
+
+  @ManyToOne(() => EmbeddingSpaceEntity, { onDelete: 'SET NULL', nullable: true })
+  @JoinColumn({ name: 'write_embedding_space_id' })
+  writeEmbeddingSpace?: EmbeddingSpaceEntity | null;
 
   @OneToMany(() => ProjectRepositoryEntity, (pr) => pr.repository)
   projectRepos!: ProjectRepositoryEntity[];

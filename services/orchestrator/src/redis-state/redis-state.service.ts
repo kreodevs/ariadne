@@ -5,6 +5,7 @@ import { Injectable, OnModuleDestroy } from '@nestjs/common';
 import { createClient, RedisClientType } from 'redis';
 
 const KEY_PREFIX = 'refactor:state:';
+const CHAT_PREFIX = 'codebase:chat:';
 const DEFAULT_TTL_SEC = 3600;
 
 /** Servicio de estado de sesión en Redis (get, set con TTL). */
@@ -59,5 +60,28 @@ export class RedisStateService implements OnModuleDestroy {
 
   async onModuleDestroy(): Promise<void> {
     if (this.client?.isOpen) await this.client.quit();
+  }
+
+  /**
+   * Snapshot post-retrieve para ask_codebase (observabilidad / futura reanudación).
+   * Clave: codebase:chat:{threadId}
+   */
+  async setChatThread(threadId: string, state: unknown, ttlSec: number = DEFAULT_TTL_SEC): Promise<void> {
+    try {
+      const client = await this.getClient();
+      await client.setEx(CHAT_PREFIX + threadId, ttlSec, JSON.stringify(state));
+    } catch (err) {
+      console.error('RedisStateService.setChatThread', err);
+    }
+  }
+
+  async getChatThread<T>(threadId: string): Promise<T | null> {
+    try {
+      const client = await this.getClient();
+      const raw = await client.get(CHAT_PREFIX + threadId);
+      return raw ? (JSON.parse(raw) as T) : null;
+    } catch {
+      return null;
+    }
   }
 }

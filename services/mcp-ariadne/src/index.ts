@@ -9,7 +9,7 @@ import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { ListToolsRequestSchema, CallToolRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 import { isProjectShardingEnabled } from "ariadne-common";
-import { getGraph, closeFalkor } from "./falkor.js";
+import { getGraph, closeFalkor, forEachProjectShardGraph } from "./falkor.js";
 
 const MCP_PATH = "/mcp";
 
@@ -701,11 +701,44 @@ async function inferProjectIdWhenSharded(currentFilePath: string): Promise<strin
   if (!currentFilePath || !isProjectShardingEnabled()) return null;
   const candidates = await collectCandidateProjectIdsFromIngest();
   for (const id of candidates) {
-    const g = await getGraph(id);
-    const hit = await inferProjectIdFromPath(g, currentFilePath);
+    let hit: string | null = null;
+    await forEachProjectShardGraph(id, async (g) => {
+      const h = await inferProjectIdFromPath(g as GraphType, currentFilePath);
+      if (h) {
+        hit = h;
+        return true;
+      }
+    });
     if (hit) return hit;
   }
   return null;
+}
+
+async function queryFileRowsAllShards(
+  projectId: string,
+  filesQ: string,
+): Promise<Array<Record<string, unknown>>> {
+  const merged: Array<Record<string, unknown>> = [];
+  await forEachProjectShardGraph(projectId, async (g) => {
+    const filesRes = (await g.query(filesQ, { params: { projectId } })) as {
+      data?: Array<Record<string, unknown>>;
+    };
+    for (const row of filesRes.data ?? []) merged.push(row);
+  });
+  return merged;
+}
+
+async function runOnProjectGraphs(
+  projectId: string | undefined,
+  fn: (g: GraphType) => Promise<void>,
+): Promise<void> {
+  if (!isProjectShardingEnabled() || !projectId) {
+    await fn(await getGraph(undefined));
+    return;
+  }
+  await forEachProjectShardGraph(projectId, async (g) => {
+    await fn(g as GraphType);
+  });
 }
 
 async function applyShardingInference(
@@ -736,21 +769,31 @@ async function resolveFileForPath(
     resolvedProjectId = (await applyShardingInference(undefined, currentFilePath)) ?? null;
   }
 
-  let graph = await getGraph(resolvedProjectId ?? undefined);
+  let graph = await getGraph(resolvedProjectId ?? undefined, {
+    repoRelativePath: !isAbsoluteLike ? normalized : undefined,
+  });
 
   if (!resolvedProjectId && isProjectShardingEnabled() && isAbsoluteLike) {
     resolvedProjectId = (await inferProjectIdWhenSharded(normalized)) ?? null;
-    if (resolvedProjectId) graph = await getGraph(resolvedProjectId);
+    if (resolvedProjectId)
+      graph = await getGraph(resolvedProjectId, { repoRelativePath: undefined });
   }
 
   if (isAbsoluteLike) {
     const filesQ = resolvedProjectId
       ? `MATCH (f:File {projectId: $projectId}) RETURN f.path AS path`
       : `MATCH (f:File) RETURN f.path AS path, f.projectId AS id`;
-    const filesRes = resolvedProjectId
-      ? ((await graph.query(filesQ, { params: { projectId: resolvedProjectId } })) as { data?: Array<Record<string, unknown>> })
-      : ((await graph.query(filesQ)) as { data?: Array<Record<string, unknown>> });
-    const fileRows = (filesRes.data ?? []);
+    let fileRows: Array<Record<string, unknown>>;
+    if (resolvedProjectId && isProjectShardingEnabled()) {
+      fileRows = await queryFileRowsAllShards(resolvedProjectId, filesQ);
+    } else {
+      const filesRes = resolvedProjectId
+        ? ((await graph.query(filesQ, { params: { projectId: resolvedProjectId } })) as {
+            data?: Array<Record<string, unknown>>;
+          })
+        : ((await graph.query(filesQ)) as { data?: Array<Record<string, unknown>> });
+      fileRows = filesRes.data ?? [];
+    }
     let best: { path: string; id?: string } | null = null;
     for (const row of fileRows) {
       const p = _rv<string>(row, "path");
@@ -764,7 +807,7 @@ async function resolveFileForPath(
     }
     if (best) {
       const pid = resolvedProjectId ?? best.id ?? null;
-      const g2 = await getGraph(pid ?? undefined);
+      const g2 = await getGraph(pid ?? undefined, { repoRelativePath: best.path });
       return { graphPath: best.path, projectId: pid, graph: g2 };
     }
   }
@@ -775,10 +818,17 @@ async function resolveFileForPath(
     const filesQ = resolvedProjectId
       ? `MATCH (f:File {projectId: $projectId}) RETURN f.path AS path, f.projectId AS id`
       : `MATCH (f:File) RETURN f.path AS path, f.projectId AS id`;
-    const filesRes = resolvedProjectId
-      ? ((await graph.query(filesQ, { params: { projectId: resolvedProjectId } })) as { data?: Array<Record<string, unknown>> })
-      : ((await graph.query(filesQ)) as { data?: Array<Record<string, unknown>> });
-    const fileRows = (filesRes.data ?? []);
+    let fileRows: Array<Record<string, unknown>>;
+    if (resolvedProjectId && isProjectShardingEnabled()) {
+      fileRows = await queryFileRowsAllShards(resolvedProjectId, filesQ);
+    } else {
+      const filesRes = resolvedProjectId
+        ? ((await graph.query(filesQ, { params: { projectId: resolvedProjectId } })) as {
+            data?: Array<Record<string, unknown>>;
+          })
+        : ((await graph.query(filesQ)) as { data?: Array<Record<string, unknown>> });
+      fileRows = filesRes.data ?? [];
+    }
     let bestShort: { path: string; id?: string } | null = null;
     for (const row of fileRows) {
       const p = _rv<string>(row, "path");
@@ -791,12 +841,18 @@ async function resolveFileForPath(
     }
     if (bestShort) {
       const pid = resolvedProjectId ?? bestShort.id ?? null;
-      const g2 = await getGraph(pid ?? undefined);
+      const g2 = await getGraph(pid ?? undefined, { repoRelativePath: bestShort.path });
       return { graphPath: bestShort.path, projectId: pid, graph: g2 };
     }
   }
 
-  return { graphPath: normalized, projectId: resolvedProjectId, graph };
+  return {
+    graphPath: normalized,
+    projectId: resolvedProjectId,
+    graph: await getGraph(resolvedProjectId ?? undefined, {
+      repoRelativePath: !isAbsoluteLike ? normalized : undefined,
+    }),
+  };
 }
 
 /** Obtiene contenido de archivo desde ingest: intenta repo (repositories/:id/file) y si 404 intenta proyecto (projects/:id/file). */
@@ -1144,48 +1200,62 @@ async function fetchFileFromIngest(
         isError: true,
       };
     }
-    graph = await getGraph(projectId ?? undefined);
     const ingestUrl = process.env.INGEST_URL ?? process.env.ARIADNESPEC_INGEST_URL ?? "http://localhost:3002";
     const results: { type: string; name: string; projectId?: string }[] = [];
     let usedVector = false;
     try {
-      const embedRes = await fetch(`${ingestUrl.replace(/\/$/, "")}/embed?text=${encodeURIComponent(query)}`);
+      const embedParams = new URLSearchParams();
+      embedParams.set("text", query);
+      if (projectId) embedParams.set("repositoryId", projectId);
+      const embedRes = await fetch(`${ingestUrl.replace(/\/$/, "")}/embed?${embedParams.toString()}`);
       if (embedRes.ok) {
-        const { embedding } = (await embedRes.json()) as { embedding?: number[] };
+        const embedJson = (await embedRes.json()) as { embedding?: number[]; vectorProperty?: string };
+        const { embedding } = embedJson;
+        const vecProp = embedJson.vectorProperty ?? "embedding";
         const valid = Array.isArray(embedding) && embedding.every((v) => typeof v === "number" && Number.isFinite(v));
         if (valid && embedding!.length > 0) {
           const vecStr = `[${embedding!.join(",")}]`;
           const k = Math.min(Math.max(limit, 20), 100);
-          const funcVecQ = `CALL db.idx.vector.queryNodes('Function', 'embedding', ${k}, vecf32(${vecStr})) YIELD node, score RETURN node.name AS name, node.path AS path, node.projectId AS projectId, score`;
-          const compVecQ = `CALL db.idx.vector.queryNodes('Component', 'embedding', ${k}, vecf32(${vecStr})) YIELD node, score RETURN node.name AS name, node.projectId AS projectId, score`;
+          const funcVecQ = `CALL db.idx.vector.queryNodes('Function', '${vecProp}', ${k}, vecf32(${vecStr})) YIELD node, score RETURN node.name AS name, node.path AS path, node.projectId AS projectId, score`;
+          const compVecQ = `CALL db.idx.vector.queryNodes('Component', '${vecProp}', ${k}, vecf32(${vecStr})) YIELD node, score RETURN node.name AS name, node.projectId AS projectId, score`;
           try {
-            const [fRes, cRes] = await Promise.all([
-              graph.query(funcVecQ) as Promise<{ data?: Array<Record<string, unknown>> }>,
-              graph.query(compVecQ) as Promise<{ data?: Array<Record<string, unknown>> }>,
-            ]);
             const seen = new Set<string>();
-            for (const row of asObjRows(fRes.data)) {
-              const name = _rv<string>(row, "name") ?? "";
-              const path = _rv<string>(row, "path") ?? "";
-              const pid = _rv<string>(row, "projectId");
-              if (projectId && pid !== projectId) continue;
-              const key = `Function:${name}:${path}`;
-              if (seen.has(key)) continue;
-              seen.add(key);
-              results.push({ type: "Function", name: path ? `${name ?? ""} — ${path}` : (name ?? ""), projectId: pid });
-              if (results.length >= limit) break;
-            }
-            for (const row of (cRes.data ?? [])) {
-              if (results.length >= limit) break;
-              const name = _rv<string>(row, "name");
-              const pid = _rv<string>(row, "projectId");
-              if (projectId && pid !== projectId) continue;
-              const key = `Component:${name}`;
-              if (seen.has(key)) continue;
-              seen.add(key);
-              results.push({ type: "Component", name: name ?? "", projectId: pid });
-            }
-            usedVector = true;
+            await runOnProjectGraphs(projectId, async (g) => {
+              try {
+                const [fRes, cRes] = await Promise.all([
+                  g.query(funcVecQ) as Promise<{ data?: Array<Record<string, unknown>> }>,
+                  g.query(compVecQ) as Promise<{ data?: Array<Record<string, unknown>> }>,
+                ]);
+                if ((fRes.data?.length ?? 0) + (cRes.data?.length ?? 0) > 0) usedVector = true;
+                for (const row of asObjRows(fRes.data)) {
+                  if (results.length >= limit) return;
+                  const name = _rv<string>(row, "name") ?? "";
+                  const path = _rv<string>(row, "path") ?? "";
+                  const pid = _rv<string>(row, "projectId");
+                  if (projectId && pid !== projectId) continue;
+                  const key = `Function:${name}:${path}`;
+                  if (seen.has(key)) continue;
+                  seen.add(key);
+                  results.push({
+                    type: "Function",
+                    name: path ? `${name ?? ""} — ${path}` : (name ?? ""),
+                    projectId: pid,
+                  });
+                }
+                for (const row of cRes.data ?? []) {
+                  if (results.length >= limit) return;
+                  const name = _rv<string>(row, "name");
+                  const pid = _rv<string>(row, "projectId");
+                  if (projectId && pid !== projectId) continue;
+                  const key = `Component:${name}`;
+                  if (seen.has(key)) continue;
+                  seen.add(key);
+                  results.push({ type: "Component", name: name ?? "", projectId: pid });
+                }
+              } catch {
+                /* vector index may not exist on this shard */
+              }
+            });
           } catch {
             /* vector index may not exist, fall through to keyword */
           }
@@ -1206,14 +1276,22 @@ async function fetchFileFromIngest(
       const nestQ = `MATCH (n) WHERE n:NestController OR n:NestService OR n:NestModule${projectId ? " AND n.projectId = $projectId" : ""} RETURN labels(n)[0] AS typ, n.name AS name, n.path AS path, n.route AS route LIMIT 100`;
       const routeQ = `MATCH (n:Route)${projFilter} RETURN n.path AS path, n.componentName AS componentName LIMIT 100`;
       const domainQ = `MATCH (n:DomainConcept)${projFilter} RETURN n.name AS name, n.category AS category LIMIT 100`;
+      const mergeRows = async (q: string) => {
+        const rows: unknown[] = [];
+        await runOnProjectGraphs(projectId, async (g) => {
+          const res = (await g.query(q, compParams)) as { data?: unknown[] };
+          for (const row of res.data ?? []) rows.push(row);
+        });
+        return { data: rows as unknown[][] };
+      };
       const [compRes, funcRes, fileRes, modelRes, nestRes, routeRes, domainRes] = await Promise.all([
-        graph.query(compQ, compParams) as Promise<{ data?: unknown[][] }>,
-        graph.query(funcQ, compParams) as Promise<{ data?: unknown[][] }>,
-        graph.query(fileQ, compParams) as Promise<{ data?: unknown[][] }>,
-        graph.query(modelQ, compParams) as Promise<{ data?: unknown[][] }>,
-        graph.query(nestQ, compParams) as Promise<{ data?: unknown[][] }>,
-        graph.query(routeQ, compParams) as Promise<{ data?: unknown[][] }>,
-        graph.query(domainQ, compParams) as Promise<{ data?: unknown[][] }>,
+        mergeRows(compQ),
+        mergeRows(funcQ),
+        mergeRows(fileQ),
+        mergeRows(modelQ),
+        mergeRows(nestQ),
+        mergeRows(routeQ),
+        mergeRows(domainQ),
       ]);
       const seenKeys = new Set(results.map((r) => `${r.type}:${r.name}`));
       const pushUnique = (type: string, name: string, pid?: string) => {
@@ -1953,15 +2031,20 @@ async function fetchFileFromIngest(
     const results: { type: string; name: string; projectId?: string }[] = [];
     let usedVector = false;
     try {
-      const embedRes = await fetch(`${ingestUrl.replace(/\/$/, "")}/embed?text=${encodeURIComponent(query)}`);
+      const embedParams = new URLSearchParams();
+      embedParams.set("text", query);
+      if (resolvedProjectId) embedParams.set("repositoryId", resolvedProjectId);
+      const embedRes = await fetch(`${ingestUrl.replace(/\/$/, "")}/embed?${embedParams.toString()}`);
       if (embedRes.ok) {
-        const { embedding } = (await embedRes.json()) as { embedding?: number[] };
+        const embedJson = (await embedRes.json()) as { embedding?: number[]; vectorProperty?: string };
+        const { embedding } = embedJson;
+        const vecProp = embedJson.vectorProperty ?? "embedding";
         const valid = Array.isArray(embedding) && embedding.every((v) => typeof v === "number" && Number.isFinite(v));
         if (valid && embedding!.length > 0) {
           const vecStr = `[${embedding!.join(",")}]`;
           const k = Math.min(Math.max(limit * 2, 20), 100);
-          const funcVecQ = `CALL db.idx.vector.queryNodes('Function', 'embedding', ${k}, vecf32(${vecStr})) YIELD node, score RETURN node.name AS name, node.path AS path, node.projectId AS projectId, score`;
-          const compVecQ = `CALL db.idx.vector.queryNodes('Component', 'embedding', ${k}, vecf32(${vecStr})) YIELD node, score RETURN node.name AS name, node.projectId AS projectId, score`;
+          const funcVecQ = `CALL db.idx.vector.queryNodes('Function', '${vecProp}', ${k}, vecf32(${vecStr})) YIELD node, score RETURN node.name AS name, node.path AS path, node.projectId AS projectId, score`;
+          const compVecQ = `CALL db.idx.vector.queryNodes('Component', '${vecProp}', ${k}, vecf32(${vecStr})) YIELD node, score RETURN node.name AS name, node.projectId AS projectId, score`;
           try {
             const [fRes, cRes] = await Promise.all([
               graph.query(funcVecQ) as Promise<{ data?: Array<Record<string, unknown>> }>,

@@ -10,7 +10,17 @@ import { EmbedIndexService } from '../embedding/embed-index.service';
 import { BitbucketService } from '../bitbucket/bitbucket.service';
 import { GitHubService } from '../providers/github.service';
 import { runShallowClone } from '../providers/git-clone.provider';
-import { getFalkorConfig, graphNameForProject, isProjectShardingEnabled } from '../pipeline/falkor';
+import {
+  getFalkorConfig,
+  graphNameForProject,
+  isProjectShardingEnabled,
+  domainSegmentFromRepoPath,
+  effectiveShardMode,
+  getGraphNodeSoftLimit,
+  isAutoDomainOverflowEnabled,
+  listGraphNamesForProjectRouting,
+} from '../pipeline/falkor';
+import { ProjectEntity } from '../projects/entities/project.entity';
 import { parseSource } from '../pipeline/parser';
 import { extractDomainConcepts, inferDomainConfig } from '../pipeline/domain-extract';
 import {
@@ -75,6 +85,8 @@ export class SyncService {
     private readonly indexedFileRepo: Repository<IndexedFile>,
     @InjectRepository(RepositoryEntity)
     private readonly repoRepo: Repository<RepositoryEntity>,
+    @InjectRepository(ProjectEntity)
+    private readonly projectEntityRepo: Repository<ProjectEntity>,
   ) {}
 
   /**
@@ -94,6 +106,32 @@ export class SyncService {
     return job;
   }
 
+  private async purgeMonolithicProjectGraph(
+    client: Awaited<ReturnType<typeof FalkorDB.connect>>,
+    projectId: string,
+  ): Promise<void> {
+    if (!isProjectShardingEnabled()) return;
+    const g = client.selectGraph(graphNameForProject(projectId));
+    try {
+      await g.query(`MATCH (n) WHERE n.projectId = $projectId DETACH DELETE n`, {
+        params: { projectId },
+      });
+    } catch {
+      /* grafo inexistente */
+    }
+  }
+
+  private async countNodesMonolithicGraph(
+    client: Awaited<ReturnType<typeof FalkorDB.connect>>,
+    projectId: string,
+  ): Promise<number> {
+    const g = client.selectGraph(graphNameForProject(isProjectShardingEnabled() ? projectId : undefined));
+    const countRes = (await g.query(`MATCH (n) WHERE n.projectId = $projectId RETURN count(n) AS c`, {
+      params: { projectId },
+    })) as { data?: [{ c: number }] };
+    return countRes.data?.[0]?.c ?? 0;
+  }
+
   /**
    * Borra todo el grafo e índice del proyecto (nodos con projectId, registros en indexed_file). Luego se puede re-sincronizar.
    * @param {string} repositoryId - ID del repositorio (projectId en FalkorDB para proyecto implícito 1:1).
@@ -101,26 +139,40 @@ export class SyncService {
    */
   async clearProject(repositoryId: string): Promise<{ deletedNodes: number }> {
     await this.repos.findOne(repositoryId);
-    const projectId = repositoryId;
+    const falconProjectIds = await this.repos.getProjectIdsForRepo(repositoryId);
+    const projectIds = falconProjectIds.length > 0 ? falconProjectIds : [repositoryId];
 
     const config = getFalkorConfig();
     const client = await FalkorDB.connect({
       socket: { host: config.host, port: config.port },
     });
     try {
-      const graph = client.selectGraph(
-        graphNameForProject(isProjectShardingEnabled() ? projectId : undefined),
-      );
-      const countRes = (await graph.query(
-        `MATCH (n) WHERE n.projectId = $projectId RETURN count(n) as c`,
-        { params: { projectId } },
-      )) as { data?: [{ c: number }] };
-      const countBefore = countRes.data?.[0]?.c ?? 0;
-
-      await graph.query(
-        `MATCH (n) WHERE n.projectId = $projectId DETACH DELETE n`,
-        { params: { projectId } },
-      );
+      let countBefore = 0;
+      for (const projectId of projectIds) {
+        const proj = await this.projectEntityRepo.findOne({ where: { id: projectId } });
+        const shardMode = effectiveShardMode(proj?.falkorShardMode ?? 'project');
+        const segments = Array.isArray(proj?.falkorDomainSegments) ? proj!.falkorDomainSegments! : [];
+        const graphNames = listGraphNamesForProjectRouting(
+          projectId,
+          shardMode === 'domain' ? 'domain' : 'project',
+          segments,
+        );
+        for (const gName of graphNames) {
+          const graph = client.selectGraph(gName);
+          try {
+            const countRes = (await graph.query(
+              `MATCH (n) WHERE n.projectId = $projectId RETURN count(n) AS c`,
+              { params: { projectId } },
+            )) as { data?: [{ c: number }] };
+            countBefore += countRes.data?.[0]?.c ?? 0;
+            await graph.query(`MATCH (n) WHERE n.projectId = $projectId DETACH DELETE n`, {
+              params: { projectId },
+            });
+          } catch {
+            /* grafo ausente */
+          }
+        }
+      }
 
       await this.indexedFileRepo.delete({ repositoryId });
 
@@ -139,18 +191,31 @@ export class SyncService {
       socket: { host: config.host, port: config.port },
     });
     try {
-      const graph = client.selectGraph(
-        graphNameForProject(isProjectShardingEnabled() ? projectId : undefined),
+      const proj = await this.projectEntityRepo.findOne({ where: { id: projectId } });
+      const shardMode = effectiveShardMode(proj?.falkorShardMode ?? 'project');
+      const segments = Array.isArray(proj?.falkorDomainSegments) ? proj!.falkorDomainSegments! : [];
+      const graphNames = listGraphNamesForProjectRouting(
+        projectId,
+        shardMode === 'domain' ? 'domain' : 'project',
+        segments,
       );
-      const countRes = (await graph.query(
-        `MATCH (n) WHERE n.projectId = $projectId AND n.repoId = $repoId RETURN count(n) as c`,
-        { params: { projectId, repoId } },
-      )) as { data?: [{ c: number }] };
-      const countBefore = countRes.data?.[0]?.c ?? 0;
-      await graph.query(
-        `MATCH (n) WHERE n.projectId = $projectId AND n.repoId = $repoId DETACH DELETE n`,
-        { params: { projectId, repoId } },
-      );
+      let countBefore = 0;
+      for (const gName of graphNames) {
+        const graph = client.selectGraph(gName);
+        try {
+          const countRes = (await graph.query(
+            `MATCH (n) WHERE n.projectId = $projectId AND n.repoId = $repoId RETURN count(n) AS c`,
+            { params: { projectId, repoId } },
+          )) as { data?: [{ c: number }] };
+          countBefore += countRes.data?.[0]?.c ?? 0;
+          await graph.query(
+            `MATCH (n) WHERE n.projectId = $projectId AND n.repoId = $repoId DETACH DELETE n`,
+            { params: { projectId, repoId } },
+          );
+        } catch {
+          /* grafo ausente */
+        }
+      }
       return { deletedNodes: countBefore };
     } finally {
       await client.close();
@@ -394,21 +459,50 @@ export class SyncService {
       });
 
       for (const projectId of projectIds) {
-        const graph = client.selectGraph(
-          graphNameForProject(isProjectShardingEnabled() ? projectId : undefined),
-        );
-        const graphClient = { query: (cypher: string) => graph.query(cypher) };
-        await ensureFalkorIndexes(graphClient);
+        const projRow = await this.projectEntityRepo.findOne({ where: { id: projectId } });
+        const shardMode = effectiveShardMode(projRow?.falkorShardMode ?? 'project');
 
-        await graph.query(
-          buildProjectMergeCypher({
-            projectId,
-            projectName,
-            rootPath,
-            branch: repo.defaultBranch ?? null,
-            manifestDeps: manifestDeps || null,
-          }),
-        );
+        if (shardMode === 'domain' && isProjectShardingEnabled()) {
+          await this.purgeMonolithicProjectGraph(client, projectId);
+        }
+
+        const domainSegmentsSeen = new Set<string>();
+        const ensuredGraphs = new Set<string>();
+        const projectMerged = new Set<string>();
+
+        const prepareGraph = async (relPath: string) => {
+          const pidArg = isProjectShardingEnabled() ? projectId : undefined;
+          const gname =
+            shardMode === 'domain'
+              ? graphNameForProject(pidArg, {
+                  shardMode: 'domain',
+                  domainSegment: domainSegmentFromRepoPath(relPath),
+                })
+              : graphNameForProject(pidArg);
+          const graph = client.selectGraph(gname);
+          const graphClient = { query: (cypher: string) => graph.query(cypher) };
+          if (!ensuredGraphs.has(gname)) {
+            ensuredGraphs.add(gname);
+            await ensureFalkorIndexes(graphClient);
+          }
+          if (shardMode === 'domain') {
+            domainSegmentsSeen.add(domainSegmentFromRepoPath(relPath));
+          }
+          if (!projectMerged.has(gname)) {
+            projectMerged.add(gname);
+            await graph.query(
+              buildProjectMergeCypher({
+                projectId,
+                projectName,
+                rootPath,
+                branch: repo.defaultBranch ?? null,
+                manifestDeps: manifestDeps || null,
+              }),
+            );
+          }
+          return graphClient;
+        };
+
         for (const parsed of parsedFiles) {
           try {
             const resolvedImports: string[] = [];
@@ -428,6 +522,7 @@ export class SyncService {
               repoId,
               chunkingContext,
             );
+            const graphClient = await prepareGraph(parsed.path);
             await runCypherBatch(graphClient, statements);
             if (projectId === projectIds[0]) indexedPaths.push(parsed.path);
           } catch (err) {
@@ -438,6 +533,7 @@ export class SyncService {
         for (const pf of prismaFiles) {
           try {
             const statements = await buildCypherForPrismaSchema(pf.path, pf.content, projectId, repoId);
+            const graphClient = await prepareGraph(pf.path);
             await runCypherBatch(graphClient, statements);
             if (projectId === projectIds[0]) indexedPaths.push(pf.path);
           } catch (err) {
@@ -449,6 +545,7 @@ export class SyncService {
           try {
             const chunks = chunkMarkdown(mf.content);
             const statements = buildCypherForMarkdownFile(mf.path, chunks, projectId, repoId);
+            const graphClient = await prepareGraph(mf.path);
             await runCypherBatch(graphClient, statements);
             if (projectId === projectIds[0]) indexedPaths.push(mf.path);
           } catch (err) {
@@ -459,7 +556,30 @@ export class SyncService {
         const currentSet = new Set(indexedPaths);
         for (const f of previouslyIndexed) {
           if (!currentSet.has(f.path)) {
+            const graphClient = await prepareGraph(f.path);
             await runCypherBatch(graphClient, buildCypherDeleteFile(f.path, projectId, repoId));
+          }
+        }
+
+        if (projRow) {
+          await this.projectEntityRepo.update(projectId, {
+            falkorDomainSegments: shardMode === 'domain' ? [...domainSegmentsSeen] : [],
+          });
+        }
+
+        if (
+          projRow &&
+          isAutoDomainOverflowEnabled() &&
+          isProjectShardingEnabled() &&
+          effectiveShardMode(projRow.falkorShardMode) === 'project'
+        ) {
+          const n = await this.countNodesMonolithicGraph(client, projectId);
+          if (n >= getGraphNodeSoftLimit()) {
+            await this.projectEntityRepo.update(projectId, { falkorShardMode: 'domain' });
+            console.warn(
+              `[sync] Proyecto ${projectId}: ${n} nodos ≥ límite ${getGraphNodeSoftLimit()}. ` +
+                `falkor_shard_mode=domain. Ejecuta resync completo para repartir en subgrafos por carpeta raíz.`,
+            );
           }
         }
       }

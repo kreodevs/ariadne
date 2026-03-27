@@ -45,7 +45,7 @@ npm publish
 ### Workflow
 - **get_file_context** — Combina contenido + imports + exports. Paso 2: search → get_file_context → validate/apply.
 
-Variables: `FALKORDB_HOST`, `FALKORDB_PORT`, `INGEST_URL` (para get_file_content, ask_codebase, get_project_analysis, get_project_standards).
+Variables: `FALKORDB_HOST`, `FALKORDB_PORT`, `FALKOR_SHARD_BY_PROJECT`, `FALKOR_SHARD_BY_DOMAIN`, `INGEST_URL` (enrutamiento vía `GET /projects/:id/graph-routing`; herramientas que leen Falkor abren el subgrafo por ruta cuando aplica).
 
 ## Uso (producción / Docker)
 

@@ -137,9 +137,16 @@ export const openApiSpec = {
         operationId: "getGraphCompare",
         summary: "Comparar componente: main vs shadow",
         description:
-          "Tras indexar código propuesto en shadow (POST /graph/shadow), compara props del componente en AriadneSpecs vs AriadneSpecsShadow.",
+          "Tras POST /graph/shadow, compara props en el grafo principal vs el grafo shadow de esa sesión (query shadowSessionId devuelto por el indexado). Sin query se lee el grafo legacy FalkorSpecsShadow.",
         parameters: [
           { name: "componentName", in: "path", required: true, schema: { type: "string" } },
+          {
+            name: "shadowSessionId",
+            in: "query",
+            required: false,
+            schema: { type: "string" },
+            description: "Namespace shadow (mismo valor que devuelve POST /graph/shadow).",
+          },
         ],
         responses: {
           "200": {
@@ -176,7 +183,7 @@ export const openApiSpec = {
         operationId: "postGraphShadow",
         summary: "Indexar código propuesto en grafo shadow",
         description:
-          "Proxy al servicio ingest: indexa archivos en memoria en AriadneSpecsShadow (body.files: [{ path, content }]).",
+          "Proxy al ingest: indexa en FalkorDB bajo FalkorSpecsShadow:<sesión>. Opcional shadowSessionId para reindexar el mismo namespace.",
         requestBody: {
           required: true,
           content: {
@@ -185,6 +192,10 @@ export const openApiSpec = {
                 type: "object",
                 required: ["files"],
                 properties: {
+                  shadowSessionId: {
+                    type: "string",
+                    description: "Opcional; si falta el ingest genera UUID y lo devuelve.",
+                  },
                   files: {
                     type: "array",
                     items: {
@@ -202,7 +213,9 @@ export const openApiSpec = {
           },
         },
         responses: {
-          "200": { description: "ok, indexed, statements" },
+          "200": {
+            description: "ok, indexed, statements, shadowSessionId, shadowGraphName",
+          },
           "400": { description: "body.files array required" },
           "502": { description: "Error proxy ingest" },
         },

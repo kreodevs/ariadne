@@ -9,6 +9,7 @@ import { getFalkorConfig, graphNameForProject, isProjectShardingEnabled } from '
 import { RepositoriesService } from '../repositories/repositories.service';
 import { FileContentService } from '../repositories/file-content.service';
 import { EmbeddingService } from '../embedding/embedding.service';
+import { EmbeddingSpaceService } from '../embedding/embedding-space.service';
 import {
   SCHEMA,
   EXAMPLES,
@@ -33,12 +34,9 @@ import { ChatCypherService } from './chat-cypher.service';
 import { ChatLlmService } from './chat-llm.service';
 import { ChatAntipatternsService } from './chat-antipatterns.service';
 import { ChatHandlersService } from './chat-handlers.service';
+import { ChatRetrieverToolsService, type RetrieverToolName } from './chat-retriever-tools.service';
 import { ProjectsService } from '../projects/projects.service';
-import {
-  type ChatScope,
-  filterCypherRowsByScope,
-  matchesChatScope,
-} from './chat-scope.util';
+import { type ChatScope, matchesChatScope } from './chat-scope.util';
 import { observeChatPipelineComplete, recordChatPipelineError } from '../metrics/ingest-metrics';
 
 /** Mensaje del historial de chat (usuario o asistente). */
@@ -68,6 +66,8 @@ export interface ChatRequest {
    * (## Evidencia obligatoria primero, listados anclados, poca prosa). Pensado para ask_codebase / The Forge legacy.
    */
   responseMode?: 'default' | 'evidence_first';
+  /** Reenviado al orchestrator cuando ORCHESTRATOR_URL está activo (Redis codebase:chat:*). */
+  threadId?: string;
 }
 
 /** Respuesta del chat con texto, opcional cypher ejecutado y resultados. */
@@ -103,6 +103,18 @@ export interface AnalyzeResult {
   summary: string;
   details?: unknown;
 }
+
+/** Payload hacia orchestrator tras /internal/.../analyze-prep (sin LLM en ingest). */
+export type AnalyzeOrchestratorPrepDto =
+  | { kind: 'complete'; result: AnalyzeResult }
+  | {
+      kind: 'llm';
+      mode: AnalyzeMode;
+      systemPrompt: string;
+      userPrompt: string;
+      maxTokens: number;
+      details: unknown;
+    };
 
 /** Hallazgo crítico para Full Audit. */
 export interface CriticalFinding {
@@ -209,11 +221,13 @@ export class ChatService {
     private readonly repos: RepositoriesService,
     private readonly fileContent: FileContentService,
     private readonly embedding: EmbeddingService,
+    private readonly embeddingSpaces: EmbeddingSpaceService,
     private readonly cypher: ChatCypherService,
     private readonly llm: ChatLlmService,
     private readonly antipatterns: ChatAntipatternsService,
     private readonly handlers: ChatHandlersService,
     private readonly projects: ProjectsService,
+    private readonly retrieverTools: ChatRetrieverToolsService,
   ) {}
 
   /** Proyecto a usar para un repo: primer proyecto asociado o repo.id (standalone). */
@@ -243,6 +257,22 @@ export class ChatService {
     userDescription: string,
     scope?: ChatScope,
   ): Promise<ModificationPlanResult> {
+    const orch = process.env.ORCHESTRATOR_URL?.trim();
+    if (orch && userDescription.trim()) {
+      try {
+        const url = `${orch.replace(/\/$/, '')}/codebase/modification-plan/project/${encodeURIComponent(projectIdOrRepoId)}`;
+        const res = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ userDescription, scope }),
+        });
+        if (!res.ok) throw new Error(`orchestrator ${res.status}: ${await res.text()}`);
+        return (await res.json()) as ModificationPlanResult;
+      } catch {
+        /* fallback */
+      }
+    }
+
     const directRepo = await this.repos.findOptionalById(projectIdOrRepoId);
     if (directRepo) {
       return this.getModificationPlan(directRepo.id, userDescription, scope);
@@ -263,24 +293,48 @@ export class ChatService {
    * @param {string} userDescription - Descripción en lenguaje natural de la modificación.
    * @returns {Promise<ModificationPlanResult>}
    */
-  async getModificationPlan(
+  /**
+   * Solo archivos a tocar (grafo), sin LLM. Para orchestrator / internal.
+   */
+  async getModificationPlanFilesOnly(
     repositoryId: string,
     userDescription: string,
     scope?: ChatScope,
-  ): Promise<ModificationPlanResult> {
+  ): Promise<Array<{ path: string; repoId: string }>> {
+    return this.collectModificationPlanFiles(repositoryId, userDescription, scope);
+  }
+
+  async getModificationPlanFilesOnlyByProject(
+    projectIdOrRepoId: string,
+    userDescription: string,
+    scope?: ChatScope,
+  ): Promise<Array<{ path: string; repoId: string }>> {
+    const directRepo = await this.repos.findOptionalById(projectIdOrRepoId);
+    if (directRepo) {
+      return this.collectModificationPlanFiles(directRepo.id, userDescription, scope);
+    }
+    const repos = await this.repos.findAll(projectIdOrRepoId);
+    const repo = repos[0];
+    if (!repo) return [];
+    return this.collectModificationPlanFiles(repo.id, userDescription, scope);
+  }
+
+  /** Candidatos (path, repoId) desde Cypher + semántica; respeta MODIFICATION_PLAN_MAX_FILES y scope. */
+  private async collectModificationPlanFiles(
+    repositoryId: string,
+    userDescription: string,
+    scope?: ChatScope,
+  ): Promise<Array<{ path: string; repoId: string }>> {
     const repo = await this.repos.findOne(repositoryId);
     const projectId = await this.resolveProjectIdForRepo(repo.id);
 
-    // 1) Fuente de verdad: todos los (path, repoId) indexados en el proyecto (repoId para multi-root)
     const indexedRows = (await this.cypher.executeCypher(
       projectId,
       `MATCH (f:File) WHERE f.projectId = $projectId RETURN f.path as path, coalesce(f.repoId, f.projectId) as repoId`,
     )) as Array<{ path: string; repoId: string }>;
-    const indexedPathRepoSet = new Set(indexedRows.map((r) => `${r.path}\t${r.repoId}`));
 
     const candidatePathRepoSet = new Set<string>();
 
-    // 2) Términos para búsqueda (palabras significativas, sin stopwords)
     const stopwords = new Set([
       'el', 'la', 'los', 'las', 'un', 'una', 'unos', 'unas', 'de', 'del', 'en', 'y', 'o', 'pero', 'si', 'no',
       'que', 'para', 'por', 'con', 'al', 'lo', 'como', 'más', 'menos', 'este', 'esta', 'eso', 'que', 'se', 'los',
@@ -298,7 +352,6 @@ export class ChatService {
       return [t, cap].filter((x, i, a) => a.indexOf(x) === i);
     });
 
-    // 3) Cypher: archivos por path, por componente, por función (con repoId)
     for (const term of termPairs) {
       const filesByPath = (await this.cypher.executeCypher(
         projectId,
@@ -322,7 +375,6 @@ export class ChatService {
       filesByFunction.forEach((r) => candidatePathRepoSet.add(`${r.path}\t${r.repoId}`));
     }
 
-    // 4) Búsqueda semántica: añadir (path, repoId) que estén en el grafo
     const semantic = await this.handlers.semanticSearchFallback(projectId, userDescription, 25);
     for (const row of semantic.result as Array<{ path?: string; name?: string; tipo?: string; repoId?: string }>) {
       const p = row.path;
@@ -343,7 +395,6 @@ export class ChatService {
       }
     }
 
-    // 5) Filtrar: solo (path, repoId) que existen en el índice; ordenar por path luego repoId; cap (plan_mcp_grounding_y_retrieval §5)
     const maxPlanFiles = (() => {
       const raw = process.env.MODIFICATION_PLAN_MAX_FILES?.trim();
       const n = raw ? parseInt(raw, 10) : 150;
@@ -358,35 +409,66 @@ export class ChatService {
     if (scope) {
       filesToModify = filesToModify.filter((f) => matchesChatScope(f.path, f.repoId, scope));
     }
+    return filesToModify;
+  }
 
-    // 6) Preguntas de afinación: solo negocio/funcionalidad (no exhaustividad)
-    let questionsToRefine: string[] = [];
-    if (process.env.OPENAI_API_KEY?.trim()) {
-      const systemPrompt = `Eres un analista que genera preguntas para afinar un cambio en el software.
+  private async buildModificationPlanQuestionsToRefine(
+    userDescription: string,
+    filesToModify: Array<{ path: string; repoId: string }>,
+  ): Promise<string[]> {
+    if (!process.env.OPENAI_API_KEY?.trim()) return [];
+    const systemPrompt = `Eres un analista que genera preguntas para afinar un cambio en el software.
 Regla: SOLO preguntas de negocio o funcionalidad: valores por defecto, reglas de validación, criterios de negocio, umbrales, opciones permitidas.
 PROHIBIDO: preguntas como "¿hay otros componentes a considerar?", "¿qué más archivos?", "¿otras dependencias?". La lista de archivos ya es exhaustiva; no preguntes por exhaustividad.
 Formato: devuelve una lista numerada, una pregunta por línea. Si no hay preguntas relevantes, devuelve "Ninguna.".
 Máximo 5 preguntas. En español.`;
-      const userPrompt = `Descripción del cambio que el usuario quiere hacer:\n\n"${userDescription.slice(0, 800)}"\n\nArchivos que se van a modificar (ya determinados): ${filesToModify.slice(0, 20).map((f) => f.path).join(', ')}${filesToModify.length > 20 ? '...' : ''}\n\nGenera solo preguntas de negocio/funcionalidad para afinar el cambio (valores por defecto, reglas, criterios).`;
-      const raw = await this.llm.callLlm(
-        [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: userPrompt },
-        ],
-        512,
-      );
-      const lines = raw
-        .split(/\n+/)
-        .map((l) => l.replace(/^\s*\d+[.)]\s*/, '').trim())
-        .filter((l) => l.length > 10 && !/^ninguna\.?$/i.test(l));
-      questionsToRefine = lines.slice(0, 5);
+    const userPrompt = `Descripción del cambio que el usuario quiere hacer:\n\n"${userDescription.slice(0, 800)}"\n\nArchivos que se van a modificar (ya determinados): ${filesToModify.slice(0, 20).map((f) => f.path).join(', ')}${filesToModify.length > 20 ? '...' : ''}\n\nGenera solo preguntas de negocio/funcionalidad para afinar el cambio (valores por defecto, reglas, criterios).`;
+    const raw = await this.llm.callLlm(
+      [{ role: 'system', content: systemPrompt }, { role: 'user', content: userPrompt }],
+      512,
+    );
+    const lines = raw
+      .split(/\n+/)
+      .map((l) => l.replace(/^\s*\d+[.)]\s*/, '').trim())
+      .filter((l) => l.length > 10 && !/^ninguna\.?$/i.test(l));
+    return lines.slice(0, 5);
+  }
+
+  async getModificationPlan(
+    repositoryId: string,
+    userDescription: string,
+    scope?: ChatScope,
+  ): Promise<ModificationPlanResult> {
+    const orch = process.env.ORCHESTRATOR_URL?.trim();
+    if (orch && userDescription.trim()) {
+      try {
+        const url = `${orch.replace(/\/$/, '')}/codebase/modification-plan/repository/${encodeURIComponent(repositoryId)}`;
+        const res = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ userDescription, scope }),
+        });
+        if (!res.ok) throw new Error(`orchestrator ${res.status}: ${await res.text()}`);
+        return (await res.json()) as ModificationPlanResult;
+      } catch {
+        /* fallback local */
+      }
     }
 
+    if (!userDescription.trim()) {
+      return { filesToModify: [], questionsToRefine: [] };
+    }
+    const filesToModify = await this.collectModificationPlanFiles(repositoryId, userDescription, scope);
+    const questionsToRefine = await this.buildModificationPlanQuestionsToRefine(userDescription, filesToModify);
     return { filesToModify, questionsToRefine };
   }
 
-  /** Diagnóstico de deuda técnica. Usa CoT/ToT (NotebookLM: Arquitectura Prompts). */
-  async analyzeDiagnostico(repositoryId: string): Promise<AnalyzeResult> {
+  /** Métricas y prompts LLM para diagnóstico (compartido con orchestrator prep). */
+  private async buildDiagnosticoLlmPayload(repositoryId: string): Promise<{
+    systemPrompt: string;
+    userPrompt: string;
+    details: Record<string, unknown>;
+  }> {
     const repo = await this.repos.findOne(repositoryId);
     const projectId = await this.resolveProjectIdForRepo(repo.id);
     const summary = await this.cypher.getGraphSummary(repositoryId);
@@ -483,7 +565,7 @@ Métricas estándar: acoplamiento (CALLS), complejidad ciclomática (McCabe), LO
         ? `Quick wins potenciales: antipatrones Spaghetti/GodFunctions detectados. `
         : '';
 
-    const prompt = `${context}
+    const userPrompt = `${context}
 
 <prefill>${prefill}${prefillDesc}${prefillAntip}</prefill>
 
@@ -499,14 +581,25 @@ Genera un diagnóstico estructurado en markdown con:
 5. **Prioridades** — ordena por riskScore y antipatrones; cada ítem debe referenciar path/name concreto de los datos. Sin recomendaciones sin soporte en datos.
 
 Sé conciso. Usa bullet points y tablas. Incluye TODOS los ítems de los datos en las tablas y listas.`;
+
+    return {
+      systemPrompt,
+      userPrompt,
+      details: { riskRanked, highCoupling, noDescription, componentProps, antipatterns },
+    };
+  }
+
+  /** Diagnóstico de deuda técnica. Usa CoT/ToT (NotebookLM: Arquitectura Prompts). */
+  async analyzeDiagnostico(repositoryId: string): Promise<AnalyzeResult> {
+    const p = await this.buildDiagnosticoLlmPayload(repositoryId);
     const answer = await this.llm.callLlm(
-      [{ role: 'system', content: systemPrompt }, { role: 'user', content: prompt }],
+      [{ role: 'system', content: p.systemPrompt }, { role: 'user', content: p.userPrompt }],
       8192,
     );
     return {
       mode: 'diagnostico',
       summary: answer,
-      details: { riskRanked, highCoupling, noDescription, componentProps, antipatterns },
+      details: p.details,
     };
   }
 
@@ -543,7 +636,10 @@ Sé conciso. Usa bullet points y tablas. Incluye TODOS los ítems de los datos e
     }));
 
     let semanticPairs: Array<{ a: string; b: string; score: number }> = [];
-    if (this.embedding.isAvailable()) {
+    const readBinding = await this.embeddingSpaces.getReadBindingForRepository(repositoryId);
+    const embedForRead = readBinding.provider;
+    const vProp = readBinding.graphProperty;
+    if (embedForRead?.isAvailable()) {
       const config = getFalkorConfig();
       const client = await FalkorDB.connect({ socket: { host: config.host, port: config.port } });
       const graph = client.selectGraph(
@@ -552,7 +648,7 @@ Sé conciso. Usa bullet points y tablas. Incluye TODOS los ítems de los datos e
 
       const limitClause = limit > 0 ? ` LIMIT ${limit}` : '';
       const funcsRes = (await graph.query(
-        `MATCH (n:Function) WHERE n.projectId = $projectId AND n.embedding IS NOT NULL RETURN n.path AS path, n.name AS name, n.description AS description, n.startLine AS startLine, n.endLine AS endLine${limitClause}`,
+        `MATCH (n:Function) WHERE n.projectId = $projectId AND n.${vProp} IS NOT NULL RETURN n.path AS path, n.name AS name, n.description AS description, n.startLine AS startLine, n.endLine AS endLine${limitClause}`,
         { params: { projectId } },
       )) as { data?: unknown[] };
       const rawRows = funcsRes?.data ?? [];
@@ -581,10 +677,10 @@ Sé conciso. Usa bullet points y tablas. Incluye TODOS los ítems de los datos e
               if (slice.length > 30) text = slice.slice(0, 4000);
             }
           }
-          const vec = await this.embedding.embed(text);
+          const vec = await embedForRead.embed(text);
           const vecStr = `[${vec.join(',')}]`;
           const res = await this.cypher.executeCypherRaw(
-            `CALL db.idx.vector.queryNodes('Function', 'embedding', 25, vecf32(${vecStr})) YIELD node, score
+            `CALL db.idx.vector.queryNodes('Function', '${vProp}', 25, vecf32(${vecStr})) YIELD node, score
              RETURN node.path AS path, node.name AS name, node.projectId AS projectId, score`,
             projectId,
           );
@@ -615,7 +711,7 @@ Sé conciso. Usa bullet points y tablas. Incluye TODOS los ítems de los datos e
       }
     }
 
-    if (pairs.length === 0 && !this.embedding.isAvailable()) {
+    if (pairs.length === 0 && !embedForRead?.isAvailable()) {
       return {
         mode: 'duplicados',
         summary: '## Código duplicado\n\n⚠️ **Embeddings no configurados.** Ejecuta `POST /repositories/:id/embed-index` tras un sync para indexar el cuerpo de las funciones y detectar duplicados semánticos.',
@@ -628,10 +724,14 @@ Sé conciso. Usa bullet points y tablas. Incluye TODOS los ítems de los datos e
     return { mode: 'duplicados', summary, details: { pairs, byName, byCluster } };
   }
 
-  /** Recomendaciones de reingeniería basadas 100% en datos del grafo. Sin límites. */
-  async analyzeReingenieria(repositoryId: string): Promise<AnalyzeResult> {
-    const [diagnostico, duplicados] = await Promise.all([
-      this.analyzeDiagnostico(repositoryId),
+  /** Payload LLM reingeniería sin ejecutar el síntesis de diagnóstico (orchestrator). */
+  private async buildReingenieriaLlmPayload(repositoryId: string): Promise<{
+    systemPrompt: string;
+    userPrompt: string;
+    details: { diagnostico: Record<string, unknown>; duplicadosDetails: unknown };
+  }> {
+    const [diagPayload, duplicados] = await Promise.all([
+      this.buildDiagnosticoLlmPayload(repositoryId),
       this.analyzeDuplicados(repositoryId, 0.78, 0),
     ]);
 
@@ -639,7 +739,7 @@ Sé conciso. Usa bullet points y tablas. Incluye TODOS los ítems de los datos e
       Array.isArray((duplicados.details as { pairs?: unknown[] })?.pairs) &&
       ((duplicados.details as { pairs: unknown[] }).pairs?.length ?? 0) > 0;
 
-    const rawDetails = diagnostico.details as {
+    const rawDetails = diagPayload.details as {
       riskRanked?: unknown[];
       highCoupling?: unknown[];
       noDescription?: unknown[];
@@ -652,7 +752,14 @@ Sé conciso. Usa bullet points y tablas. Incluye TODOS los ítems de los datos e
     const noDescRe = (rawDetails?.noDescription ?? []).slice(0, MAX_NO_DESC);
     const propsRe = (rawDetails?.componentProps ?? []).slice(0, MAX_COMPONENT_PROPS);
     const pairsRe = ((duplicados.details as { pairs?: unknown[] })?.pairs ?? []).slice(0, MAX_DUPLICATES);
-    const diagSummary = diagnostico.summary.slice(0, MAX_SUMMARY_CHARS) + (diagnostico.summary.length > MAX_SUMMARY_CHARS ? '\n...[resumido]' : '');
+    const riskRankedForMech = (rawDetails?.riskRanked ?? []) as Array<{ path?: string; name?: string; riskScore?: number }>;
+    const diagMech =
+      riskRankedForMech.length > 0
+        ? riskRankedForMech
+            .slice(0, 5)
+            .map((r) => `${r.path}/${r.name}(${r.riskScore})`)
+            .join('; ')
+        : 'sin ítems de riesgo en muestra';
 
     const context = `
 **Datos crudos del análisis (usa SOLO estos para tus recomendaciones; muestras top por categoría):**
@@ -664,7 +771,7 @@ Componentes con muchas props: ${JSON.stringify(propsRe)}
 Anti-patrones: ${JSON.stringify(truncateAntipatterns((rawDetails?.antipatterns ?? {}) as { spaghetti?: unknown[]; godFunctions?: unknown[]; highFanIn?: unknown[]; circularImports?: unknown[]; overloadedComponents?: unknown[] }))}
 Duplicados: ${JSON.stringify(pairsRe)}
 
-Resumen diagnóstico (referencia): ${diagSummary}
+Resumen mecánico (top riesgos, sin síntesis LLM previa): ${diagMech}
 ${!hayDuplicados ? '\n⚠️ No hay duplicados detectados. PROHIBIDO recomendar "eliminar duplicados" o "consolidar código repetido".' : ''}
 `;
 
@@ -689,7 +796,7 @@ ${!hayDuplicados ? '\n⚠️ No hay duplicados detectados. PROHIBIDO recomendar 
       noDesc.length > 0 ? `Funciones sin JSDoc: ${noDesc.length} ítems. ` : '';
     const prefillReQuick = hayDuplicados ? 'Quick win: consolidar duplicados detectados. ' : '';
 
-    const prompt = `${context}
+    const userPrompt = `${context}
 
 <prefill>${prefillRe}${prefillReDesc}${prefillReQuick}</prefill>
 
@@ -706,28 +813,42 @@ Estructura OBLIGATORIA (reflejar el diagnóstico):
    - **Antipatrones:** Una acción por ítem en Spaghetti/God Functions/etc.: "Refactorizar X en path (Nesting Depth: N)" o "(Out Calls: N)".
 3. **Quick wins** — lista explícita: funciones sin JSDoc (path/name) y consolidar duplicados solo si Duplicados no está vacío.
 4. Incluir TODOS los path/name de los datos en las acciones. Sin inventar ítems. Sin omitir categorías que tengan datos.`;
-    const answer = await this.llm.callLlm(
-      [{ role: 'system', content: systemPrompt }, { role: 'user', content: prompt }],
-      8192,
-    );
-    return { mode: 'reingenieria', summary: answer, details: { diagnostico: diagnostico.details, duplicados: duplicados.details } };
+
+    return {
+      systemPrompt,
+      userPrompt,
+      details: { diagnostico: diagPayload.details, duplicadosDetails: duplicados.details },
+    };
   }
 
-  /**
-   * Auditoría de seguridad: escaneo heurístico (secretos / higiene en fuentes indexadas) + síntesis LLM.
-   * Complementa Full Audit; no sustituye SAST ni pentest.
-   */
-  async analyzeSeguridad(repositoryId: string): Promise<AnalyzeResult> {
+  /** Recomendaciones de reingeniería basadas 100% en datos del grafo. Sin límites. */
+  async analyzeReingenieria(repositoryId: string): Promise<AnalyzeResult> {
+    const p = await this.buildReingenieriaLlmPayload(repositoryId);
+    const answer = await this.llm.callLlm(
+      [{ role: 'system', content: p.systemPrompt }, { role: 'user', content: p.userPrompt }],
+      8192,
+    );
+    return {
+      mode: 'reingenieria',
+      summary: answer,
+      details: { diagnostico: p.details.diagnostico, duplicados: p.details.duplicadosDetails },
+    };
+  }
+
+  /** Métricas + prompts LLM seguridad (orchestrator prep). */
+  private async buildSeguridadLlmPayload(repositoryId: string): Promise<{
+    systemPrompt: string;
+    userPrompt: string;
+    details: { leakedSecrets: unknown[] };
+  }> {
     const repo = await this.repos.findOne(repositoryId);
     const projectId = await this.resolveProjectIdForRepo(repo.id);
     const leakedSecrets = await this.runSecurityScan(repositoryId, projectId, repo.repoSlug, { maxFiles: 160 });
-
     const context = `
 Repositorio ${repo.projectKey}/${repo.repoSlug} — hallazgos automáticos (regex sobre hasta 160 archivos .ts/.tsx/.js/.json/.env del índice):
 
 **leakedSecrets** (path relativo al repo, severidad, fragmento coincidente truncado, línea): ${JSON.stringify(leakedSecrets)}
 `;
-
     const systemPrompt = `<rol>Especialista AppSec. Evidencia única: JSON del escaneo.</rol>
 
 <instrucciones>
@@ -738,17 +859,24 @@ Repositorio ${repo.projectKey}/${repo.repoSlug} — hallazgos automáticos (rege
 </instrucciones>
 
 <formato_salida>Markdown: 1) Resumen ejecutivo 2) Hallazgos (tabla o lista) 3) Plan de remediación 4) Alcance y límites del análisis</formato_salida>`;
-
-    const prompt = `${context}\n\nGenera la auditoría en markdown.`;
-    const answer = await this.llm.callLlm(
-      [{ role: 'system', content: systemPrompt }, { role: 'user', content: prompt }],
-      8192,
-    );
     return {
-      mode: 'seguridad',
-      summary: answer,
+      systemPrompt,
+      userPrompt: `${context}\n\nGenera la auditoría en markdown.`,
       details: { leakedSecrets },
     };
+  }
+
+  /**
+   * Auditoría de seguridad: escaneo heurístico (secretos / higiene en fuentes indexadas) + síntesis LLM.
+   * Complementa Full Audit; no sustituye SAST ni pentest.
+   */
+  async analyzeSeguridad(repositoryId: string): Promise<AnalyzeResult> {
+    const p = await this.buildSeguridadLlmPayload(repositoryId);
+    const answer = await this.llm.callLlm(
+      [{ role: 'system', content: p.systemPrompt }, { role: 'user', content: p.userPrompt }],
+      8192,
+    );
+    return { mode: 'seguridad', summary: answer, details: p.details };
   }
 
   /**
@@ -1080,14 +1208,12 @@ Repositorio ${repo.projectKey}/${repo.repoSlug} — hallazgos automáticos (rege
     return result;
   }
 
-  /**
-   * Genera AGENTS.md: protocolo para agentes AI (Cursor/Claude) basado en la estructura del proyecto.
-   * Usa el conocimiento del MCP Handbook: protocolo de sesión, herramientas por intención, flujos SDD y refactorización.
-   */
-  async analyzeAgents(projectId: string, displayName: string): Promise<AnalyzeResult> {
+  private async buildAgentsLlmPayload(
+    projectId: string,
+    displayName: string,
+  ): Promise<{ systemPrompt: string; userPrompt: string }> {
     const summary = await this.cypher.getGraphSummaryForProject(projectId);
     const context = `Proyecto/repo: ${displayName}\nConteos del grafo: ${JSON.stringify(summary.counts)}\nMuestras (paths, componentes, funciones): ${JSON.stringify(summary.samples).slice(0, 4000)}`;
-
     const systemPrompt = `Eres experto en protocolos para agentes AI (Cursor, Claude, MCP). Genera un archivo AGENTS.md en formato Markdown para este proyecto.
 
 **HERRAMIENTAS MCP REALES (solo estas existen; NO inventes create_component, create_route, etc.):**
@@ -1111,22 +1237,15 @@ Estructura obligatoria:
 5. **Flujo de refactorización** — semantic_search, get_definitions, get_references, validate_before_edit.
 
 OBLIGATORIO: la tabla debe tener al menos 10 filas cubriendo las herramientas listadas. Deriva paths y nombres del contexto. Salida SOLO markdown.`;
-
-    const answer = await this.llm.callLlm(
-      [{ role: 'system', content: systemPrompt }, { role: 'user', content: context }],
-      8192,
-    );
-    return { mode: 'agents', summary: answer };
+    return { systemPrompt, userPrompt: context };
   }
 
-  /**
-   * Genera SKILL.md: skill para Cursor/Claude adaptada al proyecto.
-   * Usa el conocimiento del MCP Handbook: YAML frontmatter (name, description), Instructions, Examples, Troubleshooting.
-   */
-  async analyzeSkill(projectId: string, displayName: string): Promise<AnalyzeResult> {
+  private async buildSkillLlmPayload(
+    projectId: string,
+    displayName: string,
+  ): Promise<{ systemPrompt: string; userPrompt: string }> {
     const summary = await this.cypher.getGraphSummaryForProject(projectId);
     const context = `Proyecto/repo: ${displayName}\nConteos: ${JSON.stringify(summary.counts)}\nMuestras: ${JSON.stringify(summary.samples).slice(0, 4000)}`;
-
     const safeName = displayName.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '').slice(0, 40) || 'project';
     const systemPrompt = `Eres experto en SKILL.md para agentes AI (Cursor, Claude). Genera un SKILL que enseñe a usar el MCP AriadneSpecs Oracle sobre este proyecto.
 
@@ -1149,20 +1268,148 @@ Estructura obligatoria:
 5. **## Troubleshooting** — NOT_FOUND_IN_GRAPH (reindexar o verificar nombre), MCP no responde (INGEST_URL, servicios), projectId incorrecto (usar roots[].id para get_project_analysis).
 
 PROHIBIDO: instrucciones genéricas tipo "revisa los controladores", "asegúrate de que estén configurados". El skill debe enseñar a USAR las herramientas MCP. Salida SOLO markdown.`;
+    return { systemPrompt, userPrompt: context };
+  }
 
+  /**
+   * Genera AGENTS.md: protocolo para agentes AI (Cursor/Claude) basado en la estructura del proyecto.
+   * Usa el conocimiento del MCP Handbook: protocolo de sesión, herramientas por intención, flujos SDD y refactorización.
+   */
+  async analyzeAgents(projectId: string, displayName: string): Promise<AnalyzeResult> {
+    const p = await this.buildAgentsLlmPayload(projectId, displayName);
     const answer = await this.llm.callLlm(
-      [{ role: 'system', content: systemPrompt }, { role: 'user', content: context }],
+      [{ role: 'system', content: p.systemPrompt }, { role: 'user', content: p.userPrompt }],
+      8192,
+    );
+    return { mode: 'agents', summary: answer };
+  }
+
+  /**
+   * Genera SKILL.md: skill para Cursor/Claude adaptada al proyecto.
+   * Usa el conocimiento del MCP Handbook: YAML frontmatter (name, description), Instructions, Examples, Troubleshooting.
+   */
+  async analyzeSkill(projectId: string, displayName: string): Promise<AnalyzeResult> {
+    const p = await this.buildSkillLlmPayload(projectId, displayName);
+    const answer = await this.llm.callLlm(
+      [{ role: 'system', content: p.systemPrompt }, { role: 'user', content: p.userPrompt }],
       8192,
     );
     return { mode: 'skill', summary: answer };
   }
 
   /**
-   * Ejecuta el análisis según el modo indicado.
-   * @param repositoryId - UUID del repositorio
-   * @param mode - diagnóstico | duplicados | reingeniería | código muerto | agents | skill
+   * Prep para orchestrator: resultados completos sin LLM o prompts + detalles para síntesis en orchestrator.
    */
-  async analyze(repositoryId: string, mode: AnalyzeMode): Promise<AnalyzeResult> {
+  async prepareAnalyzeOrchestrator(repositoryId: string, mode: AnalyzeMode): Promise<AnalyzeOrchestratorPrepDto> {
+    if (mode === 'codigo_muerto') {
+      return { kind: 'complete', result: await this.analyzeCodigoMuerto(repositoryId) };
+    }
+    if (mode === 'duplicados') {
+      return { kind: 'complete', result: await this.analyzeDuplicados(repositoryId) };
+    }
+    if (mode === 'diagnostico') {
+      const p = await this.buildDiagnosticoLlmPayload(repositoryId);
+      return {
+        kind: 'llm',
+        mode: 'diagnostico',
+        systemPrompt: p.systemPrompt,
+        userPrompt: p.userPrompt,
+        maxTokens: 8192,
+        details: p.details,
+      };
+    }
+    if (mode === 'reingenieria') {
+      const p = await this.buildReingenieriaLlmPayload(repositoryId);
+      return {
+        kind: 'llm',
+        mode: 'reingenieria',
+        systemPrompt: p.systemPrompt,
+        userPrompt: p.userPrompt,
+        maxTokens: 8192,
+        details: p.details,
+      };
+    }
+    if (mode === 'seguridad') {
+      const p = await this.buildSeguridadLlmPayload(repositoryId);
+      return {
+        kind: 'llm',
+        mode: 'seguridad',
+        systemPrompt: p.systemPrompt,
+        userPrompt: p.userPrompt,
+        maxTokens: 8192,
+        details: p.details,
+      };
+    }
+    const repo = await this.repos.findOne(repositoryId);
+    const projectId = await this.resolveProjectIdForRepo(repo.id);
+    const displayName = `${repo.projectKey}/${repo.repoSlug}`;
+    if (mode === 'agents') {
+      const p = await this.buildAgentsLlmPayload(projectId, displayName);
+      return {
+        kind: 'llm',
+        mode: 'agents',
+        systemPrompt: p.systemPrompt,
+        userPrompt: p.userPrompt,
+        maxTokens: 8192,
+        details: {},
+      };
+    }
+    if (mode === 'skill') {
+      const p = await this.buildSkillLlmPayload(projectId, displayName);
+      return {
+        kind: 'llm',
+        mode: 'skill',
+        systemPrompt: p.systemPrompt,
+        userPrompt: p.userPrompt,
+        maxTokens: 8192,
+        details: {},
+      };
+    }
+    const _u: never = mode;
+    throw new Error(`Modo de análisis no soportado en prep: ${String(_u)}`);
+  }
+
+  /** Prep AGENTS/SKILL cuando el ID es proyecto multi-root o repo (misma resolución que analyzeByProject). */
+  async prepareAnalyzeByProjectOrchestrator(
+    projectId: string,
+    mode: 'agents' | 'skill',
+  ): Promise<AnalyzeOrchestratorPrepDto> {
+    const maybeRepo = await this.repos.findOptionalById(projectId);
+    if (maybeRepo) {
+      const displayName = `${maybeRepo.projectKey}/${maybeRepo.repoSlug}`;
+      const p =
+        mode === 'agents'
+          ? await this.buildAgentsLlmPayload(projectId, displayName)
+          : await this.buildSkillLlmPayload(projectId, displayName);
+      return {
+        kind: 'llm',
+        mode,
+        systemPrompt: p.systemPrompt,
+        userPrompt: p.userPrompt,
+        maxTokens: 8192,
+        details: {},
+      };
+    }
+    const project = await this.projects.findOne(projectId);
+    const displayName =
+      project.name ||
+      project.repositories.map((r) => `${r.projectKey}/${r.repoSlug}`).join(', ') ||
+      projectId.slice(0, 8);
+    const p =
+      mode === 'agents'
+        ? await this.buildAgentsLlmPayload(projectId, displayName)
+        : await this.buildSkillLlmPayload(projectId, displayName);
+    return {
+      kind: 'llm',
+      mode,
+      systemPrompt: p.systemPrompt,
+      userPrompt: p.userPrompt,
+      maxTokens: 8192,
+      details: {},
+    };
+  }
+
+  private async analyzeLocally(repositoryId: string, mode: AnalyzeMode): Promise<AnalyzeResult> {
     if (mode === 'diagnostico') return this.analyzeDiagnostico(repositoryId);
     if (mode === 'duplicados') return this.analyzeDuplicados(repositoryId);
     if (mode === 'codigo_muerto') return this.analyzeCodigoMuerto(repositoryId);
@@ -1177,9 +1424,49 @@ PROHIBIDO: instrucciones genéricas tipo "revisa los controladores", "asegúrate
   }
 
   /**
+   * Ejecuta el análisis según el modo indicado.
+   * @param repositoryId - UUID del repositorio
+   * @param mode - diagnóstico | duplicados | reingeniería | código muerto | agents | skill
+   */
+  async analyze(repositoryId: string, mode: AnalyzeMode): Promise<AnalyzeResult> {
+    const orch = process.env.ORCHESTRATOR_URL?.trim();
+    if (orch) {
+      try {
+        const url = `${orch.replace(/\/$/, '')}/codebase/analyze/repository/${encodeURIComponent(repositoryId)}`;
+        const res = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ mode }),
+        });
+        if (!res.ok) throw new Error(await res.text());
+        return (await res.json()) as AnalyzeResult;
+      } catch {
+        /* fallback local */
+      }
+    }
+    return this.analyzeLocally(repositoryId, mode);
+  }
+
+  /**
    * Análisis por proyecto (multi-root) o repo standalone. Acepta projectId o repoId (roots[].id de list_known_projects).
    */
   async analyzeByProject(projectId: string, mode: 'agents' | 'skill'): Promise<AnalyzeResult> {
+    const orch = process.env.ORCHESTRATOR_URL?.trim();
+    if (orch) {
+      try {
+        const url = `${orch.replace(/\/$/, '')}/codebase/analyze/project/${encodeURIComponent(projectId)}`;
+        const res = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ mode }),
+        });
+        if (!res.ok) throw new Error(await res.text());
+        return (await res.json()) as AnalyzeResult;
+      } catch {
+        /* fallback local */
+      }
+    }
+
     const maybeRepo = await this.repos.findOptionalById(projectId);
     if (maybeRepo) {
       const displayName = `${maybeRepo.projectKey}/${maybeRepo.repoSlug}`;
@@ -1657,6 +1944,27 @@ PROHIBIDO: instrucciones genéricas tipo "revisa los controladores", "asegúrate
    * @returns {Promise<ChatResponse>} answer (texto), y opcionalmente cypher y result.
    */
   async chat(repositoryId: string, req: ChatRequest): Promise<ChatResponse> {
+    const orch = process.env.ORCHESTRATOR_URL?.trim();
+    if (orch) {
+      try {
+        const url = `${orch.replace(/\/$/, '')}/codebase/chat/repository/${encodeURIComponent(repositoryId)}`;
+        const res = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(req),
+        });
+        if (!res.ok) {
+          const t = await res.text();
+          throw new Error(`orchestrator ${res.status}: ${t}`);
+        }
+        return (await res.json()) as ChatResponse;
+      } catch (err) {
+        recordChatPipelineError();
+        const msg = err instanceof Error ? err.message : String(err);
+        return { answer: `Error: ${msg}` };
+      }
+    }
+
     const repo = await this.repos.findOne(repositoryId);
     const projectId = await this.resolveProjectIdForRepo(repo.id);
     const historyContent = (req.history ?? [])
@@ -1687,6 +1995,27 @@ PROHIBIDO: instrucciones genéricas tipo "revisa los controladores", "asegúrate
    * @returns {Promise<ChatResponse>} answer, cypher y result.
    */
   async chatByProject(projectId: string, req: ChatRequest): Promise<ChatResponse> {
+    const orch = process.env.ORCHESTRATOR_URL?.trim();
+    if (orch) {
+      try {
+        const url = `${orch.replace(/\/$/, '')}/codebase/chat/project/${encodeURIComponent(projectId)}`;
+        const res = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(req),
+        });
+        if (!res.ok) {
+          const t = await res.text();
+          throw new Error(`orchestrator ${res.status}: ${t}`);
+        }
+        return (await res.json()) as ChatResponse;
+      } catch (err) {
+        recordChatPipelineError();
+        const msg = err instanceof Error ? err.message : String(err);
+        return { answer: `Error: ${msg}` };
+      }
+    }
+
     let repos = await this.repos.findAll(projectId);
     if (repos.length === 0) {
       // Puede ser un repo standalone (id de list_known_projects cuando no hay proyectos)
@@ -1790,89 +2119,21 @@ ${SCHEMA}${EXAMPLES}
         const fn = tc.function;
         let toolResult: string;
         try {
-          if (fn.name === 'execute_cypher') {
-            const args = JSON.parse(fn.arguments) as { cypher: string };
-            const cypher = args.cypher?.trim();
-            if (!cypher) {
-              toolResult = 'Error: cypher vacío';
-            } else {
-              lastCypher = cypher;
-              const rawRows = await this.cypher.executeCypher(projectId, cypher);
-              const rows = filterCypherRowsByScope(rawRows as Record<string, unknown>[], scope) as typeof rawRows;
-              if (rawRows.length > 0 && rows.length === 0) {
-                toolResult = `0 filas tras aplicar el alcance (scope): ${rawRows.length} filas en crudo omitidas por repoIds/prefijos/exclusiones. Ajusta el scope o la consulta.`;
-              } else if (rows.length === 0) {
-                toolResult =
-                  '0 filas devueltas por Cypher. **sin datos en índice para este alcance** — no inventes rutas; prueba términos más amplios, otro MATCH o semantic_search.';
-              } else {
-                collectedResults.push(...rows);
-                toolResult = `Resultados (${rows.length} filas):\n${this.cypher.formatResultsHuman(rows as Record<string, unknown>[], rows.length)}`;
-              }
-            }
-          } else if (fn.name === 'semantic_search') {
-            const args = JSON.parse(fn.arguments) as { query: string };
-            const q = args.query?.trim() || message;
-            const semantic = await this.handlers.semanticSearchFallback(projectId, q);
-            let semRows = semantic.result as Array<Record<string, unknown>>;
-            if (scope) {
-              semRows = semRows.filter((row) =>
-                matchesChatScope(row.path as string, row.repoId as string, scope),
-              );
-            }
-            if (semRows.length > 0) {
-              collectedResults.push(...semRows);
-              toolResult = `Búsqueda semántica (${semRows.length}):\n${this.cypher.formatResultsHuman(semRows, semRows.length)}`;
-            } else if (semantic.result.length > 0 && semRows.length === 0) {
-              toolResult =
-                'Búsqueda semántica: todos los candidatos quedaron fuera del alcance (scope). Ajusta repoIds/prefijos/exclusiones o amplía la consulta.';
-            } else {
-              const diag = await this.handlers.getSemanticSearchDiagnostics(projectId);
-              toolResult = `Búsqueda semántica: 0 resultados.\n${diag}\nPrueba execute_cypher si el índice vectorial no aplica.`;
-            }
-          } else if (fn.name === 'get_graph_summary') {
-            const summary = await this.cypher.getGraphSummary(repositoryId);
-            toolResult = `Conteos: ${JSON.stringify(summary.counts)}. Muestras: ${JSON.stringify(summary.samples, null, 2).slice(0, 3500)}...`;
-          } else if (fn.name === 'get_file_content') {
-            const args = JSON.parse(fn.arguments) as { path: string };
-            const p = args.path?.trim();
-            if (!p) {
-              toolResult = 'Error: path vacío';
-            } else if (!matchesChatScope(p, options?.projectScope ? undefined : repositoryId, scope)) {
-              toolResult = `Path \`${p}\` fuera del alcance (scope): repoIds / prefijos / exclusiones.`;
-            } else {
-              let content: string | null = null;
-              if (options?.projectScope) {
-                const repos = await this.repos.findAll(projectId);
-                const ordered =
-                  scope?.repoIds && scope.repoIds.length > 0
-                    ? repos.filter((r) => scope.repoIds!.includes(r.id))
-                    : repos;
-                const list = ordered.length > 0 ? ordered : repos;
-                for (const repo of list) {
-                  if (!matchesChatScope(p, repo.id, scope)) continue;
-                  content = await this.fileContent.getFileContentSafe(repo.id, p);
-                  if (content != null) break;
-                }
-              } else {
-                content = await this.fileContent.getFileContentSafe(repositoryId, p);
-              }
-              if (!content) {
-                toolResult = `No se pudo leer \`${p}\` (o no coincide con el alcance del scope).`;
-              } else {
-                const MAX_CHARS = 14000;
-                const truncated = content.length > MAX_CHARS;
-                const snippet = truncated ? content.slice(0, MAX_CHARS) + '\n\n...[truncado]' : content;
-                toolResult = `Archivo \`${p}\`:\n\`\`\`\n${snippet}\n\`\`\``;
-              }
-            }
-          } else {
-            toolResult = `Herramienta desconocida: ${fn.name}`;
-          }
-          collectedToolOutputs.push(toolResult);
+          const args = JSON.parse(fn.arguments) as Record<string, unknown>;
+          const r = await this.retrieverTools.executeTool(repositoryId, projectId, {
+            projectScope: options?.projectScope,
+            scope,
+            tool: fn.name as RetrieverToolName,
+            arguments: args,
+            fallbackMessage: message,
+          });
+          if (r.lastCypher) lastCypher = r.lastCypher;
+          collectedResults.push(...r.collectedRows);
+          toolResult = r.toolResult;
         } catch (err) {
           toolResult = `Error: ${err instanceof Error ? err.message : String(err)}`;
         }
-
+        collectedToolOutputs.push(toolResult);
         messages.push(
           { role: 'assistant', content: null, tool_calls: [tc] },
           { role: 'tool', tool_call_id: tc.id, content: toolResult },

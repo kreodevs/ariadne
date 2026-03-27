@@ -6,12 +6,21 @@ export { escapeCypherString, cypherSafe } from './cypher.js';
 export {
   GRAPH_NAME,
   SHADOW_GRAPH_NAME,
+  shadowGraphNameForSession,
   getFalkorConfig,
   graphNameForProject,
   isProjectShardingEnabled,
   externalGraphName,
   isExternalGraphRoutingEnabled,
+  getGraphNodeSoftLimit,
+  isEnvDomainShardingEnabled,
+  isAutoDomainOverflowEnabled,
+  effectiveShardMode,
+  domainSegmentFromRepoPath,
+  listGraphNamesForProjectRouting,
   type FalkorConfig,
+  type FalkorShardMode,
+  type GraphNameForProjectOptions,
 } from './falkor.js';
 export {
   type ResolvedCallInfo,

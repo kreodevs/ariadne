@@ -7,6 +7,7 @@ import { Injectable } from '@nestjs/common';
 import { RepositoriesService } from '../repositories/repositories.service';
 import { FileContentService } from '../repositories/file-content.service';
 import { EmbeddingService } from '../embedding/embedding.service';
+import { EmbeddingSpaceService } from '../embedding/embedding-space.service';
 import { ChatCypherService } from './chat-cypher.service';
 import { ChatAntipatternsService } from './chat-antipatterns.service';
 import { ChatLlmService } from './chat-llm.service';
@@ -26,6 +27,7 @@ export class ChatHandlersService {
     private readonly repos: RepositoriesService,
     private readonly fileContent: FileContentService,
     private readonly embedding: EmbeddingService,
+    private readonly embeddingSpaces: EmbeddingSpaceService,
     private readonly cypher: ChatCypherService,
     private readonly antipatterns: ChatAntipatternsService,
     private readonly llm: ChatLlmService,
@@ -164,32 +166,36 @@ export class ChatHandlersService {
     query: string,
     limit = 15,
   ): Promise<{ cypher: string; result: unknown[] }> {
-    if (!this.embedding.isAvailable() || !query.trim()) return { cypher: '', result: [] };
+    if (!query.trim()) return { cypher: '', result: [] };
+    const readBinding = await this.embeddingSpaces.getReadBindingForRepository(projectId);
+    const embed = readBinding.provider;
+    if (!embed?.isAvailable()) return { cypher: '', result: [] };
+    const vProp = readBinding.graphProperty;
     try {
       const countFn = await this.cypher.executeCypher(
         projectId,
-        `MATCH (n:Function) WHERE n.projectId = $projectId AND n.embedding IS NOT NULL RETURN count(n) as c`,
+        `MATCH (n:Function) WHERE n.projectId = $projectId AND n.${vProp} IS NOT NULL RETURN count(n) as c`,
       );
       const countComp = await this.cypher.executeCypher(
         projectId,
-        `MATCH (n:Component) WHERE n.projectId = $projectId AND n.embedding IS NOT NULL RETURN count(n) as c`,
+        `MATCH (n:Component) WHERE n.projectId = $projectId AND n.${vProp} IS NOT NULL RETURN count(n) as c`,
       );
       const countDoc = await this.cypher.executeCypher(
         projectId,
-        `MATCH (n:Document) WHERE n.projectId = $projectId AND n.embedding IS NOT NULL RETURN count(n) as c`,
+        `MATCH (n:Document) WHERE n.projectId = $projectId AND n.${vProp} IS NOT NULL RETURN count(n) as c`,
       );
       const hasFn = (countFn as Array<{ c?: number }>)?.[0]?.c ?? 0;
       const hasComp = (countComp as Array<{ c?: number }>)?.[0]?.c ?? 0;
       const hasDoc = (countDoc as Array<{ c?: number }>)?.[0]?.c ?? 0;
       if (hasFn === 0 && hasComp === 0 && hasDoc === 0) return { cypher: '', result: [] };
 
-      const vec = await this.embedding.embed(query.trim());
+      const vec = await embed.embed(query.trim());
       const vecStr = `[${vec.join(',')}]`;
       const k = Math.max(limit, 20);
 
-      const funcVecQ = `CALL db.idx.vector.queryNodes('Function', 'embedding', ${k}, vecf32(${vecStr})) YIELD node, score RETURN node.name AS name, node.path AS path, node.projectId AS projectId, score`;
-      const compVecQ = `CALL db.idx.vector.queryNodes('Component', 'embedding', ${k}, vecf32(${vecStr})) YIELD node, score RETURN node.name AS name, node.projectId AS projectId, score`;
-      const docVecQ = `CALL db.idx.vector.queryNodes('Document', 'embedding', ${k}, vecf32(${vecStr})) YIELD node, score RETURN node.path AS path, node.heading AS heading, node.chunkIndex AS chunkIndex, node.projectId AS projectId, score`;
+      const funcVecQ = `CALL db.idx.vector.queryNodes('Function', '${vProp}', ${k}, vecf32(${vecStr})) YIELD node, score RETURN node.name AS name, node.path AS path, node.projectId AS projectId, score`;
+      const compVecQ = `CALL db.idx.vector.queryNodes('Component', '${vProp}', ${k}, vecf32(${vecStr})) YIELD node, score RETURN node.name AS name, node.projectId AS projectId, score`;
+      const docVecQ = `CALL db.idx.vector.queryNodes('Document', '${vProp}', ${k}, vecf32(${vecStr})) YIELD node, score RETURN node.path AS path, node.heading AS heading, node.chunkIndex AS chunkIndex, node.projectId AS projectId, score`;
 
       const [fRes, cRes, dRes] = await Promise.all([
         hasFn > 0 ? this.cypher.executeCypherRaw(funcVecQ, projectId) : Promise.resolve([]),
@@ -262,21 +268,24 @@ export class ChatHandlersService {
    * @param {string} projectId - projectId de grafo FalkorDB.
    */
   async getSemanticSearchDiagnostics(projectId: string): Promise<string> {
-    if (!this.embedding.isAvailable()) {
-      return 'Diagnóstico: búsqueda semántica no disponible (configura EMBEDDING_PROVIDER + API key y embed-index). Mientras tanto usa execute_cypher.';
+    const readBinding = await this.embeddingSpaces.getReadBindingForRepository(projectId);
+    const embed = readBinding.provider;
+    if (!embed?.isAvailable()) {
+      return 'Diagnóstico: búsqueda semántica no disponible (configura EMBEDDING_PROVIDER + API key y embed-index, o espacio de lectura en Postgres). Mientras tanto usa execute_cypher.';
     }
+    const vProp = readBinding.graphProperty;
     try {
       const countFn = await this.cypher.executeCypher(
         projectId,
-        `MATCH (n:Function) WHERE n.projectId = $projectId AND n.embedding IS NOT NULL RETURN count(n) as c`,
+        `MATCH (n:Function) WHERE n.projectId = $projectId AND n.${vProp} IS NOT NULL RETURN count(n) as c`,
       );
       const countComp = await this.cypher.executeCypher(
         projectId,
-        `MATCH (n:Component) WHERE n.projectId = $projectId AND n.embedding IS NOT NULL RETURN count(n) as c`,
+        `MATCH (n:Component) WHERE n.projectId = $projectId AND n.${vProp} IS NOT NULL RETURN count(n) as c`,
       );
       const countDoc = await this.cypher.executeCypher(
         projectId,
-        `MATCH (n:Document) WHERE n.projectId = $projectId AND n.embedding IS NOT NULL RETURN count(n) as c`,
+        `MATCH (n:Document) WHERE n.projectId = $projectId AND n.${vProp} IS NOT NULL RETURN count(n) as c`,
       );
       const hasFn = (countFn as Array<{ c?: number }>)?.[0]?.c ?? 0;
       const hasComp = (countComp as Array<{ c?: number }>)?.[0]?.c ?? 0;

@@ -168,15 +168,57 @@ export class GraphService {
     private readonly cache: CacheService,
   ) {}
 
-  async getImpact(nodeId: string, projectId?: string) {
+  /**
+   * Con sharding por dominio sin scopePath, elige el subgrafo donde exista el nodo buscado.
+   */
+  private async pickShardGraph(
+    projectId: string | undefined,
+    scopePath: string | undefined,
+    probe: (g: Awaited<ReturnType<FalkorService['getGraph']>>) => Promise<boolean>,
+  ): Promise<Awaited<ReturnType<FalkorService['getGraph']>>> {
+    if (!projectId) {
+      return this.falkor.getGraph(undefined);
+    }
+    if (scopePath) {
+      return this.falkor.getGraph(projectId, { repoRelativePath: scopePath });
+    }
+    const names = await this.falkor.getProjectGraphNames(projectId);
+    if (names.length <= 1) {
+      return this.falkor.getGraph(projectId);
+    }
+    for (const nm of names) {
+      const g = await this.falkor.selectGraphByLogicalName(nm);
+      try {
+        if (await probe(g)) return g;
+      } catch {
+        /* grafo vacío o error de query */
+      }
+    }
+    return this.falkor.getGraph(projectId);
+  }
+
+  async getImpact(nodeId: string, projectId?: string, scopePath?: string) {
     const cached = await this.cache.get<{ nodeId: string; dependents: unknown[] }>(
-      this.cache.impactKey(nodeId, projectId),
+      this.cache.impactKey(nodeId, projectId, scopePath),
     );
     if (cached) return cached;
-    const graph = await this.falkor.getGraph(projectId);
     const matchProj = projectId ? ', projectId: $projectId' : '';
     const params: Record<string, string> = { nodeName: nodeId };
     if (projectId) params.projectId = projectId;
+    const graph = await this.pickShardGraph(projectId, scopePath, async (g) => {
+      const r = (await g.query(
+        `MATCH (n {name: $nodeName${matchProj}}) RETURN count(n) AS c`,
+        { params },
+      )) as FalkorResult;
+      const row = r.data?.[0] as unknown;
+      let c = 0;
+      if (row != null && typeof row === 'object' && 'c' in row) {
+        c = Number((row as { c: unknown }).c);
+      } else if (Array.isArray(row)) {
+        c = Number(row[0]);
+      }
+      return Number.isFinite(c) && c > 0;
+    });
     const result = (await graph.query(
       `MATCH (n {name: $nodeName${matchProj}})<-[:CALLS|RENDERS*]-(dependent) RETURN dependent.name AS name, labels(dependent) AS labels`,
       { params },
@@ -193,11 +235,11 @@ export class GraphService {
       };
     });
     const payload = { nodeId, dependents };
-    await this.cache.set(this.cache.impactKey(nodeId, projectId), payload, this.cache.TTL.impact);
+    await this.cache.set(this.cache.impactKey(nodeId, projectId, scopePath), payload, this.cache.TTL.impact);
     return payload;
   }
 
-  async getComponent(name: string, depth: number, projectId?: string) {
+  async getComponent(name: string, depth: number, projectId?: string, scopePath?: string) {
     const cached = await this.cache.get<{
       componentName: string;
       depth: number;
@@ -205,13 +247,26 @@ export class GraphService {
       dependencies: unknown[];
       nodes: GraphNodeDto[];
       edges: GraphEdgeDto[];
-    }>(this.cache.componentKey(name, depth, projectId));
+    }>(this.cache.componentKey(name, depth, projectId, scopePath));
     if (cached) return cached;
 
-    const graph = await this.falkor.getGraph(projectId);
     const compMatch = projectId ? ', projectId: $projectId' : '';
     const params: Record<string, string> = { componentName: name };
     if (projectId) params.projectId = projectId;
+    const graph = await this.pickShardGraph(projectId, scopePath, async (g) => {
+      const r = (await g.query(
+        `MATCH (c:Component {name: $componentName${compMatch}}) RETURN count(c) AS c`,
+        { params },
+      )) as FalkorResult;
+      const row = r.data?.[0] as unknown;
+      let c = 0;
+      if (row != null && typeof row === 'object' && 'c' in row) {
+        c = Number((row as { c: unknown }).c);
+      } else if (Array.isArray(row)) {
+        c = Number(row[0]);
+      }
+      return Number.isFinite(c) && c > 0;
+    });
     const whereFilter = projectId
       ? ` WHERE (dependency.projectId = $projectId OR dependency.projectId IS NULL)`
       : '';
@@ -267,7 +322,7 @@ export class GraphService {
       }
     }
 
-    const impact = await this.getImpact(name, projectId);
+    const impact = await this.getImpact(name, projectId, scopePath);
     if (!centerId) {
       centerId = graphNodeKey({ kind: 'Component', projectId: projectId ?? '', name });
       nodes.set(centerId, { id: centerId, kind: 'Component', name, projectId });
@@ -340,24 +395,40 @@ export class GraphService {
       edges,
     };
     await this.cache.set(
-      this.cache.componentKey(name, depth, projectId),
+      this.cache.componentKey(name, depth, projectId, scopePath),
       payload,
       this.cache.TTL.component,
     );
     return payload;
   }
 
-  async getContract(componentName: string, projectId?: string) {
+  async getContract(componentName: string, projectId?: string, scopePath?: string) {
     const cached = await this.cache.get<{
       componentName: string;
       props: { name: string; required: boolean }[];
-    }>(this.cache.contractKey(componentName, projectId));
+    }>(this.cache.contractKey(componentName, projectId, scopePath));
     if (cached) return cached;
-    const graph = await this.falkor.getGraph(projectId);
+    const compMatch = projectId ? ', projectId: $projectId' : '';
+    const params: Record<string, string> = { componentName };
+    if (projectId) params.projectId = projectId;
+    const graph = await this.pickShardGraph(projectId, scopePath, async (g) => {
+      const r = (await g.query(
+        `MATCH (c:Component {name: $componentName${compMatch}}) RETURN count(c) AS c`,
+        { params },
+      )) as FalkorResult;
+      const row = r.data?.[0] as unknown;
+      let c = 0;
+      if (row != null && typeof row === 'object' && 'c' in row) {
+        c = Number((row as { c: unknown }).c);
+      } else if (Array.isArray(row)) {
+        c = Number(row[0]);
+      }
+      return Number.isFinite(c) && c > 0;
+    });
     const props = await this.getPropsForComponent(graph, componentName, projectId);
     const payload = { componentName, props };
     await this.cache.set(
-      this.cache.contractKey(componentName, projectId),
+      this.cache.contractKey(componentName, projectId, scopePath),
       payload,
       this.cache.TTL.contract,
     );
@@ -390,11 +461,30 @@ export class GraphService {
     });
   }
 
-  async compare(componentName: string, projectId?: string) {
-    const [mainGraph, shadowGraph] = await Promise.all([
-      this.falkor.getGraph(projectId),
-      this.falkor.getShadowGraph(),
-    ]);
+  async compare(
+    componentName: string,
+    projectId?: string,
+    shadowSessionId?: string,
+    scopePath?: string,
+  ) {
+    const mainGraph = await this.pickShardGraph(projectId, scopePath, async (g) => {
+      const matchProj = projectId ? ', projectId: $projectId' : '';
+      const params: Record<string, string> = { componentName };
+      if (projectId) params.projectId = projectId;
+      const r = (await g.query(
+        `MATCH (c:Component {name: $componentName${matchProj}}) RETURN count(c) AS c`,
+        { params },
+      )) as FalkorResult;
+      const row = r.data?.[0] as unknown;
+      let c = 0;
+      if (row != null && typeof row === 'object' && 'c' in row) {
+        c = Number((row as { c: unknown }).c);
+      } else if (Array.isArray(row)) {
+        c = Number(row[0]);
+      }
+      return Number.isFinite(c) && c > 0;
+    });
+    const shadowGraph = await this.falkor.getShadowGraph(shadowSessionId ?? undefined);
     const [mainProps, shadowProps] = await Promise.all([
       this.getPropsForComponent(mainGraph, componentName, projectId),
       this.getPropsForComponent(shadowGraph, componentName, undefined),
@@ -473,15 +563,24 @@ export class GraphService {
     return lines.join('\n');
   }
 
-  async shadowProxy(files: { path: string; content: string }[]) {
+  async shadowProxy(
+    files: { path: string; content: string }[],
+    shadowSessionId?: string,
+  ) {
     const url = process.env.INGEST_URL ?? 'http://ingest:3002';
     const r = await fetch(`${url}/shadow`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ files }),
+      body: JSON.stringify({
+        files,
+        ...(shadowSessionId != null && String(shadowSessionId).trim()
+          ? { shadowSessionId: String(shadowSessionId).trim() }
+          : {}),
+      }),
     });
     const data = await r.json().catch(() => ({}));
-    if (!r.ok) throw Object.assign(new Error('Cartographer shadow failed'), { status: r.status, data });
+    if (!r.ok)
+      throw Object.assign(new Error('Ingest shadow index failed'), { status: r.status, data });
     return data;
   }
 }

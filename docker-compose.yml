@@ -74,6 +74,9 @@ services:
       - FALKORDB_HOST=falkordb
       - FALKORDB_PORT=6379
       - FALKOR_SHARD_BY_PROJECT=${FALKOR_SHARD_BY_PROJECT:-false}
+      - FALKOR_SHARD_BY_DOMAIN=${FALKOR_SHARD_BY_DOMAIN:-false}
+      - FALKOR_AUTO_DOMAIN_OVERFLOW=${FALKOR_AUTO_DOMAIN_OVERFLOW:-false}
+      - FALKOR_GRAPH_NODE_SOFT_LIMIT=${FALKOR_GRAPH_NODE_SOFT_LIMIT:-100000}
       - PORT=3000
       - REDIS_URL=redis://redis:6379
       - INGEST_URL=http://ingest:3002
@@ -119,6 +122,10 @@ services:
       - FALKORDB_PORT=6379
       # Partición por projectId: un grafo Redis por proyecto (AriadneSpecs:<uuid>)
       - FALKOR_SHARD_BY_PROJECT=${FALKOR_SHARD_BY_PROJECT:-false}
+      # Partición por primer segmento de ruta (apps/, packages/…) o auto al superar FALKOR_GRAPH_NODE_SOFT_LIMIT
+      - FALKOR_SHARD_BY_DOMAIN=${FALKOR_SHARD_BY_DOMAIN:-false}
+      - FALKOR_AUTO_DOMAIN_OVERFLOW=${FALKOR_AUTO_DOMAIN_OVERFLOW:-false}
+      - FALKOR_GRAPH_NODE_SOFT_LIMIT=${FALKOR_GRAPH_NODE_SOFT_LIMIT:-100000}
       - REDIS_URL=redis://redis:6379
       - NODE_ENV=production
       - EMBEDDING_PROVIDER=${EMBEDDING_PROVIDER:-openai}
@@ -131,6 +138,9 @@ services:
       - MODIFICATION_PLAN_MAX_FILES=${MODIFICATION_PLAN_MAX_FILES:-150}
       - GOOGLE_API_KEY=${GOOGLE_API_KEY}
       - CREDENTIALS_ENCRYPTION_KEY=${CREDENTIALS_ENCRYPTION_KEY}
+      # Control plane agéntico: ask_codebase delega en orchestrator (LangGraph). Misma clave que orchestrator.
+      - ORCHESTRATOR_URL=http://orchestrator:3001
+      - INTERNAL_API_KEY=${INTERNAL_API_KEY:-ariadne-internal-dev}
     depends_on:
       postgres:
         condition: service_healthy
@@ -153,8 +163,14 @@ services:
       - ARIADNESPEC_API_URL=http://api:3000/api
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
       - ORCHESTRATOR_LLM_MODEL=${ORCHESTRATOR_LLM_MODEL:-gpt-4o-mini}
+      - CHAT_MODEL=${CHAT_MODEL:-gpt-4o-mini}
+      - INGEST_URL=http://ingest:3002
+      - INTERNAL_API_KEY=${INTERNAL_API_KEY:-ariadne-internal-dev}
+      - REDIS_URL=redis://redis:6379
     depends_on:
       api:
+        condition: service_started
+      ingest:
         condition: service_started
     networks:
       - falkor-net
@@ -170,6 +186,8 @@ services:
       - PORT=8080
       - FALKORDB_HOST=falkordb
       - FALKORDB_PORT=6379
+      - FALKOR_SHARD_BY_PROJECT=${FALKOR_SHARD_BY_PROJECT:-false}
+      - FALKOR_SHARD_BY_DOMAIN=${FALKOR_SHARD_BY_DOMAIN:-false}
       - INGEST_URL=http://ingest:3002
       - MCP_AUTH_TOKEN=${MCP_AUTH_TOKEN:-}
     depends_on:

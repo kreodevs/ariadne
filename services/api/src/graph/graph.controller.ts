@@ -20,12 +20,16 @@ export class GraphController {
 
   /** GET /graph/impact/:nodeId — Dependientes del nodo (componente/función) en el grafo. */
   @Get('impact/:nodeId')
-  async impact(@Param('nodeId') nodeId: string, @Query('projectId') projectId?: string) {
+  async impact(
+    @Param('nodeId') nodeId: string,
+    @Query('projectId') projectId?: string,
+    @Query('scopePath') scopePath?: string,
+  ) {
     if (!nodeId) {
       throw new HttpException('nodeId required', HttpStatus.BAD_REQUEST);
     }
     try {
-      return this.graph.getImpact(nodeId, projectId || undefined);
+      return this.graph.getImpact(nodeId, projectId || undefined, scopePath || undefined);
     } catch (err) {
       throw new HttpException(String(err), HttpStatus.INTERNAL_SERVER_ERROR);
     }
@@ -37,6 +41,7 @@ export class GraphController {
     @Param('name') name: string,
     @Query('depth') depthStr?: string,
     @Query('projectId') projectId?: string,
+    @Query('scopePath') scopePath?: string,
   ) {
     if (!name) {
       throw new HttpException('name required', HttpStatus.BAD_REQUEST);
@@ -46,7 +51,7 @@ export class GraphController {
       Math.max(1, parseInt(depthStr ?? '2', 10) || 2),
     );
     try {
-      return this.graph.getComponent(name, depth, projectId || undefined);
+      return this.graph.getComponent(name, depth, projectId || undefined, scopePath || undefined);
     } catch (err) {
       throw new HttpException(String(err), HttpStatus.INTERNAL_SERVER_ERROR);
     }
@@ -57,12 +62,13 @@ export class GraphController {
   async contract(
     @Param('componentName') componentName: string,
     @Query('projectId') projectId?: string,
+    @Query('scopePath') scopePath?: string,
   ) {
     if (!componentName) {
       throw new HttpException('componentName required', HttpStatus.BAD_REQUEST);
     }
     try {
-      return this.graph.getContract(componentName, projectId || undefined);
+      return this.graph.getContract(componentName, projectId || undefined, scopePath || undefined);
     } catch (err) {
       throw new HttpException(String(err), HttpStatus.INTERNAL_SERVER_ERROR);
     }
@@ -84,12 +90,19 @@ export class GraphController {
   async compare(
     @Param('componentName') componentName: string,
     @Query('projectId') projectId?: string,
+    @Query('shadowSessionId') shadowSessionId?: string,
+    @Query('scopePath') scopePath?: string,
   ) {
     if (!componentName) {
       throw new HttpException('componentName required', HttpStatus.BAD_REQUEST);
     }
     try {
-      return this.graph.compare(componentName, projectId || undefined);
+      return this.graph.compare(
+        componentName,
+        projectId || undefined,
+        shadowSessionId || undefined,
+        scopePath || undefined,
+      );
     } catch (err) {
       throw new HttpException(String(err), HttpStatus.INTERNAL_SERVER_ERROR);
     }
@@ -97,12 +110,18 @@ export class GraphController {
 
   /** POST /graph/shadow — Proxy al Ingest para indexar shadow (body.files: path + content). */
   @Post('shadow')
-  async shadow(@Body() body: { files?: { path: string; content: string }[] }) {
+  async shadow(
+    @Body()
+    body: {
+      files?: { path: string; content: string }[];
+      shadowSessionId?: string;
+    },
+  ) {
     if (!body?.files || !Array.isArray(body.files)) {
       throw new HttpException('body.files array required', HttpStatus.BAD_REQUEST);
     }
     try {
-      return this.graph.shadowProxy(body.files);
+      return this.graph.shadowProxy(body.files, body.shadowSessionId);
     } catch (err: unknown) {
       const e = err as { status?: number; data?: unknown };
       throw new HttpException(

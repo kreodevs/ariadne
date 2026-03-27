@@ -1,20 +1,47 @@
-import { BadRequestException, Controller, Get, Post, Query } from '@nestjs/common';
+import { BadRequestException, Controller, Get, Query } from '@nestjs/common';
 import { EmbeddingService } from './embedding.service';
+import { EmbeddingSpaceService } from './embedding-space.service';
 
 @Controller()
 export class EmbeddingController {
-  constructor(private readonly embedding: EmbeddingService) {}
+  constructor(
+    private readonly embedding: EmbeddingService,
+    private readonly embeddingSpaces: EmbeddingSpaceService,
+  ) {}
 
-  /** Devuelve el vector de embedding para el texto (para RAG). Requiere EMBEDDING_PROVIDER + API key. */
+  /**
+   * Vector de consulta para RAG. Con `repositoryId`, usa el espacio de **lectura** del repo
+   * (vectorProperty + modelo acordes al catálogo). Sin repo, comportamiento histórico (EMBEDDING_PROVIDER).
+   */
   @Get('embed')
-  async embed(@Query('text') text: string | undefined) {
+  async embed(
+    @Query('text') text: string | undefined,
+    @Query('repositoryId') repositoryId: string | undefined,
+  ) {
     if (!text?.trim()) {
       throw new BadRequestException('Query param "text" is required');
     }
-    if (!this.embedding.isAvailable()) {
-      throw new BadRequestException('Embedding provider not configured. Set EMBEDDING_PROVIDER=openai|google and OPENAI_API_KEY or GOOGLE_API_KEY.');
+    const trimmed = text.trim();
+    if (repositoryId?.trim()) {
+      const b = await this.embeddingSpaces.getReadBindingForRepository(repositoryId.trim());
+      if (!b.provider?.isAvailable()) {
+        throw new BadRequestException(
+          'Embedding provider for this repository read space is not configured (keys, OLLAMA_HOST, or space provider).',
+        );
+      }
+      const embedding = await b.provider.embed(trimmed);
+      return {
+        embedding,
+        vectorProperty: b.graphProperty,
+        dimension: b.provider.getDimension(),
+      };
     }
-    const embedding = await this.embedding.embed(text.trim());
+    if (!this.embedding.isAvailable()) {
+      throw new BadRequestException(
+        'Embedding provider not configured. Set EMBEDDING_PROVIDER=openai|google|ollama and OPENAI_API_KEY or GOOGLE_API_KEY.',
+      );
+    }
+    const embedding = await this.embedding.embed(trimmed);
     return { embedding };
   }
 }

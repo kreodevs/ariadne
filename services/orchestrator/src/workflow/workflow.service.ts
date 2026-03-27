@@ -59,6 +59,8 @@ const RefactorStateAnnotation = Annotation.Root({
   }),
   /** Indexación shadow OK; si false, `falkorIngestError` tiene detalle (Cypher/API). */
   shadowIndexOk: Annotation<boolean>({ value: lastValue, default: () => true }),
+  /** Namespace FalkorDB devuelto por POST /graph/shadow (compare debe usar la misma sesión). */
+  shadowSessionId: Annotation<string>({ value: lastValue, default: () => '' }),
   falkorIngestError: Annotation<string>({ value: lastValue, default: () => '' }),
   revisionAttempt: Annotation<number>({
     value: revAttemptReducer,
@@ -84,6 +86,7 @@ export interface RefactorState {
   proposedCode: string;
   shadowCompareResult: ShadowCompareResult | null;
   shadowIndexOk: boolean;
+  shadowSessionId: string;
   falkorIngestError: string;
   revisionAttempt: number;
   maxRevisions: number;
@@ -210,6 +213,9 @@ async function shadowIndex(state: RefactorState): Promise<Partial<RefactorState>
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         files: [{ path: state.filePath, content: state.proposedCode }],
+        ...(state.shadowSessionId?.trim()
+          ? { shadowSessionId: state.shadowSessionId.trim() }
+          : {}),
       }),
     });
     const data: unknown = await res.json().catch(() => ({}));
@@ -225,7 +231,19 @@ async function shadowIndex(state: RefactorState): Promise<Partial<RefactorState>
         approved: false,
       };
     }
-    return { shadowIndexOk: true, falkorIngestError: '', error: '' };
+    const sid =
+      typeof data === 'object' &&
+      data !== null &&
+      'shadowSessionId' in data &&
+      typeof (data as { shadowSessionId: unknown }).shadowSessionId === 'string'
+        ? (data as { shadowSessionId: string }).shadowSessionId
+        : state.shadowSessionId;
+    return {
+      shadowIndexOk: true,
+      falkorIngestError: '',
+      error: '',
+      shadowSessionId: sid?.trim() ?? '',
+    };
   } catch (err) {
     const msg = String(err);
     return {
@@ -283,7 +301,11 @@ function routeAfterShadow(state: RefactorState): typeof END | 'compare_graphs' |
 async function compareGraphs(state: RefactorState): Promise<Partial<RefactorState>> {
   if (state.error) return {};
   try {
-    const res = await fetch(`${apiBase()}/graph/compare/${encodeURIComponent(state.nodeId)}`);
+    const sid = state.shadowSessionId?.trim();
+    const q = sid ? `?shadowSessionId=${encodeURIComponent(sid)}` : '';
+    const res = await fetch(
+      `${apiBase()}/graph/compare/${encodeURIComponent(state.nodeId)}${q}`,
+    );
     if (!res.ok) throw new Error(`Compare ${res.status}`);
     const data = (await res.json()) as ShadowCompareResult & { componentName?: string };
     const shadowCompareResult: ShadowCompareResult = {
@@ -346,6 +368,7 @@ export class WorkflowService {
       proposedCode: partial.proposedCode ?? '',
       shadowCompareResult: partial.shadowCompareResult ?? null,
       shadowIndexOk: partial.shadowIndexOk ?? true,
+      shadowSessionId: partial.shadowSessionId ?? '',
       falkorIngestError: partial.falkorIngestError ?? '',
       revisionAttempt: partial.revisionAttempt ?? 0,
       maxRevisions: partial.maxRevisions ?? 3,

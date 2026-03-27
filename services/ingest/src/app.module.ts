@@ -9,6 +9,7 @@ import { IndexedFile } from './repositories/entities/indexed-file.entity';
 import { CredentialEntity } from './credentials/entities/credential.entity';
 import { ProjectEntity } from './projects/entities/project.entity';
 import { ProjectRepositoryEntity } from './repositories/entities/project-repository.entity';
+import { EmbeddingSpaceEntity } from './embedding/entities/embedding-space.entity';
 import { BitbucketModule } from './bitbucket/bitbucket.module';
 import { ChatModule } from './chat/chat.module';
 import { CredentialsModule } from './credentials/credentials.module';
@@ -32,7 +33,15 @@ import { MetricsModule } from './metrics/metrics.module';
       username: process.env.PGUSER ?? 'falkorspecs',
       password: process.env.PGPASSWORD ?? 'falkorspecs',
       database: process.env.PGDATABASE ?? 'falkorspecs',
-      entities: [ProjectEntity, ProjectRepositoryEntity, RepositoryEntity, SyncJob, IndexedFile, CredentialEntity],
+      entities: [
+        ProjectEntity,
+        ProjectRepositoryEntity,
+        RepositoryEntity,
+        EmbeddingSpaceEntity,
+        SyncJob,
+        IndexedFile,
+        CredentialEntity,
+      ],
       synchronize: process.env.NODE_ENV !== 'production',
       logging: process.env.NODE_ENV === 'development',
     }),

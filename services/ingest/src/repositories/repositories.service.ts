@@ -11,6 +11,7 @@ import { ProjectEntity } from '../projects/entities/project.entity';
 import { CreateRepositoryDto } from './dto/create-repository.dto';
 import { UpdateRepositoryDto } from './dto/update-repository.dto';
 import { encrypt, decrypt } from '../credentials/crypto.util';
+import { EmbeddingSpaceService } from '../embedding/embedding-space.service';
 
 /** Servicio de repositorios: create, findAll, findOne, update, remove, jobs. */
 @Injectable()
@@ -24,6 +25,7 @@ export class RepositoriesService {
     private readonly jobsRepo: Repository<SyncJob>,
     @InjectRepository(ProjectEntity)
     private readonly projectRepo: Repository<ProjectEntity>,
+    private readonly embeddingSpaces: EmbeddingSpaceService,
   ) {}
 
   private encryptWebhookSecret(value: string): string | null {
@@ -148,6 +150,8 @@ export class RepositoriesService {
       defaultBranch?: string;
       credentialsRef?: string | null;
       webhookSecretEncrypted?: string | null;
+      readEmbeddingSpaceId?: string | null;
+      writeEmbeddingSpaceId?: string | null;
     } = {};
     if (dto.defaultBranch != null) updates.defaultBranch = dto.defaultBranch || 'main';
     if (dto.credentialsRef !== undefined) updates.credentialsRef = dto.credentialsRef ?? null;
@@ -156,6 +160,16 @@ export class RepositoriesService {
         dto.webhookSecret != null && dto.webhookSecret.trim() !== ''
           ? this.encryptWebhookSecret(dto.webhookSecret)
           : null;
+    }
+    if (dto.readEmbeddingSpaceId !== undefined) {
+      const v = dto.readEmbeddingSpaceId;
+      if (v) await this.embeddingSpaces.assertExists(v);
+      updates.readEmbeddingSpaceId = v ?? null;
+    }
+    if (dto.writeEmbeddingSpaceId !== undefined) {
+      const v = dto.writeEmbeddingSpaceId;
+      if (v) await this.embeddingSpaces.assertExists(v);
+      updates.writeEmbeddingSpaceId = v ?? null;
     }
     if (dto.projectId != null && dto.projectId.trim() !== '') await this.addRepoToProject(id, dto.projectId);
     if (Object.keys(updates).length > 0) await this.repo.update(id, updates);

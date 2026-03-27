@@ -161,8 +161,13 @@ graphRouter.get("/compare/:componentName", async (req: Request, res: Response) =
   if (!componentName) {
     return res.status(400).json({ error: "componentName required" });
   }
+  const shadowSessionId =
+    typeof req.query.shadowSessionId === "string" ? req.query.shadowSessionId.trim() : "";
   try {
-    const [mainGraph, shadowGraph] = await Promise.all([getGraph(), getShadowGraph()]);
+    const [mainGraph, shadowGraph] = await Promise.all([
+      getGraph(),
+      getShadowGraph(shadowSessionId || undefined),
+    ]);
     const [mainProps, shadowProps] = await Promise.all([
       getPropsForComponent(mainGraph, componentName),
       getPropsForComponent(shadowGraph, componentName),
@@ -190,11 +195,14 @@ const SHADOW_URL = process.env.INGEST_URL ?? "http://ingest:3002";
 
 /**
  * POST /graph/shadow
- * Proxy a Ingest o Cartographer: indexa archivos en AriadneSpecsShadow.
- * Body: { files: [{ path, content }] }.
+ * Proxy a Ingest: indexa archivos en grafo shadow por sesión (FalkorSpecsShadow:<id>).
+ * Body: { files: [{ path, content }], shadowSessionId?: string }.
  */
 graphRouter.post("/shadow", async (req: Request, res: Response) => {
-  const body = req.body as { files?: { path: string; content: string }[] };
+  const body = req.body as {
+    files?: { path: string; content: string }[];
+    shadowSessionId?: string;
+  };
   if (!body?.files || !Array.isArray(body.files)) {
     return res.status(400).json({ error: "body.files array required" });
   }
@@ -202,7 +210,10 @@ graphRouter.post("/shadow", async (req: Request, res: Response) => {
     const r = await fetch(`${SHADOW_URL}/shadow`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ files: body.files }),
+      body: JSON.stringify({
+        files: body.files,
+        ...(body.shadowSessionId?.trim() ? { shadowSessionId: body.shadowSessionId.trim() } : {}),
+      }),
     });
     const data = await r.json().catch(() => ({}));
     if (!r.ok) return res.status(r.status).json(data);

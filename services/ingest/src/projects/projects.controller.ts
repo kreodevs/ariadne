@@ -18,6 +18,12 @@ export class ProjectsController {
   }
 
   /** Contenido de un archivo buscando en todos los repos del proyecto (multi-root). MCP y chat por proyecto. */
+  /** Enrutamiento Falkor (sharding por proyecto / por dominio) para MCP y API. */
+  @Get(':id/graph-routing')
+  graphRouting(@Param('id') id: string) {
+    return this.service.getGraphRouting(id);
+  }
+
   @Get(':id/file')
   async getFile(
     @Param('id') projectId: string,
