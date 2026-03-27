@@ -509,6 +509,21 @@ async function resolveNodeName(
   return nodeName; // fallback
 }
 
+/**
+ * Coincidencia para `semantic_search` fallback: frase completa O cualquier token (≥2 chars)
+ * tras dividir por no-alfanumérico. Evita que consultas tipo "API routes endpoints" devuelvan 0
+ * si ningún nodo contiene la frase literal entera.
+ */
+function textMatchesQuery(haystack: string, query: string): boolean {
+  const h = haystack.toLowerCase();
+  const q = query.toLowerCase().trim();
+  if (!q || !h) return false;
+  if (h.includes(q)) return true;
+  const tokens = q.split(/[^a-z0-9áéíóúñü/_-]+/i).filter((t) => t.length >= 2);
+  if (tokens.length === 0) return false;
+  return tokens.some((t) => h.includes(t));
+}
+
 /** FalkorDB node client returns rows as objects {colName: value}, not arrays. */
 function _rv<T>(row: Record<string, unknown> | unknown[], keyOrIdx: string | number): T | undefined {
   if (Array.isArray(row)) return (row as unknown[])[typeof keyOrIdx === "number" ? keyOrIdx : 0] as T | undefined;
@@ -1179,8 +1194,9 @@ async function fetchFileFromIngest(
     } catch {
       /* embed endpoint may not be configured */
     }
-    if (!usedVector) {
-      const qLower = query.toLowerCase();
+    const countAfterVector = results.length;
+    /** Vector puede ejecutarse pero devolver 0 filas (proyecto, índice vacío o filtro projectId). */
+    if (!usedVector || results.length === 0) {
       const projFilter = projectId ? " WHERE n.projectId = $projectId" : "";
       const compParams = projectId ? { params: { projectId } } : {};
       const compQ = `MATCH (n:Component)${projFilter} RETURN n.name AS name LIMIT 100`;
@@ -1199,65 +1215,82 @@ async function fetchFileFromIngest(
         graph.query(routeQ, compParams) as Promise<{ data?: unknown[][] }>,
         graph.query(domainQ, compParams) as Promise<{ data?: unknown[][] }>,
       ]);
+      const seenKeys = new Set(results.map((r) => `${r.type}:${r.name}`));
+      const pushUnique = (type: string, name: string, pid?: string) => {
+        if (results.length >= limit) return;
+        const key = `${type}:${name}`;
+        if (seenKeys.has(key)) return;
+        seenKeys.add(key);
+        results.push({ type, name, projectId: pid });
+      };
       for (const row of asObjRows(compRes.data)) {
-        if (results.length >= limit) break;
         const n = _rv<string>(row, "name");
-        if (n?.toLowerCase().includes(qLower)) results.push({ type: "Component", name: n });
+        if (n != null && textMatchesQuery(n, query)) pushUnique("Component", n);
       }
       for (const row of asObjRows(funcRes.data)) {
-        if (results.length >= limit) break;
         const name = _rv<string>(row, "name");
         const path = _rv<string>(row, "path");
-        if (name?.toLowerCase().includes(qLower) || path?.toLowerCase().includes(qLower)) {
-          results.push({ type: "Function", name: path ? `${name ?? ""} — ${path}` : (name ?? "") });
+        const blob = [name, path].filter(Boolean).join(" ");
+        if (textMatchesQuery(blob, query)) {
+          pushUnique("Function", path ? `${name ?? ""} — ${path}` : (name ?? ""));
         }
       }
       for (const row of asObjRows(fileRes.data)) {
-        if (results.length >= limit) break;
         const path = _rv<string>(row, "path") ?? "";
-        if (path?.toLowerCase().includes(qLower)) results.push({ type: "File", name: path ?? "" });
+        if (textMatchesQuery(path, query)) pushUnique("File", path);
       }
       for (const row of asObjRows(modelRes.data)) {
-        if (results.length >= limit) break;
         const name = _rv<string>(row, "name");
         const path = _rv<string>(row, "path");
-        if (name?.toLowerCase().includes(qLower) || path?.toLowerCase().includes(qLower)) {
-          results.push({ type: "Model", name: path ? `${name ?? ""} — ${path}` : (name ?? "") });
+        const blob = [name, path].filter(Boolean).join(" ");
+        if (textMatchesQuery(blob, query)) {
+          pushUnique("Model", path ? `${name ?? ""} — ${path}` : (name ?? ""));
         }
       }
       for (const row of asObjRows(nestRes.data)) {
-        if (results.length >= limit) break;
         const typ = _rv<string>(row, "typ");
         const name = _rv<string>(row, "name");
         const path = _rv<string>(row, "path");
         const route = _rv<string>(row, "route");
-        const searchable = [typ, name, path, route].filter(Boolean).join(" ").toLowerCase();
-        if (searchable && searchable.includes(qLower)) {
+        const searchable = [typ, name, path, route].filter(Boolean).join(" ");
+        if (searchable && textMatchesQuery(searchable, query)) {
           const routeStr = route ? ` [${route}]` : "";
-          results.push({ type: typ ?? "Nest", name: `${name ?? ""} — ${path ?? ""}${routeStr}` });
+          pushUnique(typ ?? "Nest", `${name ?? ""} — ${path ?? ""}${routeStr}`);
         }
       }
       for (const row of asObjRows(routeRes.data)) {
-        if (results.length >= limit) break;
         const path = _rv<string>(row, "path");
         const comp = _rv<string>(row, "componentName");
-        const searchable = [path, comp].filter(Boolean).join(" ").toLowerCase();
-        if (searchable && searchable.includes(qLower)) {
-          results.push({ type: "Route", name: `${path ?? "/"} → ${comp ?? ""}` });
+        const searchable = [path, comp].filter(Boolean).join(" ");
+        if (searchable && textMatchesQuery(searchable, query)) {
+          pushUnique("Route", `${path ?? "/"} → ${comp ?? ""}`);
         }
       }
       for (const row of asObjRows(domainRes.data)) {
-        if (results.length >= limit) break;
         const name = _rv<string>(row, "name");
         const cat = _rv<string>(row, "category");
-        const searchable = [name, cat].filter(Boolean).join(" ").toLowerCase();
-        if (searchable && searchable.includes(qLower)) {
-          results.push({ type: "DomainConcept", name: cat ? `${name ?? ""} (${cat})` : (name ?? "") });
+        const searchable = [name, cat].filter(Boolean).join(" ");
+        if (searchable && textMatchesQuery(searchable, query)) {
+          pushUnique("DomainConcept", cat ? `${name ?? ""} (${cat})` : (name ?? ""));
         }
       }
     }
-    const lines = [`## Búsqueda: "${query}"${usedVector ? " (vector)" : ""}`, "", ...results.slice(0, limit).map((r) => `- **${r.type}:** ${r.name}`)];
-    if (results.length === 0) lines.push("No se encontraron resultados.");
+    const modeLabel =
+      usedVector && countAfterVector > 0
+        ? " (vector)"
+        : usedVector && results.length > 0
+          ? " (keyword tras vector sin hits)"
+          : usedVector
+            ? " (vector sin hits)"
+            : " (keyword)";
+    const lines = [`## Búsqueda: "${query}"${modeLabel}`, "", ...results.slice(0, limit).map((r) => `- **${r.type}:** ${r.name}`)];
+    if (results.length === 0) {
+      lines.push(
+        "No se encontraron resultados.",
+        "",
+        "_Sugerencias: pasa `projectId` si usas sharding; ejecuta `POST /repositories/:id/embed-index` para búsqueda vectorial; usa términos del código (p. ej. `paciente`, `cita`, `.entity`) o Cypher como en otras secciones._",
+      );
+    }
     return { content: [{ type: "text", text: lines.join("\n") }] };
   }
 

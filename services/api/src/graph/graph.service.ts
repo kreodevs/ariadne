@@ -24,6 +24,37 @@ export interface GraphEdgeDto {
   kind: string;
 }
 
+/**
+ * FalkorDB / drivers a veces devuelven `name` u otros campos como objetos anidados;
+ * `String(obj)` produce "[object Object]" y rompe ids + aristas en el cliente.
+ */
+function falkorScalarToString(value: unknown): string | undefined {
+  if (value == null) return undefined;
+  if (typeof value === 'string') {
+    const t = value.trim();
+    return t.length ? t : undefined;
+  }
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+  if (Array.isArray(value)) {
+    const parts = value.map((v) => falkorScalarToString(v)).filter((s): s is string => Boolean(s));
+    return parts.length ? parts.join(', ') : undefined;
+  }
+  if (typeof value === 'object') {
+    const o = value as Record<string, unknown>;
+    for (const k of ['name', 'path', 'id', 'title', 'label', 'value']) {
+      const s = falkorScalarToString(o[k]);
+      if (s) return s;
+    }
+    try {
+      const j = JSON.stringify(value);
+      return j.length > 200 ? j.slice(0, 197) + '…' : j;
+    } catch {
+      return undefined;
+    }
+  }
+  return String(value);
+}
+
 function parseGraphNodeCell(cell: unknown): GraphNodeDto | null {
   if (cell == null) return null;
   let labels: string[] = ['Node'];
@@ -36,20 +67,24 @@ function parseGraphNodeCell(cell: unknown): GraphNodeDto | null {
     const o = cell as Record<string, unknown>;
     const lr = o.labels ?? o.label;
     labels = Array.isArray(lr) ? lr.map(String) : lr != null ? [String(lr)] : ['Node'];
-    props = o;
+    props = { ...o };
+    delete props.labels;
+    delete props.label;
   } else {
     return null;
   }
   const kind = labels[0] ?? 'Node';
-  const name = props.name != null ? String(props.name) : undefined;
-  const path = props.path != null ? String(props.path) : undefined;
+  const name = falkorScalarToString(props.name);
+  const path = falkorScalarToString(props.path);
   const id = `${kind}|${path ?? ''}|${name ?? ''}`;
   return { id, kind, name, path };
 }
 
 function impactNode(name: unknown, labels: unknown): GraphNodeDto {
-  const kind = Array.isArray(labels) && labels.length ? String(labels[0]) : 'Node';
-  const n = name != null ? String(name) : 'unknown';
+  const labelArr = Array.isArray(labels) ? labels : labels != null ? [labels] : [];
+  const kindRaw = labelArr.length ? labelArr[0] : 'Node';
+  const kind = falkorScalarToString(kindRaw) ?? 'Node';
+  const n = falkorScalarToString(name) ?? 'unknown';
   return { id: `${kind}||${n}`, kind, name: n };
 }
 
@@ -136,11 +171,17 @@ export class GraphService {
       const obj =
         dep && typeof dep === 'object' && !Array.isArray(dep)
           ? (dep as Record<string, unknown>)
-          : { name: String(dep) };
-      const key = String(obj.name ?? obj.path ?? JSON.stringify(obj));
+          : { name: dep != null ? falkorScalarToString(dep) ?? String(dep) : undefined };
+      const key =
+        falkorScalarToString(obj.name) ??
+        falkorScalarToString(obj.path) ??
+        (typeof dep === 'object' && dep != null ? JSON.stringify(dep) : String(dep));
       if (seen.has(key)) continue;
       seen.add(key);
-      dependencies.push({ name: obj.name as string, path: obj.path as string });
+      dependencies.push({
+        name: falkorScalarToString(obj.name),
+        path: falkorScalarToString(obj.path),
+      });
       if (depParsed) {
         nodes.set(depParsed.id, depParsed);
         if (centerId) {

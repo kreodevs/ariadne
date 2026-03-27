@@ -40,6 +40,7 @@ import { GraphFlowNode } from './GraphFlowNode';
 import {
   type GraphEdge,
   type GraphNode,
+  filterValidEdges,
   layoutNodes,
   toFlowElements,
 } from './componentGraphFlow';
@@ -77,8 +78,9 @@ function ComponentGraphFlowView({
     if (graphNodes.length === 0) {
       return { nodes: [] as ComponentGraphRFNode[], edges: [] as Edge[] };
     }
-    const positions = layoutNodes(graphNodes, graphEdges, focalName);
-    return toFlowElements(graphNodes, graphEdges, positions, focalName);
+    const validEdges = filterValidEdges(graphNodes, graphEdges);
+    const positions = layoutNodes(graphNodes, validEdges, focalName);
+    return toFlowElements(graphNodes, validEdges, positions, focalName);
   }, [graphNodes, graphEdges, focalName]);
 
   useEffect(() => {
@@ -115,6 +117,8 @@ function ComponentGraphFlowView({
           type: 'smoothstep',
         }}
         proOptions={{ hideAttribution: true }}
+        elevateEdgesOnSelect
+        nodesDraggable
       >
         <FitViewOnGraphLoad graphKey={graphKey} />
         <Background

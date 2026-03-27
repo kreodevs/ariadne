@@ -9,7 +9,8 @@ Vista **Grafo de componente** (`/graph-explorer`): consume `GET /api/graph/compo
 
 - **[React Flow](https://reactflow.dev/)** (`@xyflow/react`): nodos arrastrables, zoom, pan, **MiniMap**, **Controls**, fondo de puntos.
 - **Nodos**: tipo `componentGraph` — tarjeta con `kind`, etiqueta (archivo), ruta opcional, anillo **foco** para el componente consultado.
-- **Aristas**: `smoothstep`, flecha cerrada; `depends` (azul, animada); `legacy_impact` (ámbar, discontinua).
+- **Aristas**: `smoothstep`, flecha cerrada, **etiqueta** `depends` / `legacy`; `depends` (azul, animada); `legacy_impact` (ámbar, discontinua). Solo se dibujan si `source`/`target` existen en nodos.
+- **API (Nest)**: normalización `falkorScalarToString` en `graph.service.ts` para evitar `[object Object]` en nombres/ids desde Falkor.
 - **Layout**: `layoutNodes` en abanico (foco al centro, dependencias e impacto en arcos); el resto con jitter.
 - Tras cargar datos, **`fitView`** acota el subgrafo.
 
