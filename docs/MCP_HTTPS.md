@@ -197,24 +197,46 @@ Si hay error en la ejecución de la herramienta:
 
 ## 7. Herramientas principales y argumentos
 
-| Herramienta             | Argumentos requeridos | Argumentos opcionales                                         |
-| ----------------------- | --------------------- | ------------------------------------------------------------- |
-| `list_known_projects`   | —                     | —                                                             |
-| `get_legacy_impact`     | `nodeName`            | `projectId`, `currentFilePath`                                |
-| `get_contract_specs`    | `componentName`       | `projectId`, `currentFilePath`                                |
-| `get_component_graph`   | `componentName`       | `depth`, `projectId`, `currentFilePath`                       |
-| `get_file_content`      | `path`                | `projectId`, `currentFilePath`, `ref`                         |
-| `semantic_search`       | `query`               | `projectId`, `limit`                                          |
-| `validate_before_edit`  | `nodeName`            | `projectId`, `currentFilePath`                                |
-| `get_project_analysis`  | `projectId`           | `mode` (diagnostico, duplicados, reingenieria, codigo_muerto, seguridad) |
-| `ask_codebase`          | `question`            | `projectId`, `currentFilePath`, `scope`, `twoPhase`           |
-| `get_modification_plan` | `userDescription`     | `projectId`, `currentFilePath`, `scope`                       |
-| `get_definitions`       | `symbol`              | `projectId`, `currentFilePath`                                |
-| `get_references`        | `symbol`              | `projectId`, `currentFilePath`                                |
-| `get_functions_in_file` | `path`                | `projectId`, `currentFilePath`                                |
-| `get_import_graph`      | `filePath`            | `projectId`, `currentFilePath`                                |
+Los nombres de argumentos deben coincidir con el esquema devuelto por `tools/list` (ver [mcp_server_specs.md](mcp_server_specs.md) para descripción funcional).
 
-> **projectId:** ID de proyecto o de repo. Obtener con `list_known_projects`; el campo `id` del proyecto o `roots[].id` de cada repo.
+| Herramienta                     | Argumentos requeridos   | Argumentos opcionales                                                                 |
+| ------------------------------- | ----------------------- | ------------------------------------------------------------------------------------- |
+| `list_known_projects`           | —                       | —                                                                                     |
+| `get_legacy_impact`             | `nodeName`              | `projectId`, `currentFilePath`                                                       |
+| `get_contract_specs`            | `componentName`         | `projectId`, `currentFilePath`                                                       |
+| `get_component_graph`           | `componentName`         | `depth`, `projectId`, `currentFilePath`                                                |
+| `get_file_content`              | `path` + (`projectId` **o** `currentFilePath`) | `ref`                                                                              |
+| `semantic_search`             | `query`; con sharding también **`projectId`** | `limit` (sin sharding: `projectId` opcional para acotar)                             |
+| `validate_before_edit`        | `nodeName`              | `projectId`, `currentFilePath`                                                       |
+| `get_project_analysis`          | `projectId`             | `mode` (diagnostico, duplicados, reingenieria, codigo_muerto, seguridad)              |
+| `ask_codebase`                  | `question`              | `projectId`, `currentFilePath`, `scope`, `twoPhase`                                   |
+| `get_modification_plan`         | `userDescription`       | `projectId`, `currentFilePath`, `scope`                                               |
+| `get_definitions`               | `symbolName`            | `projectId`, `currentFilePath`                                                       |
+| `get_references`                | `symbolName`            | `projectId`, `currentFilePath`                                                       |
+| `get_implementation_details`    | `symbolName`            | `projectId`, `currentFilePath`                                                       |
+| `get_functions_in_file`         | `path` + (`projectId` **o** `currentFilePath`) | —                                                                 |
+| `get_import_graph`              | `filePath` + (`projectId` **o** `currentFilePath`) | —                                                                                |
+| `trace_reachability`            | `projectId` **o** `currentFilePath` | — (el `inputSchema` marca solo `projectId`; el runtime acepta inferencia por ruta) |
+| `check_export_usage`            | `projectId` **o** `currentFilePath` | `filePath` opcional                                                                 |
+| `get_affected_scopes`          | `nodeName`              | `projectId`, `currentFilePath`, `includeTestFiles`                                   |
+| `check_breaking_changes`        | `nodeName`              | `projectId`, `currentFilePath`, `removedParams`                                         |
+| `find_similar_implementations` | `query`                 | `projectId`, `currentFilePath`, `limit` — con sharding activo, ver §7.1              |
+| `get_project_standards`        | `projectId` **o** `currentFilePath` | — (idem discrepancia schema vs runtime)                                            |
+| `get_file_context`             | `filePath` + (`projectId` **o** `currentFilePath`) | `ref`                                                                            |
+| `analyze_local_changes`        | —                       | `projectId` o `currentFilePath`; `workspaceRoot` o `stagedDiff`                      |
+
+> **projectId:** ID de proyecto Ariadne o ID de repo (`roots[].id`). Ver [mcp_server_specs.md §2](mcp_server_specs.md) (proyecto vs repo).
+
+### 7.1 Sharding Falkor (`FALKOR_SHARD_BY_PROJECT`)
+
+Si el servidor MCP corre con **partición por proyecto** en FalkorDB (un grafo lógico por `projectId`):
+
+- **Recomendado:** pasar siempre **`projectId`** (o **`currentFilePath`** para inferencia) en herramientas que leen el grafo.
+- Sin **`INGEST_URL`**, la inferencia solo desde ruta puede fallar si el grafo monolito por defecto está vacío.
+- Con sharding activo no hay búsqueda multi-shard: **`semantic_search`** exige **`projectId`** explícito (no admite `currentFilePath` en el esquema ni en el handler). **`find_similar_implementations`** exige **`projectId`** o **`currentFilePath`** (inferencia con ingest/shards).
+- Detalle técnico: el MCP abre el grafo con `graphNameForProject(projectId)`; si hace falta inferir el proyecto desde path con sharding, puede barrer candidatos obtenidos del ingest (`/projects`, `/repositories`).
+
+La API REST Nest (`GET /api/graph/*`) también acepta query **`projectId`** cuando el índice está partido; ver despliegue (compose / env).
 
 ---
 
