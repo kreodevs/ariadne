@@ -29,7 +29,18 @@ export function labelFor(n: GraphNode): string {
   return safeLabel(n.name) || safeLabel(n.kind);
 }
 
-function resolveFocalNode(graphNodes: GraphNode[], focalName: string): GraphNode | undefined {
+function resolveFocalNode(
+  graphNodes: GraphNode[],
+  graphEdges: GraphEdge[],
+  focalName: string,
+): GraphNode | undefined {
+  const legacyTargets = [
+    ...new Set(graphEdges.filter((e) => e.kind === 'legacy_impact').map((e) => e.target)),
+  ];
+  if (legacyTargets.length === 1) {
+    const hit = graphNodes.find((x) => x.id === legacyTargets[0]);
+    if (hit) return hit;
+  }
   const byComponent = graphNodes.find((n) => n.kind === 'Component' && n.name === focalName);
   if (byComponent) return byComponent;
   return graphNodes.find((n) => n.name === focalName);
@@ -41,7 +52,7 @@ export function layoutNodes(
   edges: GraphEdge[],
   centerName: string,
 ): Map<string, { x: number; y: number }> {
-  const center = resolveFocalNode(nodes, centerName) ?? nodes[0];
+  const center = resolveFocalNode(nodes, edges, centerName) ?? nodes[0];
   const centerId = center?.id ?? '';
   const pos = new Map<string, { x: number; y: number }>();
   if (!centerId) return pos;
@@ -127,13 +138,17 @@ export function toFlowElements(
   focalName: string,
 ): { nodes: ComponentGraphRFNode[]; edges: Edge[] } {
   /** Llamar con aristas ya validadas (`filterValidEdges`) y el mismo conjunto en `layoutNodes`. */
-  const focal = resolveFocalNode(graphNodes, focalName);
+  const focal = resolveFocalNode(graphNodes, graphEdges, focalName);
   const focalId = focal?.id ?? '';
 
   const nodes: ComponentGraphRFNode[] = graphNodes.map((n) => {
     const pos = positions.get(n.id) ?? { x: 0, y: 0 };
     const isFocal = focalId !== '' && n.id === focalId;
-    const lbl = labelFor(n);
+    const rawLabel = labelFor(n);
+    const lbl =
+      isFocal && (rawLabel === 'Node' || n.kind === 'Node' || n.name === undefined)
+        ? focalName
+        : rawLabel;
     const pathStr = n.path != null ? safeLabel(n.path) : '';
     const role = computeRole(n.id, focalId, graphEdges, isFocal);
     const stats = edgeStatsForNode(n.id, graphEdges);

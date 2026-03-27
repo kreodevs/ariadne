@@ -102,6 +102,7 @@ function ComponentGraphFlowView({
   return (
     <div className="w-full rounded-lg overflow-hidden border border-[var(--border)] bg-[var(--background)]" style={{ height: 560 }}>
       <ReactFlow
+        key={graphKey}
         nodes={rfNodes}
         edges={rfEdges}
         onNodesChange={onNodesChange}
@@ -181,6 +182,8 @@ export function ComponentGraphExplorer() {
   const [nodes, setNodes] = useState<GraphNode[]>([]);
   const [edges, setEdges] = useState<GraphEdge[]>([]);
   const [meta, setMeta] = useState<{ componentName: string; depth: number } | null>(null);
+  /** Incrementa en cada carga exitosa para forzar remount de React Flow (evita nodos fantasma al cambiar de componente). */
+  const [graphNonce, setGraphNonce] = useState(0);
 
   /** Nombre en URL para hidratar el select cuando carguen los componentes del alcance. */
   const urlComponentRef = useRef<string | null>(search.get('name'));
@@ -193,8 +196,8 @@ export function ComponentGraphExplorer() {
   const focalName = meta?.componentName ?? name.trim();
   const graphKey = useMemo(() => {
     if (nodes.length === 0) return '';
-    return `${focalName}|${nodes.length}|${edges.length}|${meta?.depth ?? ''}`;
-  }, [focalName, nodes.length, edges.length, meta?.depth]);
+    return `${focalName}|${graphNonce}|${nodes.length}|${edges.length}|${meta?.depth ?? ''}`;
+  }, [focalName, graphNonce, nodes.length, edges.length, meta?.depth]);
 
   useEffect(() => {
     let cancel = false;
@@ -303,6 +306,7 @@ export function ComponentGraphExplorer() {
       setNodes(data.nodes ?? []);
       setEdges(data.edges ?? []);
       setMeta({ componentName: data.componentName, depth: data.depth });
+      setGraphNonce((x) => x + 1);
       setSearch((prev) => {
         const p = new URLSearchParams(prev);
         p.set('name', n);
@@ -420,7 +424,12 @@ export function ComponentGraphExplorer() {
             <Label htmlFor="comp-select">Componente</Label>
             <Select
               value={name.trim() || undefined}
-              onValueChange={(v) => setName(v)}
+              onValueChange={(v) => {
+                setName(v);
+                setNodes([]);
+                setEdges([]);
+                setMeta(null);
+              }}
               disabled={!selectedScope || componentsLoading || componentNames.length === 0}
             >
               <SelectTrigger id="comp-select" className="w-full">

@@ -74,10 +74,46 @@ function parseGraphNodeCell(cell: unknown): GraphNodeDto | null {
     return null;
   }
   const kind = labels[0] ?? 'Node';
-  const name = falkorScalarToString(props.name);
+  const name =
+    falkorScalarToString(props.name) ??
+    falkorScalarToString(props.componentName) ??
+    falkorScalarToString(props.component) ??
+    falkorScalarToString((props as { displayName?: unknown }).displayName);
   const path = falkorScalarToString(props.path);
   const id = `${kind}|${path ?? ''}|${name ?? ''}`;
   return { id, kind, name, path };
+}
+
+/** Corrige nodo foco mal parseado (label Node, sin name) y alinea con el nombre pedido al API. */
+function normalizeComponentGraphFocal(
+  nodes: Map<string, GraphNodeDto>,
+  edges: GraphEdgeDto[],
+  componentName: string,
+  centerIdHint: string | null,
+): void {
+  const legacyTargets = [
+    ...new Set(edges.filter((e) => e.kind === 'legacy_impact').map((e) => e.target)),
+  ];
+  let focalId: string | null = null;
+  if (legacyTargets.length === 1) focalId = legacyTargets[0]!;
+  else if (centerIdHint && nodes.has(centerIdHint)) focalId = centerIdHint;
+  if (!focalId) {
+    for (const [id, n] of nodes) {
+      if (n.name === componentName) {
+        focalId = id;
+        break;
+      }
+    }
+  }
+  if (!focalId || !nodes.has(focalId)) return;
+  const n = nodes.get(focalId)!;
+  const replaceName =
+    !n.name || n.name === 'unknown' || n.name === 'Node' || n.kind === 'Node';
+  nodes.set(focalId, {
+    ...n,
+    name: replaceName ? componentName : n.name,
+    kind: n.kind === 'Node' ? 'Component' : n.kind,
+  });
 }
 
 function impactNode(name: unknown, labels: unknown): GraphNodeDto {
@@ -199,6 +235,36 @@ export class GraphService {
       centerId = `Component||${name}`;
       nodes.set(centerId, { id: centerId, kind: 'Component', name });
     }
+
+    /** Hijos directos RENDERS tras fijar centerId (incl. fallback si el path variable devolvió 0 filas). */
+    {
+      const rendersParams: Record<string, string> = { componentName: name };
+      if (projectId) rendersParams.projectId = projectId;
+      const childWhere = projectId
+        ? ` WHERE (child.projectId = $projectId OR child.projectId IS NULL)`
+        : '';
+      const rendersQ = projectId
+        ? `MATCH (c:Component {name: $componentName, projectId: $projectId})-[:RENDERS]->(child:Component)${childWhere} RETURN child`
+        : `MATCH (c:Component {name: $componentName})-[:RENDERS]->(child:Component) RETURN child`;
+      try {
+        const childRes = (await graph.query(rendersQ, { params: rendersParams })) as FalkorResult;
+        for (const row of childRes.data ?? []) {
+          const arr = Array.isArray(row) ? row : [row];
+          const cell = arr[0];
+          const ch = parseGraphNodeCell(cell);
+          if (!ch) continue;
+          nodes.set(ch.id, ch);
+          const ek = `${centerId}|${ch.id}|depends`;
+          if (!edgeKey.has(ek)) {
+            edgeKey.add(ek);
+            edges.push({ source: centerId!, target: ch.id, kind: 'depends' });
+          }
+        }
+      } catch {
+        /* RENDERS opcional si el esquema difiere */
+      }
+    }
+
     for (const d of impact.dependents as { name?: unknown; labels?: unknown }[]) {
       const gn = impactNode(d.name, d.labels);
       nodes.set(gn.id, gn);
@@ -208,6 +274,8 @@ export class GraphService {
         edges.push({ source: gn.id, target: centerId, kind: 'legacy_impact' });
       }
     }
+
+    normalizeComponentGraphFocal(nodes, edges, name, centerId);
 
     const payload = {
       componentName: name,
