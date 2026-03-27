@@ -153,7 +153,7 @@ export function RepoChat() {
     return (
       <div className="space-y-4">
         <Button variant="ghost" size="sm" asChild>
-          <Link to="/">← Repos</Link>
+          <Link to="/repos">← Repos</Link>
         </Button>
         <Alert variant="destructive">
           <AlertTitle>Error</AlertTitle>
@@ -166,7 +166,7 @@ export function RepoChat() {
     return (
       <div className="space-y-6">
         <Button variant="ghost" size="sm" asChild>
-          <Link to="/">← Repos</Link>
+          <Link to="/repos">← Repos</Link>
         </Button>
         <Card>
           <CardHeader>

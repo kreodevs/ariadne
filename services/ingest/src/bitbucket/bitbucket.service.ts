@@ -112,7 +112,25 @@ export class BitbucketService {
       ...(await this.getAuthHeaders(credentialsRef)),
       ...(rest.headers as Record<string, string>),
     };
-    const res = await fetch(url, { ...rest, headers });
+    let res: Response;
+    try {
+      res = await fetch(url, { ...rest, headers });
+    } catch (e) {
+      const err = e instanceof Error ? e : new Error(String(e));
+      const c = (err as Error & { cause?: unknown }).cause;
+      const causeMsg =
+        c instanceof Error
+          ? c.message
+          : c != null && typeof c === 'object' && 'code' in c
+            ? String((c as { code?: unknown }).code ?? c)
+            : c != null
+              ? String(c)
+              : '';
+      const suffix = causeMsg ? ` (${causeMsg})` : '';
+      throw new Error(
+        `Bitbucket fetch failed: ${err.message}${suffix}. Check outbound HTTPS/DNS from this host, proxy, and TLS. URL: ${url.split('?')[0]}`,
+      );
+    }
     if (!res.ok) {
       const text = await res.text();
       throw new Error(`Bitbucket API ${res.status}: ${text}`);
@@ -128,7 +146,17 @@ export class BitbucketService {
     credentialsRef?: string | null,
   ): Promise<{ contentType: string; body: string }> {
     const headers = await this.getAuthHeaders(credentialsRef);
-    const res = await fetch(url, { headers });
+    let res: Response;
+    try {
+      res = await fetch(url, { headers });
+    } catch (e) {
+      const err = e instanceof Error ? e : new Error(String(e));
+      const c = (err as Error & { cause?: unknown }).cause;
+      const causeMsg = c instanceof Error ? c.message : c != null ? String(c) : '';
+      throw new Error(
+        `Bitbucket fetch failed: ${err.message}${causeMsg ? ` (${causeMsg})` : ''}. URL: ${url.split('?')[0]}`,
+      );
+    }
     if (!res.ok) throw new Error(`Bitbucket API ${res.status}: ${await res.text()}`);
     return { contentType: res.headers.get('content-type') ?? '', body: await res.text() };
   }

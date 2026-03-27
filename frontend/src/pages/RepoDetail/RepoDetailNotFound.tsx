@@ -7,7 +7,7 @@ export function RepoDetailNotFound() {
   return (
     <div className="space-y-4">
       <Button variant="ghost" size="sm" asChild>
-        <Link to="/">← Repos</Link>
+        <Link to="/repos">← Repos</Link>
       </Button>
       <Alert>
         <AlertTitle>No encontrado</AlertTitle>

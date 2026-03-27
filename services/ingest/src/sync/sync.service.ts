@@ -518,11 +518,20 @@ export class SyncService {
         );
       }
 
-      try {
-        const embedRes = await this.embedIndex.runEmbedIndex(repositoryId);
-        console.log(`Embed-index post-sync: ${embedRes.indexed} indexed, ${embedRes.errors} errors`);
-      } catch (e) {
-        console.warn('Embed-index post-sync skipped:', e instanceof Error ? e.message : String(e));
+      const skipEmbed =
+        process.env.SYNC_SKIP_EMBED_INDEX === 'true' ||
+        process.env.SYNC_SKIP_EMBED_INDEX === '1' ||
+        process.env.INGEST_SKIP_EMBED_INDEX === 'true' ||
+        process.env.INGEST_SKIP_EMBED_INDEX === '1';
+      if (skipEmbed) {
+        console.log('[sync] Embed-index post-sync skipped (SYNC_SKIP_EMBED_INDEX / INGEST_SKIP_EMBED_INDEX)');
+      } else {
+        try {
+          const embedRes = await this.embedIndex.runEmbedIndex(repositoryId);
+          console.log(`Embed-index post-sync: ${embedRes.indexed} indexed, ${embedRes.errors} errors`);
+        } catch (e) {
+          console.warn('Embed-index post-sync skipped:', e instanceof Error ? e.message : String(e));
+        }
       }
 
       await this.repos.pruneOldJobs(repositoryId, 5);

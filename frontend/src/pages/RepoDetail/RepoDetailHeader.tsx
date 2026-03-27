@@ -6,7 +6,7 @@ export function RepoDetailHeader() {
   return (
     <div className="flex items-center gap-2">
       <Button variant="ghost" size="sm" asChild>
-        <Link to="/">← Repos</Link>
+        <Link to="/repos">← Repos</Link>
       </Button>
     </div>
   );

@@ -37,7 +37,7 @@ RepoDetail/
 - `RepoDetail.Loading` — Skeleton durante carga inicial
 - `RepoDetail.Error` — Alert cuando falla la petición
 - `RepoDetail.NotFound` — Alert cuando el repo no existe
-- `RepoDetail.Header` — Link "← Repos"
+- `RepoDetail.Header` — Link "← Repos" → `/repos` (lista de repositorios)
 - `RepoDetail.RepoCard` — Card con título, descripción, status, acciones
 - `RepoDetail.JobsCard` — Tabla de jobs con checkboxes, borrar seleccionados/todos, botón "Analizar" (solo jobs incrementales completados)
 
