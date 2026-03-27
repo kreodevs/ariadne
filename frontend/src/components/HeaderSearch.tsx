@@ -103,28 +103,22 @@ export function HeaderSearch({ className }: { className?: string }) {
 
     setGraphLoading(true)
     try {
-      const repoIds = [...new Set(scopes.flatMap((s) => s.repoIdsForSummary))]
-      const summaries = await Promise.all(
-        repoIds.map((id) =>
-          api.getGraphSummary(id, true).catch(() => null as Awaited<ReturnType<typeof api.getGraphSummary>> | null),
-        ),
-      )
-      const byRepo = new Map<string, Set<string>>()
-      for (let i = 0; i < repoIds.length; i++) {
-        const id = repoIds[i]
-        const data = summaries[i]
-        if (!data) continue
-        byRepo.set(id, new Set(extractComponentNames(data.samples)))
+      const cache = new Map<string, Awaited<ReturnType<typeof api.getGraphSummary>> | null>()
+      const fetchSummary = async (repoId: string, scoped: boolean) => {
+        const k = `${repoId}:${scoped ? '1' : '0'}`
+        if (cache.has(k)) return cache.get(k) ?? null
+        const data = await api.getGraphSummary(repoId, true, scoped).catch(() => null)
+        cache.set(k, data)
+        return data
       }
 
       const rows: GraphComponentRow[] = []
       for (const scope of scopes) {
-        const merged = new Set<string>()
-        for (const rid of scope.repoIdsForSummary) {
-          const set = byRepo.get(rid)
-          if (set) set.forEach((n) => merged.add(n))
-        }
-        for (const name of merged) {
+        const rid = scope.repoIdsForSummary[0]
+        if (!rid) continue
+        const data = await fetchSummary(rid, !!scope.repoScoped)
+        if (!data) continue
+        for (const name of extractComponentNames(data.samples)) {
           rows.push({
             name,
             scopeKey: scope.key,

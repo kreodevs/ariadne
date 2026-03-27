@@ -1,9 +1,24 @@
 /**
  * Explorador visual del grafo de componente: dependencias + impacto legacy.
  * Alcance: select de proyecto (multi-root) o repositorio aislado → select de componentes desde graph-summary.
+ * Vista: React Flow (@xyflow/react) — pan/zoom, minimap, controles, aristas dirigidas (depends / legacy_impact).
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
+import {
+  ReactFlow,
+  ReactFlowProvider,
+  Background,
+  BackgroundVariant,
+  Controls,
+  MiniMap,
+  Panel,
+  useNodesState,
+  useEdgesState,
+  useReactFlow,
+  type Edge,
+} from '@xyflow/react';
+import '@xyflow/react/dist/style.css';
 import { api } from '@/api';
 import type { ScopeOption } from '@/lib/graphScope';
 import { buildScopeOptions, extractComponentNames } from '@/lib/graphScope';
@@ -20,55 +35,126 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import type { ComponentGraphNodeData, ComponentGraphRFNode } from './GraphFlowNode';
+import { GraphFlowNode } from './GraphFlowNode';
+import {
+  type GraphEdge,
+  type GraphNode,
+  layoutNodes,
+  toFlowElements,
+} from './componentGraphFlow';
 
-type GraphNode = { id: string; kind: string; name?: string; path?: string };
-type GraphEdge = { source: string; target: string; kind: string };
+const RF_NODE_TYPES = { componentGraph: GraphFlowNode };
 
-function labelFor(n: GraphNode): string {
-  if (n.path) return n.path.split('/').pop() || n.path;
-  return n.name ?? n.kind;
+/** Tras cargar el subgrafo desde Falkor, encuadra el viewport. */
+function FitViewOnGraphLoad({ graphKey }: { graphKey: string }) {
+  const { fitView } = useReactFlow();
+  useEffect(() => {
+    if (!graphKey) return;
+    const id = requestAnimationFrame(() => {
+      void fitView({ padding: 0.2, duration: 320, maxZoom: 1.35 });
+    });
+    return () => cancelAnimationFrame(id);
+  }, [graphKey, fitView]);
+  return null;
 }
 
-function layoutNodes(
-  nodes: GraphNode[],
-  edges: GraphEdge[],
-  centerName: string,
-): Map<string, { x: number; y: number }> {
-  const byId = new Map(nodes.map((n) => [n.id, n]));
-  const center =
-    nodes.find((n) => n.kind === 'Component' && n.name === centerName) ?? nodes[0];
-  const centerId = center?.id ?? '';
-  const pos = new Map<string, { x: number; y: number }>();
-  if (!centerId) return pos;
+function ComponentGraphFlowView({
+  graphNodes,
+  graphEdges,
+  focalName,
+  graphKey,
+}: {
+  graphNodes: GraphNode[];
+  graphEdges: GraphEdge[];
+  focalName: string;
+  graphKey: string;
+}) {
+  const [rfNodes, setRfNodes, onNodesChange] = useNodesState<ComponentGraphRFNode>([]);
+  const [rfEdges, setRfEdges, onEdgesChange] = useEdgesState<Edge>([]);
 
-  const depTargets = edges.filter((e) => e.kind === 'depends' && e.source === centerId).map((e) => e.target);
-  const impactSources = edges
-    .filter((e) => e.kind === 'legacy_impact' && e.target === centerId)
-    .map((e) => e.source);
+  const flowPayload = useMemo(() => {
+    if (graphNodes.length === 0) {
+      return { nodes: [] as ComponentGraphRFNode[], edges: [] as Edge[] };
+    }
+    const positions = layoutNodes(graphNodes, graphEdges, focalName);
+    return toFlowElements(graphNodes, graphEdges, positions, focalName);
+  }, [graphNodes, graphEdges, focalName]);
 
-  pos.set(centerId, { x: 0, y: 0 });
+  useEffect(() => {
+    setRfNodes(flowPayload.nodes);
+    setRfEdges(flowPayload.edges);
+  }, [flowPayload, setRfNodes, setRfEdges]);
 
-  const placeArc = (ids: string[], startAngle: number, spread: number, radius: number) => {
-    if (ids.length === 0) return;
-    const step = ids.length === 1 ? 0 : spread / (ids.length - 1);
-    ids.forEach((id, i) => {
-      const a = startAngle + i * step;
-      pos.set(id, { x: radius * Math.cos(a), y: radius * Math.sin(a) });
-    });
-  };
-
-  placeArc(depTargets, -Math.PI * 0.35, Math.PI * 0.7, 220);
-  placeArc(impactSources, Math.PI * 0.65, Math.PI * 0.7, 240);
-
-  for (const n of nodes) {
-    if (pos.has(n.id)) continue;
-    const x = (Math.random() - 0.5) * 80;
-    const y = (Math.random() - 0.5) * 80;
-    pos.set(n.id, { x: 300 + x, y: 300 + y });
+  if (graphNodes.length === 0) {
+    return (
+      <div
+        className="flex items-center justify-center text-sm text-[var(--foreground-muted)] border border-dashed border-[var(--border)] rounded-lg bg-[var(--muted)]/30"
+        style={{ height: 560 }}
+      >
+        Carga un componente para ver el vecindario en el grafo Falkor (depends + legacy_impact).
+      </div>
+    );
   }
 
-  void byId;
-  return pos;
+  return (
+    <div className="w-full rounded-lg overflow-hidden border border-[var(--border)] bg-[var(--background)]" style={{ height: 560 }}>
+      <ReactFlow
+        nodes={rfNodes}
+        edges={rfEdges}
+        onNodesChange={onNodesChange}
+        onEdgesChange={onEdgesChange}
+        nodeTypes={RF_NODE_TYPES}
+        nodesConnectable={false}
+        edgesReconnectable={false}
+        deleteKeyCode={null}
+        attributionPosition="bottom-right"
+        minZoom={0.15}
+        maxZoom={1.8}
+        defaultEdgeOptions={{
+          type: 'smoothstep',
+        }}
+        proOptions={{ hideAttribution: true }}
+      >
+        <FitViewOnGraphLoad graphKey={graphKey} />
+        <Background
+          variant={BackgroundVariant.Dots}
+          gap={20}
+          size={1}
+          color="var(--border)"
+        />
+        <Controls className="!bg-[var(--card)] !border-[var(--border)] [&_button]:!bg-[var(--card)] [&_button]:!border-[var(--border)] [&_button]:!text-[var(--foreground)]" />
+        <MiniMap
+          className="!bg-[var(--card)] !border-[var(--border)]"
+          nodeStrokeWidth={2}
+          nodeColor={(n) => {
+            const d = n.data as ComponentGraphNodeData | undefined;
+            if (d?.isFocal) return 'var(--primary)';
+            return 'var(--muted-foreground)';
+          }}
+          maskColor="color-mix(in oklch, var(--background) 75%, transparent)"
+          pannable
+          zoomable
+        />
+        <Panel
+          position="top-left"
+          className="m-2 max-w-[min(100%,320px)] rounded-md border border-[var(--border)] bg-[var(--card)]/95 backdrop-blur-sm px-3 py-2 text-xs text-[var(--foreground)] shadow-sm"
+        >
+          <p className="font-semibold text-[var(--foreground)] mb-1">Subgrafo indexado</p>
+          <p className="text-[var(--foreground-muted)] leading-relaxed">
+            Mismo <span className="font-mono">projectId</span> que usa la API de grafo: vecindario de tipo{' '}
+            <span className="font-mono">Component</span> con aristas <span className="font-mono">depends</span>{' '}
+            (imports / uso) y <span className="font-mono">legacy_impact</span> (consumidores — radio de explosión
+            al refactorizar).
+          </p>
+          <p className="text-[var(--foreground-muted)] mt-2 leading-relaxed">
+            Los datos viven en FalkorDB como grafo de propiedad; Ariadne expone este corte para SDD y revisión de
+            impacto sin escribir Cypher a mano.
+          </p>
+        </Panel>
+      </ReactFlow>
+    </div>
+  );
 }
 
 export function ComponentGraphExplorer() {
@@ -92,10 +178,6 @@ export function ComponentGraphExplorer() {
   const [edges, setEdges] = useState<GraphEdge[]>([]);
   const [meta, setMeta] = useState<{ componentName: string; depth: number } | null>(null);
 
-  const [pan, setPan] = useState({ x: 420, y: 280 });
-  const [zoom, setZoom] = useState(1);
-  const [drag, setDrag] = useState<{ sx: number; sy: number; px: number; py: number } | null>(null);
-
   /** Nombre en URL para hidratar el select cuando carguen los componentes del alcance. */
   const urlComponentRef = useRef<string | null>(search.get('name'));
 
@@ -103,6 +185,12 @@ export function ComponentGraphExplorer() {
     () => scopeOptions.find((o) => o.key === scopeKey) ?? null,
     [scopeOptions, scopeKey],
   );
+
+  const focalName = meta?.componentName ?? name.trim();
+  const graphKey = useMemo(() => {
+    if (nodes.length === 0) return '';
+    return `${focalName}|${nodes.length}|${edges.length}|${meta?.depth ?? ''}`;
+  }, [focalName, nodes.length, edges.length, meta?.depth]);
 
   useEffect(() => {
     let cancel = false;
@@ -152,9 +240,17 @@ export function ComponentGraphExplorer() {
       setComponentsLoading(true);
       setComponentsErr(null);
       try {
-        const summaries = await Promise.all(
-          selectedScope.repoIdsForSummary.map((id) => api.getGraphSummary(id, true)),
-        );
+        /** Proyecto agregado: un graph-summary ya trae todo el shard; por repo: ?repoScoped=1. */
+        let summaries: Awaited<ReturnType<typeof api.getGraphSummary>>[];
+        if (selectedScope.repoScoped && selectedScope.repoIdsForSummary[0]) {
+          summaries = [
+            await api.getGraphSummary(selectedScope.repoIdsForSummary[0], true, true),
+          ];
+        } else if (selectedScope.repoIdsForSummary[0]) {
+          summaries = [await api.getGraphSummary(selectedScope.repoIdsForSummary[0], true, false)];
+        } else {
+          summaries = [];
+        }
         if (cancel) return;
         const merged = new Set<string>();
         for (const s of summaries) {
@@ -222,18 +318,8 @@ export function ComponentGraphExplorer() {
     }
   }, [name, graphProjectId, depth, scopeKey, setSearch]);
 
-  const positions = useMemo(
-    () => layoutNodes(nodes, edges, meta?.componentName ?? name.trim()),
-    [nodes, edges, meta?.componentName, name],
-  );
-
-  const onWheel = (e: React.WheelEvent) => {
-    e.preventDefault();
-    const z = Math.min(2.5, Math.max(0.4, zoom * (e.deltaY < 0 ? 1.08 : 0.92)));
-    setZoom(z);
-  };
-
   const projectOpts = scopeOptions.filter((o) => o.group === 'project');
+  const projectRepoOpts = scopeOptions.filter((o) => o.group === 'project_repo');
   const standaloneOpts = scopeOptions.filter((o) => o.group === 'standalone');
 
   return (
@@ -241,8 +327,9 @@ export function ComponentGraphExplorer() {
       <div>
         <h1 className="text-2xl font-bold text-[var(--foreground)] tracking-tight">Grafo de componente</h1>
         <p className="text-sm text-[var(--foreground-muted)] mt-1">
-          Elige el alcance indexado en Falkor (proyecto multi-repo o repo aislado), luego un componente de ese
-          índice. Las aristas ámbar son quienes te usan (radio de explosión).
+          Elige el alcance indexado en Falkor (proyecto multi-repo o repo aislado), luego un componente. Aristas
+          azules: <span className="font-mono">depends</span>. Ámbar discontinuas:{' '}
+          <span className="font-mono">legacy_impact</span> (quienes te usan).
         </p>
       </div>
 
@@ -278,6 +365,19 @@ export function ComponentGraphExplorer() {
                   <SelectGroup>
                     <SelectLabel>Proyectos</SelectLabel>
                     {projectOpts.map((o) => (
+                      <SelectItem key={o.key} value={o.key}>
+                        <span className="font-medium">{o.label}</span>
+                        <span className="block text-xs text-muted-foreground truncate max-w-[280px]">
+                          {o.detail}
+                        </span>
+                      </SelectItem>
+                    ))}
+                  </SelectGroup>
+                )}
+                {projectRepoOpts.length > 0 && (
+                  <SelectGroup>
+                    <SelectLabel>Repos por proyecto</SelectLabel>
+                    {projectRepoOpts.map((o) => (
                       <SelectItem key={o.key} value={o.key}>
                         <span className="font-medium">{o.label}</span>
                         <span className="block text-xs text-muted-foreground truncate max-w-[280px]">
@@ -374,92 +474,23 @@ export function ComponentGraphExplorer() {
       )}
 
       <div className="flex flex-wrap gap-4 text-xs text-[var(--foreground-muted)]">
-        <span className="flex items-center gap-1">
-          <span className="inline-block w-3 h-0.5 bg-blue-500" /> depends
+        <span className="flex items-center gap-2">
+          <span className="inline-block w-8 h-0.5 bg-blue-500 rounded-full" /> depends (animada)
         </span>
-        <span className="flex items-center gap-1">
-          <span className="inline-block w-3 h-0.5 bg-amber-500" /> legacy impact (te usan)
+        <span className="flex items-center gap-2">
+          <span className="inline-block w-8 h-0.5 bg-amber-500 rounded-full border border-dashed border-amber-500/80" />{' '}
+          legacy_impact
         </span>
       </div>
 
-      <Card className="overflow-hidden border-[var(--border)] bg-[var(--background)]">
-        <svg
-          width="100%"
-          height={560}
-          className="touch-none cursor-grab active:cursor-grabbing"
-          onWheel={onWheel}
-          onMouseDown={(e) => {
-            if (e.button !== 0) return;
-            setDrag({ sx: e.clientX, sy: e.clientY, px: pan.x, py: pan.y });
-          }}
-          onMouseMove={(e) => {
-            if (!drag) return;
-            setPan({
-              x: drag.px + (e.clientX - drag.sx),
-              y: drag.py + (e.clientY - drag.sy),
-            });
-          }}
-          onMouseUp={() => setDrag(null)}
-          onMouseLeave={() => setDrag(null)}
-        >
-          <defs>
-            <marker id="arrow-blue" markerWidth={8} markerHeight={8} refX={6} refY={4} orient="auto">
-              <path d="M0,0 L8,4 L0,8 z" fill="rgb(59, 130, 246)" />
-            </marker>
-            <marker id="arrow-amber" markerWidth={8} markerHeight={8} refX={6} refY={4} orient="auto">
-              <path d="M0,0 L8,4 L0,8 z" fill="rgb(245, 158, 11)" />
-            </marker>
-          </defs>
-          <g transform={`translate(${pan.x},${pan.y}) scale(${zoom})`}>
-            {edges.map((e, i) => {
-              const a = positions.get(e.source);
-              const b = positions.get(e.target);
-              if (!a || !b) return null;
-              const stroke = e.kind === 'legacy_impact' ? 'rgb(245, 158, 11)' : 'rgb(59, 130, 246)';
-              const marker = e.kind === 'legacy_impact' ? 'url(#arrow-amber)' : 'url(#arrow-blue)';
-              return (
-                <line
-                  key={`${e.source}-${e.target}-${i}`}
-                  x1={a.x}
-                  y1={a.y}
-                  x2={b.x}
-                  y2={b.y}
-                  stroke={stroke}
-                  strokeWidth={1.5 / zoom}
-                  markerEnd={marker}
-                  opacity={0.85}
-                />
-              );
-            })}
-            {nodes.map((n) => {
-              const p = positions.get(n.id);
-              if (!p) return null;
-              const isCenter =
-                n.kind === 'Component' && n.name === (meta?.componentName ?? name.trim());
-              const r = isCenter ? 28 : 22;
-              return (
-                <g key={n.id} transform={`translate(${p.x},${p.y})`}>
-                  <circle
-                    r={r}
-                    fill={isCenter ? 'var(--primary)' : 'var(--card)'}
-                    stroke="var(--border)"
-                    strokeWidth={2 / zoom}
-                  />
-                  <text
-                    textAnchor="middle"
-                    dy={4}
-                    className="select-none pointer-events-none"
-                    fill={isCenter ? 'var(--primary-foreground)' : 'var(--foreground)'}
-                    style={{ fontSize: 10 / zoom, maxWidth: r * 2 }}
-                  >
-                    {labelFor(n).slice(0, 18)}
-                  </text>
-                </g>
-              );
-            })}
-          </g>
-        </svg>
-      </Card>
+      <ReactFlowProvider>
+        <ComponentGraphFlowView
+          graphNodes={nodes}
+          graphEdges={edges}
+          focalName={focalName}
+          graphKey={graphKey}
+        />
+      </ReactFlowProvider>
     </div>
   );
 }

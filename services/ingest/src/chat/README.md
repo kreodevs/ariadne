@@ -35,7 +35,7 @@ Patrones usados: **ReAct** (Thought→Action→Observation), **CoT** (análisis 
 - **`POST .../modification-plan`** — Body: `{ userDescription, scope? }`
 - **`POST /repositories/:id/analyze`** — Body: `{ mode: 'diagnostico'|'duplicados'|'reingenieria'|'codigo_muerto'|'seguridad'|'agents'|'skill' }`
 - **`POST /projects/:projectId/analyze`** — Body: `{ mode: 'agents'|'skill' }` — Genera AGENTS.md y SKILL.md por proyecto (multi-root)
-- **`GET /repositories/:id/graph-summary`** — Conteos y muestras de nodos
+- **`GET /repositories/:id/graph-summary`** — Query: `full=1` (muestras completas), `repoScoped=1` (solo nodos con `repoId` = `:id` dentro del proyecto Falkor). Útil en multi-root para listar componentes de un repo sin mezclar el resto.
 
 **Requisitos:** `OPENAI_API_KEY`, `CHAT_MODEL` opcional (default `gpt-4o-mini`).
 

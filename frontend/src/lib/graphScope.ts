@@ -11,7 +11,9 @@ export type ScopeOption = {
   label: string
   detail: string
   repoIdsForSummary: string[]
-  group: 'project' | 'standalone'
+  group: 'project' | 'standalone' | 'project_repo'
+  /** Si true, GET graph-summary?repoScoped=1 para listar solo nodos de ese repositorio. */
+  repoScoped?: boolean
 }
 
 export function buildScopeOptions(projects: Project[], repos: Repository[]): ScopeOption[] {
@@ -25,14 +27,27 @@ export function buildScopeOptions(projects: Project[], repos: Repository[]): Sco
   for (const p of projects) {
     const repoIds = p.repositories.map((r) => r.id)
     if (repoIds.length === 0) continue
+    const projectLabel = p.name?.trim() || `Proyecto ${p.id.slice(0, 8)}…`
     out.push({
       key: `project:${p.id}`,
       graphProjectId: p.id,
-      label: p.name?.trim() || `Proyecto ${p.id.slice(0, 8)}…`,
+      label: projectLabel,
       detail: p.repositories.map((r) => `${r.projectKey}/${r.repoSlug}`).join(', '),
       repoIdsForSummary: repoIds,
       group: 'project',
+      repoScoped: false,
     })
+    for (const r of p.repositories) {
+      out.push({
+        key: `projectRepo:${p.id}:${r.id}`,
+        graphProjectId: p.id,
+        label: `${r.projectKey}/${r.repoSlug}`,
+        detail: `Dentro de «${projectLabel}» (solo este repo)`,
+        repoIdsForSummary: [r.id],
+        group: 'project_repo',
+        repoScoped: true,
+      })
+    }
   }
 
   for (const r of repos) {
@@ -44,10 +59,20 @@ export function buildScopeOptions(projects: Project[], repos: Repository[]): Sco
       detail: 'Repositorio sin proyecto',
       repoIdsForSummary: [r.id],
       group: 'standalone',
+      repoScoped: false,
     })
   }
 
-  return out.sort((a, b) => a.label.localeCompare(b.label, undefined, { sensitivity: 'base' }))
+  const rank: Record<ScopeOption['group'], number> = {
+    project: 0,
+    project_repo: 1,
+    standalone: 2,
+  }
+  return out.sort((a, b) => {
+    const gr = rank[a.group] - rank[b.group]
+    if (gr !== 0) return gr
+    return a.label.localeCompare(b.label, undefined, { sensitivity: 'base' })
+  })
 }
 
 export function extractComponentNames(samples: Record<string, unknown[]> | undefined): string[] {

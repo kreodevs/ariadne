@@ -222,12 +222,12 @@ export class ChatService {
     return ids[0] ?? repoId;
   }
 
-  /** Resumen de lo indexado en FalkorDB. full=true devuelve todos los ítems (sin LIMIT); si no, muestras de 12. */
-  async getGraphSummary(repositoryId: string, full = false): Promise<{
+  /** Resumen de lo indexado en FalkorDB. full=true devuelve todos los ítems (sin LIMIT); si no, muestras de 12. repoScoped acota nodos al repo indicado (mismo projectId Falkor). */
+  async getGraphSummary(repositoryId: string, full = false, repoScoped = false): Promise<{
     counts: Record<string, number>;
     samples: Record<string, unknown[]>;
   }> {
-    return this.cypher.getGraphSummary(repositoryId, full);
+    return this.cypher.getGraphSummary(repositoryId, full, repoScoped);
   }
 
   /**

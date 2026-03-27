@@ -22,8 +22,14 @@ export class ChatController {
   async getGraphSummary(
     @Param('id') id: string,
     @Query('full') full?: string,
+    /** Solo nodos cuyo repoId coincide con :id (útil cuando varios repos comparten proyecto Falkor). */
+    @Query('repoScoped') repoScoped?: string,
   ) {
-    return this.chatService.getGraphSummary(id, full === '1' || full === 'true');
+    return this.chatService.getGraphSummary(
+      id,
+      full === '1' || full === 'true',
+      repoScoped === '1' || repoScoped === 'true',
+    );
   }
 
   @Post(':id/full-audit')

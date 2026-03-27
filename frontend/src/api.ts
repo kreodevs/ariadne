@@ -130,10 +130,15 @@ export const api = {
       method: 'POST',
     }),
 
-  getGraphSummary: (repoId: string, full?: boolean) =>
-    request<{ counts: Record<string, number>; samples: Record<string, unknown[]> }>(
-      full ? `/repositories/${repoId}/graph-summary?full=1` : `/repositories/${repoId}/graph-summary`,
-    ),
+  getGraphSummary: (repoId: string, full?: boolean, repoScoped?: boolean) => {
+    const q = new URLSearchParams();
+    if (full) q.set('full', '1');
+    if (repoScoped) q.set('repoScoped', '1');
+    const qs = q.toString();
+    return request<{ counts: Record<string, number>; samples: Record<string, unknown[]> }>(
+      `/repositories/${repoId}/graph-summary${qs ? `?${qs}` : ''}`,
+    );
+  },
 
   getFileContent: (repoId: string, path: string, ref?: string) => {
     const q = new URLSearchParams({ path });
