@@ -17,6 +17,7 @@ import {
   useEdgesState,
   useReactFlow,
   type Edge,
+  type NodeMouseHandler,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import { api } from '@/api';
@@ -41,9 +42,11 @@ import {
   type GraphEdge,
   type GraphNode,
   filterValidEdges,
-  layoutNodes,
+  resolveFocalNode,
   toFlowElements,
 } from './componentGraphFlow';
+import { layoutWithDagre } from './graphLayout';
+import { mergeGraphEdges, mergeGraphNodes } from './graphMerge';
 
 const RF_NODE_TYPES = { componentGraph: GraphFlowNode };
 
@@ -63,13 +66,19 @@ function FitViewOnGraphLoad({ graphKey }: { graphKey: string }) {
 function ComponentGraphFlowView({
   graphNodes,
   graphEdges,
-  focalName,
+  rootFocalName,
   graphKey,
+  projectId,
+  expanding,
+  onExpandNode,
 }: {
   graphNodes: GraphNode[];
   graphEdges: GraphEdge[];
-  focalName: string;
+  rootFocalName: string;
   graphKey: string;
+  projectId: string;
+  expanding: boolean;
+  onExpandNode: (componentName: string) => void | Promise<void>;
 }) {
   const [rfNodes, setRfNodes, onNodesChange] = useNodesState<ComponentGraphRFNode>([]);
   const [rfEdges, setRfEdges, onEdgesChange] = useEdgesState<Edge>([]);
@@ -79,14 +88,28 @@ function ComponentGraphFlowView({
       return { nodes: [] as ComponentGraphRFNode[], edges: [] as Edge[] };
     }
     const validEdges = filterValidEdges(graphNodes, graphEdges);
-    const positions = layoutNodes(graphNodes, validEdges, focalName);
-    return toFlowElements(graphNodes, validEdges, positions, focalName);
-  }, [graphNodes, graphEdges, focalName]);
+    const focal = resolveFocalNode(graphNodes, graphEdges, rootFocalName);
+    const focalId = focal?.id ?? null;
+    const positions = layoutWithDagre(graphNodes, validEdges, focalId);
+    return toFlowElements(graphNodes, validEdges, positions, rootFocalName);
+  }, [graphNodes, graphEdges, rootFocalName]);
 
   useEffect(() => {
     setRfNodes(flowPayload.nodes);
     setRfEdges(flowPayload.edges);
   }, [flowPayload, setRfNodes, setRfEdges]);
+
+  const onNodeClick = useCallback<NodeMouseHandler<ComponentGraphRFNode>>(
+    (_evt, node) => {
+      if (expanding) return;
+      if (!projectId.trim()) return;
+      if (node.data.isFocal || !node.data.expandable) return;
+      const cn = node.data.componentName?.trim();
+      if (!cn) return;
+      void onExpandNode(cn);
+    },
+    [expanding, projectId, onExpandNode],
+  );
 
   if (graphNodes.length === 0) {
     return (
@@ -123,6 +146,7 @@ function ComponentGraphFlowView({
         proOptions={{ hideAttribution: true }}
         elevateEdgesOnSelect
         nodesDraggable
+        onNodeClick={onNodeClick}
       >
         <FitViewOnGraphLoad graphKey={graphKey} />
         <Background
@@ -149,6 +173,9 @@ function ComponentGraphFlowView({
           className="m-2 max-w-[min(100%,320px)] rounded-md border border-[var(--border)] bg-[var(--card)]/95 backdrop-blur-sm px-3 py-2 text-xs text-[var(--foreground)] shadow-sm"
         >
           <p className="font-semibold text-[var(--foreground)] mb-1">Subgrafo indexado</p>
+          {expanding ? (
+            <p className="text-[10px] font-medium text-amber-600 dark:text-amber-400 mb-1">Fusionando vecindario…</p>
+          ) : null}
           <p className="text-[var(--foreground-muted)] leading-relaxed">
             Mismo <span className="font-mono">projectId</span> que usa la API de grafo: vecindario de tipo{' '}
             <span className="font-mono">Component</span> con aristas <span className="font-mono">depends</span>{' '}
@@ -158,6 +185,9 @@ function ComponentGraphFlowView({
           <p className="text-[var(--foreground-muted)] mt-2 leading-relaxed">
             Los datos viven en FalkorDB como grafo de propiedad; Ariadne expone este corte para SDD y revisión de
             impacto sin escribir Cypher a mano.
+          </p>
+          <p className="text-[var(--foreground-muted)] mt-2 leading-relaxed">
+            Clic en un nodo periférico: carga un corte de profundidad 1 y lo fusiona al grafo (sin duplicar IDs).
           </p>
         </Panel>
       </ReactFlow>
@@ -187,6 +217,10 @@ export function ComponentGraphExplorer() {
   const [meta, setMeta] = useState<{ componentName: string; depth: number } | null>(null);
   /** Incrementa en cada carga exitosa para forzar remount de React Flow (evita nodos fantasma al cambiar de componente). */
   const [graphNonce, setGraphNonce] = useState(0);
+  const [expanding, setExpanding] = useState(false);
+  const [expandErr, setExpandErr] = useState<string | null>(null);
+  /** Evita refetch del mismo componente al expandir (se resetea al cargar un grafo nuevo). */
+  const expandedNamesRef = useRef<Set<string>>(new Set());
 
   /** Nombre en URL para hidratar el select cuando carguen los componentes del alcance. */
   const urlComponentRef = useRef<string | null>(search.get('name'));
@@ -196,11 +230,36 @@ export function ComponentGraphExplorer() {
     [scopeOptions, scopeKey],
   );
 
-  const focalName = meta?.componentName ?? name.trim();
+  const rootFocalName = meta?.componentName ?? name.trim();
   const graphKey = useMemo(() => {
     if (nodes.length === 0) return '';
-    return `${focalName}|${graphNonce}|${nodes.length}|${edges.length}|${meta?.depth ?? ''}`;
-  }, [focalName, graphNonce, nodes.length, edges.length, meta?.depth]);
+    return `${rootFocalName}|${graphNonce}|${nodes.length}|${edges.length}|${meta?.depth ?? ''}`;
+  }, [rootFocalName, graphNonce, nodes.length, edges.length, meta?.depth]);
+
+  const expandNode = useCallback(
+    async (componentName: string) => {
+      const pid = graphProjectId.trim();
+      if (!pid) return;
+      if (expandedNamesRef.current.has(componentName)) return;
+      setExpandErr(null);
+      setExpanding(true);
+      try {
+        const data = await api.getComponentGraph(componentName, {
+          depth: 1,
+          projectId: pid,
+        });
+        setNodes((prev) => mergeGraphNodes(prev, data.nodes ?? []));
+        setEdges((prev) => mergeGraphEdges(prev, data.edges ?? []));
+        expandedNamesRef.current.add(componentName);
+        setGraphNonce((x) => x + 1);
+      } catch (e) {
+        setExpandErr(e instanceof Error ? e.message : String(e));
+      } finally {
+        setExpanding(false);
+      }
+    },
+    [graphProjectId],
+  );
 
   useEffect(() => {
     let cancel = false;
@@ -309,6 +368,7 @@ export function ComponentGraphExplorer() {
       setNodes(data.nodes ?? []);
       setEdges(data.edges ?? []);
       setMeta({ componentName: data.componentName, depth: data.depth });
+      expandedNamesRef.current.clear();
       setGraphNonce((x) => x + 1);
       setSearch((prev) => {
         const p = new URLSearchParams(prev);
@@ -499,12 +559,21 @@ export function ComponentGraphExplorer() {
         </span>
       </div>
 
+      {expandErr && (
+        <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-800 dark:text-amber-200">
+          Expansión: {expandErr}
+        </div>
+      )}
+
       <ReactFlowProvider>
         <ComponentGraphFlowView
           graphNodes={nodes}
           graphEdges={edges}
-          focalName={focalName}
+          rootFocalName={rootFocalName}
           graphKey={graphKey}
+          projectId={graphProjectId}
+          expanding={expanding}
+          onExpandNode={expandNode}
         />
       </ReactFlowProvider>
     </div>

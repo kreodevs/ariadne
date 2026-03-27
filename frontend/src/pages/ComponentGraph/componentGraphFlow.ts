@@ -29,11 +29,17 @@ export function labelFor(n: GraphNode): string {
   return safeLabel(n.name) || safeLabel(n.kind);
 }
 
-function resolveFocalNode(
+/** Resuelve el nodo del componente foco por nombre (prioridad sobre heurística legacy de un solo target). */
+export function resolveFocalNode(
   graphNodes: GraphNode[],
   graphEdges: GraphEdge[],
   focalName: string,
 ): GraphNode | undefined {
+  const byComponent = graphNodes.find((n) => n.kind === 'Component' && n.name === focalName);
+  if (byComponent) return byComponent;
+  const byName = graphNodes.find((n) => n.name === focalName);
+  if (byName) return byName;
+
   const legacyTargets = [
     ...new Set(graphEdges.filter((e) => e.kind === 'legacy_impact').map((e) => e.target)),
   ];
@@ -41,49 +47,7 @@ function resolveFocalNode(
     const hit = graphNodes.find((x) => x.id === legacyTargets[0]);
     if (hit) return hit;
   }
-  const byComponent = graphNodes.find((n) => n.kind === 'Component' && n.name === focalName);
-  if (byComponent) return byComponent;
-  return graphNodes.find((n) => n.name === focalName);
-}
-
-/** Layout en abanico: foco al centro, dependencias a un lado, impacto legacy al otro. */
-export function layoutNodes(
-  nodes: GraphNode[],
-  edges: GraphEdge[],
-  centerName: string,
-): Map<string, { x: number; y: number }> {
-  const center = resolveFocalNode(nodes, edges, centerName) ?? nodes[0];
-  const centerId = center?.id ?? '';
-  const pos = new Map<string, { x: number; y: number }>();
-  if (!centerId) return pos;
-
-  const depTargets = edges.filter((e) => e.kind === 'depends' && e.source === centerId).map((e) => e.target);
-  const impactSources = edges
-    .filter((e) => e.kind === 'legacy_impact' && e.target === centerId)
-    .map((e) => e.source);
-
-  pos.set(centerId, { x: 0, y: 0 });
-
-  const placeArc = (ids: string[], startAngle: number, spread: number, radius: number) => {
-    if (ids.length === 0) return;
-    const step = ids.length === 1 ? 0 : spread / (ids.length - 1);
-    ids.forEach((id, i) => {
-      const a = startAngle + i * step;
-      pos.set(id, { x: radius * Math.cos(a), y: radius * Math.sin(a) });
-    });
-  };
-
-  placeArc(depTargets, -Math.PI * 0.35, Math.PI * 0.7, 260);
-  placeArc(impactSources, Math.PI * 0.65, Math.PI * 0.7, 280);
-
-  for (const n of nodes) {
-    if (pos.has(n.id)) continue;
-    const x = (Math.random() - 0.5) * 80;
-    const y = (Math.random() - 0.5) * 80;
-    pos.set(n.id, { x: 420 + x, y: 420 + y });
-  }
-
-  return pos;
+  return graphNodes[0];
 }
 
 const DEPENDS_STROKE = '#60a5fa';
@@ -139,7 +103,7 @@ export function toFlowElements(
   positions: Map<string, { x: number; y: number }>,
   focalName: string,
 ): { nodes: ComponentGraphRFNode[]; edges: Edge[] } {
-  /** Llamar con aristas ya validadas (`filterValidEdges`) y el mismo conjunto en `layoutNodes`. */
+  /** Llamar con aristas ya validadas (`filterValidEdges`) y posiciones coherentes con el mismo corte. */
   const focal = resolveFocalNode(graphNodes, graphEdges, focalName);
   const focalId = focal?.id ?? '';
 
@@ -154,6 +118,7 @@ export function toFlowElements(
     const pathStr = n.path != null ? safeLabel(n.path) : '';
     const role = computeRole(n.id, focalId, graphEdges, isFocal);
     const stats = edgeStatsForNode(n.id, graphEdges);
+    const componentName = typeof n.name === 'string' && n.name.trim() ? n.name : lbl;
 
     return {
       id: n.id,
@@ -166,23 +131,27 @@ export function toFlowElements(
         isFocal,
         role,
         stats,
+        componentName,
+        expandable: !isFocal,
       },
     };
   });
 
-  const edges: Edge[] = graphEdges.map((e, i) => {
+  const edges: Edge[] = graphEdges.map((e) => {
     const isLegacy = e.kind === 'legacy_impact';
     const stroke = isLegacy ? LEGACY_STROKE : DEPENDS_STROKE;
     const shortLabel = isLegacy ? 'legacy' : 'depends';
+    const directDependsFromFocal =
+      e.kind === 'depends' && focalId !== '' && e.source === focalId && e.target !== focalId;
     return {
-      id: `e-${e.source}-${e.target}-${i}`,
+      id: `e-${e.source}-${e.target}-${e.kind}`,
       source: e.source,
       target: e.target,
       type: 'smoothstep',
-      animated: !isLegacy && e.kind === 'depends',
+      animated: directDependsFromFocal,
       style: {
         stroke,
-        strokeWidth: isLegacy ? 2.5 : 2,
+        strokeWidth: isLegacy ? 2.5 : directDependsFromFocal ? 2.75 : 2,
         ...(isLegacy ? { strokeDasharray: '8 5' } : {}),
       },
       markerEnd: {

@@ -10,6 +10,9 @@ export type ComponentGraphNodeData = {
   subtitle?: string;
   isFocal: boolean;
   role: NodeFlowRole;
+  /** Nombre de componente para la API (expandir vecindario). */
+  componentName: string;
+  expandable: boolean;
   stats: {
     dependsOut: number;
     dependsIn: number;
@@ -42,13 +45,14 @@ function RoleIcon({ role }: { role: NodeFlowRole }) {
 }
 
 function GraphFlowNodeInner({ data, selected }: NodeProps<ComponentGraphRFNode>) {
-  const { label, kind, subtitle, isFocal, role, stats } = data;
+  const { label, kind, subtitle, isFocal, role, stats, expandable } = data;
   const rc = roleCopy[role];
 
   return (
     <div
       className={[
         'rounded-xl border px-3 py-2.5 min-w-[168px] max-w-[260px] shadow-md transition-[box-shadow,transform]',
+        expandable ? 'cursor-pointer' : '',
         'bg-[var(--card)] border-[var(--border)] text-[var(--foreground)]',
         isFocal
           ? 'ring-2 ring-[var(--primary)] ring-offset-2 ring-offset-[var(--background)] scale-[1.02]'
@@ -95,6 +99,10 @@ function GraphFlowNodeInner({ data, selected }: NodeProps<ComponentGraphRFNode>)
         <span title="Legacy: consumidores (saliente)">↩ legacy out: {stats.legacyOut}</span>
         <span title="Legacy: te usan (entrante)">↪ legacy in: {stats.legacyIn}</span>
       </div>
+
+      {expandable ? (
+        <p className="mt-2 text-[9px] text-[var(--foreground-muted)]/90 italic">Clic para traer vecindario (depth 1)</p>
+      ) : null}
     </div>
   );
 }
