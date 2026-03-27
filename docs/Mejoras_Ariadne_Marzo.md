@@ -23,8 +23,14 @@ Documento que condensa la recomendación de priorización respecto a los cuatro 
 
 **Objetivo:** poder decidir con datos si GraphRAG o ingesta son el cuello de botella.
 
-- Métricas mínimas: latencia RAG/chat, tasa de “no encontrado”, repos o archivos que rompen ingest.
-- Definir **SLO** (ej. P95 chat, P95 job de PR).
+**Implementado (ingest):**
+
+- `GET /metrics` (Prometheus) en el servicio **ingest** puerto 3002.
+- Métricas: latencia del pipeline de chat (`ariadne_chat_pipeline_duration_seconds`), retrieval vacío (`ariadne_chat_empty_retrieval_total`), grounding débil de paths (`ariadne_chat_low_path_grounding_total`), errores de chat (`ariadne_chat_pipeline_errors_total`), sync fallido (`ariadne_ingest_sync_jobs_failed_total`), parser truncado/fallido (`ariadne_ingest_parse_*`), más `ariadne_nodejs_*` por defecto.
+- Variable `METRICS_ENABLED` (`0`/`false` = desactivar scrape).
+- Documentación de series y **SLO iniciales**: [OBSERVABILIDAD_FASE0.md](./OBSERVABILIDAD_FASE0.md).
+
+**Pendiente (cuando exista Fase 1 CI):** histograma / contadores del job de PR.
 
 **Cuándo:** inmediatamente, antes de features grandes.
 

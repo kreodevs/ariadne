@@ -11,6 +11,7 @@ import type { DomainConceptInfo } from './domain-types';
 import type { DomainConfig } from './domain-types';
 import JavaScript from 'tree-sitter-javascript';
 import TypeScript from 'tree-sitter-typescript';
+import { recordParseFailed, recordParseTruncated } from '../metrics/ingest-metrics';
 
 const ts = TypeScript as unknown as { typescript: unknown; tsx: unknown };
 const LANG_JS = JavaScript as unknown;
@@ -447,6 +448,7 @@ function tryParseTruncated(
     collectContextsAndDefinedHooks(root, tr, result);
     collectFunctionsAndCalls(root, tr, result);
     console.warn(`[parser] Truncated parse OK for ${path} (${result.components.length} components, ${result.functions.length} functions)`);
+    recordParseTruncated();
     return result;
   } catch {
     return null;
@@ -515,6 +517,7 @@ export function parseSource(
       result.strapiContentTypes.length > 0 ||
       result.strapiControllers.length > 0 ||
       result.strapiServices.length > 0;
+    if (!hasStrapi) recordParseFailed();
     return hasStrapi ? result : null;
   }
 

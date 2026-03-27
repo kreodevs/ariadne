@@ -39,6 +39,7 @@ import {
   filterCypherRowsByScope,
   matchesChatScope,
 } from './chat-scope.util';
+import { observeChatPipelineComplete, recordChatPipelineError } from '../metrics/ingest-metrics';
 
 /** Mensaje del historial de chat (usuario o asistente). */
 export interface ChatMessage {
@@ -1672,6 +1673,7 @@ PROHIBIDO: instrucciones genéricas tipo "revisa los controladores", "asegúrate
         { scope: req.scope, twoPhase: req.twoPhase, responseMode: req.responseMode },
       );
     } catch (err) {
+      recordChatPipelineError();
       const msg = err instanceof Error ? err.message : String(err);
       return { answer: `Error: ${msg}` };
     }
@@ -1709,6 +1711,7 @@ PROHIBIDO: instrucciones genéricas tipo "revisa los controladores", "asegúrate
         { projectScope: true, scope: req.scope, twoPhase: req.twoPhase, responseMode: req.responseMode },
       );
     } catch (err) {
+      recordChatPipelineError();
       const msg = err instanceof Error ? err.message : String(err);
       return { answer: `Error: ${msg}` };
     }
@@ -1734,6 +1737,8 @@ PROHIBIDO: instrucciones genéricas tipo "revisa los controladores", "asegúrate
       responseMode?: 'default' | 'evidence_first';
     },
   ): Promise<ChatResponse> {
+    const pipelineStarted = process.hrtime.bigint();
+    const projectScopeForMetrics = Boolean(options?.projectScope);
     const scope = options?.scope;
     const evidenceFirst = options?.responseMode === 'evidence_first';
     const useTwoPhase = evidenceFirst ? true : (options?.twoPhase ?? defaultTwoPhaseFromEnv());
@@ -1973,6 +1978,16 @@ Sintetiza una respuesta clara. Si no hay datos útiles, di explícitamente **sin
         }),
       );
     }
+
+    const durationSec = Number(process.hrtime.bigint() - pipelineStarted) / 1e9;
+    observeChatPipelineComplete({
+      durationSeconds: durationSec,
+      projectScope: projectScopeForMetrics,
+      useTwoPhase,
+      gatheredContext,
+      answer,
+      collectedResults,
+    });
 
     return {
       answer: answer.trim(),

@@ -23,6 +23,7 @@ import {
 } from '../pipeline/producer';
 import { buildCypherForPrismaSchema } from '../pipeline/prisma-extract';
 import { chunkMarkdown } from '../pipeline/markdown-chunk';
+import { recordSyncJobFailed } from '../metrics/ingest-metrics';
 import { buildCypherForMarkdownFile } from '../pipeline/markdown-graph';
 import { loadRepoTsconfigPaths } from '../pipeline/tsconfig-resolve';
 import { buildProjectMergeCypher } from '../pipeline/project';
@@ -338,6 +339,7 @@ export class WebhooksService {
       });
       await this.repos.pruneOldJobs(repo.id, 5);
     } catch (err) {
+      recordSyncJobFailed('webhook');
       await this.syncJobRepo.update(job.id, {
         finishedAt: new Date(),
         status: 'failed',

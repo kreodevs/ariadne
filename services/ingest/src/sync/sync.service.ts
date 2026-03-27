@@ -27,6 +27,7 @@ import { chunkMarkdown } from '../pipeline/markdown-chunk';
 import { buildCypherForMarkdownFile } from '../pipeline/markdown-graph';
 import { buildProjectMergeCypher } from '../pipeline/project';
 import type { ParsedFile } from '../pipeline/parser';
+import { recordSyncJobFailed } from '../metrics/ingest-metrics';
 
 /**
  * @fileoverview Servicio de sync: mapping, deps, chunking, FalkorDB, embed-index post-sync.
@@ -527,6 +528,7 @@ export class SyncService {
       await this.repos.pruneOldJobs(repositoryId, 5);
       return { jobId: job.id, indexed: indexedPaths.length };
     } catch (err) {
+      recordSyncJobFailed('full_sync');
       await this.syncJobRepo.update(job.id, {
         finishedAt: new Date(),
         status: 'failed',

@@ -19,9 +19,11 @@ import { RepositoriesModule } from './repositories/repositories.module';
 import { ShadowModule } from './shadow/shadow.module';
 import { SyncModule } from './sync/sync.module';
 import { WebhooksModule } from './webhooks/webhooks.module';
+import { MetricsModule } from './metrics/metrics.module';
 
 @Module({
   imports: [
+    MetricsModule,
     EmbeddingModule,
     TypeOrmModule.forRoot({
       type: 'postgres',
