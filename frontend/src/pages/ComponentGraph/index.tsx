@@ -1,17 +1,84 @@
 /**
- * Explorador visual del grafo de componente: dependencias + radio de explosión (impacto legacy).
- * Consume GET /api/graph/component/:name (Nest). Pan/zoom en SVG (sin dependencias extra).
+ * Explorador visual del grafo de componente: dependencias + impacto legacy.
+ * Alcance: select de proyecto (multi-root) o repositorio aislado → select de componentes desde graph-summary.
  */
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { api } from '@/api';
+import type { Project, Repository } from '@/types';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card } from '@/components/ui/card';
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectLabel,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 
 type GraphNode = { id: string; kind: string; name?: string; path?: string };
 type GraphEdge = { source: string; target: string; kind: string };
+
+type ScopeOption = {
+  key: string;
+  /** UUID pasado a GET /graph/component?projectId= (nodo/shard en Falkor). */
+  graphProjectId: string;
+  label: string;
+  detail: string;
+  /** Repos cuyo graph-summary usamos para listar componentes. */
+  repoIdsForSummary: string[];
+  group: 'project' | 'standalone';
+};
+
+function buildScopeOptions(projects: Project[], repos: Repository[]): ScopeOption[] {
+  const repoIdsInProjects = new Set<string>();
+  for (const p of projects) {
+    for (const r of p.repositories) repoIdsInProjects.add(r.id);
+  }
+
+  const out: ScopeOption[] = [];
+
+  for (const p of projects) {
+    const repoIds = p.repositories.map((r) => r.id);
+    if (repoIds.length === 0) continue;
+    out.push({
+      key: `project:${p.id}`,
+      graphProjectId: p.id,
+      label: p.name?.trim() || `Proyecto ${p.id.slice(0, 8)}…`,
+      detail: p.repositories.map((r) => `${r.projectKey}/${r.repoSlug}`).join(', '),
+      repoIdsForSummary: repoIds,
+      group: 'project',
+    });
+  }
+
+  for (const r of repos) {
+    if (repoIdsInProjects.has(r.id)) continue;
+    out.push({
+      key: `repo:${r.id}`,
+      graphProjectId: r.id,
+      label: `${r.projectKey}/${r.repoSlug}`,
+      detail: 'Repositorio sin proyecto',
+      repoIdsForSummary: [r.id],
+      group: 'standalone',
+    });
+  }
+
+  return out.sort((a, b) => a.label.localeCompare(b.label, undefined, { sensitivity: 'base' }));
+}
+
+function extractComponentNames(samples: Record<string, unknown[]> | undefined): string[] {
+  const rows = (samples?.Component ?? []) as Array<{ name?: unknown }>;
+  const names = new Set<string>();
+  for (const row of rows) {
+    const n = row?.name;
+    if (typeof n === 'string' && n.trim()) names.add(n.trim());
+  }
+  return [...names].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+}
 
 function labelFor(n: GraphNode): string {
   if (n.path) return n.path.split('/').pop() || n.path;
@@ -62,9 +129,19 @@ function layoutNodes(
 
 export function ComponentGraphExplorer() {
   const [search, setSearch] = useSearchParams();
+  const [scopeKey, setScopeKey] = useState<string>(() => search.get('scope') ?? '');
+  const [graphProjectId, setGraphProjectId] = useState(() => search.get('projectId') ?? '');
   const [name, setName] = useState(() => search.get('name') ?? '');
-  const [projectId, setProjectId] = useState(() => search.get('projectId') ?? '');
   const [depth, setDepth] = useState(() => search.get('depth') ?? '2');
+
+  const [scopeOptions, setScopeOptions] = useState<ScopeOption[]>([]);
+  const [scopesLoading, setScopesLoading] = useState(true);
+  const [scopesErr, setScopesErr] = useState<string | null>(null);
+
+  const [componentNames, setComponentNames] = useState<string[]>([]);
+  const [componentsLoading, setComponentsLoading] = useState(false);
+  const [componentsErr, setComponentsErr] = useState<string | null>(null);
+
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [nodes, setNodes] = useState<GraphNode[]>([]);
@@ -75,10 +152,100 @@ export function ComponentGraphExplorer() {
   const [zoom, setZoom] = useState(1);
   const [drag, setDrag] = useState<{ sx: number; sy: number; px: number; py: number } | null>(null);
 
+  /** Nombre en URL para hidratar el select cuando carguen los componentes del alcance. */
+  const urlComponentRef = useRef<string | null>(search.get('name'));
+
+  const selectedScope = useMemo(
+    () => scopeOptions.find((o) => o.key === scopeKey) ?? null,
+    [scopeOptions, scopeKey],
+  );
+
+  useEffect(() => {
+    let cancel = false;
+    (async () => {
+      setScopesLoading(true);
+      setScopesErr(null);
+      try {
+        const [projects, repos] = await Promise.all([api.getProjects(), api.getRepositories()]);
+        if (cancel) return;
+        const opts = buildScopeOptions(projects, repos);
+        setScopeOptions(opts);
+
+        const urlPid = search.get('projectId') ?? '';
+        const urlScope = search.get('scope') ?? '';
+        if (urlScope && opts.some((o) => o.key === urlScope)) {
+          setScopeKey(urlScope);
+        } else if (urlPid) {
+          const hit =
+            opts.find((o) => o.graphProjectId === urlPid) ??
+            opts.find((o) => o.repoIdsForSummary.includes(urlPid));
+          if (hit) setScopeKey(hit.key);
+          else {
+            setGraphProjectId(urlPid);
+            setScopeKey('');
+          }
+        }
+      } catch (e) {
+        if (!cancel) setScopesErr(e instanceof Error ? e.message : String(e));
+      } finally {
+        if (!cancel) setScopesLoading(false);
+      }
+    })();
+    return () => {
+      cancel = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!selectedScope) {
+      setComponentNames([]);
+      setComponentsErr(null);
+      return;
+    }
+    setGraphProjectId(selectedScope.graphProjectId);
+    let cancel = false;
+    (async () => {
+      setComponentsLoading(true);
+      setComponentsErr(null);
+      try {
+        const summaries = await Promise.all(
+          selectedScope.repoIdsForSummary.map((id) => api.getGraphSummary(id, true)),
+        );
+        if (cancel) return;
+        const merged = new Set<string>();
+        for (const s of summaries) {
+          for (const n of extractComponentNames(s.samples)) merged.add(n);
+        }
+        const list = [...merged].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+        setComponentNames(list);
+        const want = urlComponentRef.current;
+        if (want && list.includes(want)) {
+          setName(want);
+          urlComponentRef.current = null;
+        }
+      } catch (e) {
+        if (!cancel) {
+          setComponentsErr(e instanceof Error ? e.message : String(e));
+          setComponentNames([]);
+        }
+      } finally {
+        if (!cancel) setComponentsLoading(false);
+      }
+    })();
+    return () => {
+      cancel = true;
+    };
+  }, [selectedScope?.key]);
+
   const load = useCallback(async () => {
     const n = name.trim();
+    const pid = graphProjectId.trim();
+    if (!pid) {
+      setErr('Elige un proyecto o repositorio indexado.');
+      return;
+    }
     if (!n) {
-      setErr('Indica el nombre del componente');
+      setErr('Elige un componente');
       return;
     }
     setErr(null);
@@ -87,7 +254,7 @@ export function ComponentGraphExplorer() {
       const d = Math.min(10, Math.max(1, parseInt(depth, 10) || 2));
       const data = await api.getComponentGraph(n, {
         depth: d,
-        projectId: projectId.trim() || undefined,
+        projectId: pid,
       });
       setNodes(data.nodes ?? []);
       setEdges(data.edges ?? []);
@@ -95,9 +262,10 @@ export function ComponentGraphExplorer() {
       setSearch((prev) => {
         const p = new URLSearchParams(prev);
         p.set('name', n);
+        p.set('projectId', pid);
         p.set('depth', String(d));
-        if (projectId.trim()) p.set('projectId', projectId.trim());
-        else p.delete('projectId');
+        if (scopeKey) p.set('scope', scopeKey);
+        else p.delete('scope');
         return p;
       });
     } catch (e) {
@@ -108,13 +276,7 @@ export function ComponentGraphExplorer() {
     } finally {
       setLoading(false);
     }
-  }, [name, projectId, depth, setSearch]);
-
-  useEffect(() => {
-    const n = search.get('name');
-    if (n) void load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- carga inicial por URL
-  }, []);
+  }, [name, graphProjectId, depth, scopeKey, setSearch]);
 
   const positions = useMemo(
     () => layoutNodes(nodes, edges, meta?.componentName ?? name.trim()),
@@ -127,53 +289,139 @@ export function ComponentGraphExplorer() {
     setZoom(z);
   };
 
+  const projectOpts = scopeOptions.filter((o) => o.group === 'project');
+  const standaloneOpts = scopeOptions.filter((o) => o.group === 'standalone');
+
   return (
     <div className="space-y-4">
       <div>
         <h1 className="text-2xl font-bold text-[var(--foreground)] tracking-tight">Grafo de componente</h1>
         <p className="text-sm text-[var(--foreground-muted)] mt-1">
-          Dependencias hacia abajo; aristas «legacy impact» muestran quienes romperían si cambias el nodo
-          central.
+          Elige el alcance indexado en Falkor (proyecto multi-repo o repo aislado), luego un componente de ese
+          índice. Las aristas ámbar son quienes te usan (radio de explosión).
         </p>
       </div>
 
-      <Card className="p-4 flex flex-wrap gap-4 items-end border-[var(--border)] bg-[var(--card)]">
-        <div className="space-y-1">
-          <Label htmlFor="comp-name">Componente</Label>
-          <Input
-            id="comp-name"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="p. ej. BoardCard"
-            className="w-48"
-          />
+      <Card className="p-4 flex flex-col gap-4 border-[var(--border)] bg-[var(--card)]">
+        <div className="flex flex-wrap gap-4 items-end">
+          <div className="space-y-1 min-w-[220px] flex-1">
+            <Label>Proyecto o repositorio</Label>
+            <Select
+              value={scopeKey || undefined}
+              onValueChange={(v) => {
+                setScopeKey(v);
+                setName('');
+                setNodes([]);
+                setEdges([]);
+                setMeta(null);
+                setErr(null);
+              }}
+              disabled={scopesLoading || scopeOptions.length === 0}
+            >
+              <SelectTrigger className="w-full min-w-[200px]">
+                <SelectValue
+                  placeholder={
+                    scopesLoading
+                      ? 'Cargando…'
+                      : scopeOptions.length === 0
+                        ? 'No hay proyectos ni repos'
+                        : 'Selecciona alcance'
+                  }
+                />
+              </SelectTrigger>
+              <SelectContent>
+                {projectOpts.length > 0 && (
+                  <SelectGroup>
+                    <SelectLabel>Proyectos</SelectLabel>
+                    {projectOpts.map((o) => (
+                      <SelectItem key={o.key} value={o.key}>
+                        <span className="font-medium">{o.label}</span>
+                        <span className="block text-xs text-muted-foreground truncate max-w-[280px]">
+                          {o.detail}
+                        </span>
+                      </SelectItem>
+                    ))}
+                  </SelectGroup>
+                )}
+                {standaloneOpts.length > 0 && (
+                  <SelectGroup>
+                    <SelectLabel>Repositorios aislados</SelectLabel>
+                    {standaloneOpts.map((o) => (
+                      <SelectItem key={o.key} value={o.key}>
+                        {o.label}
+                      </SelectItem>
+                    ))}
+                  </SelectGroup>
+                )}
+              </SelectContent>
+            </Select>
+            {selectedScope && (
+              <p className="text-xs text-muted-foreground font-mono">
+                projectId API: {selectedScope.graphProjectId}
+              </p>
+            )}
+            {!scopesLoading && graphProjectId && !selectedScope && (
+              <p className="text-xs text-amber-600 dark:text-amber-400">
+                El projectId de la URL no coincide con ningún proyecto o repo aislado en esta cuenta. Revisa el
+                UUID o sincroniza el índice.
+              </p>
+            )}
+          </div>
+
+          <div className="space-y-1 min-w-[200px] flex-1">
+            <Label htmlFor="comp-select">Componente</Label>
+            <Select
+              value={name.trim() || undefined}
+              onValueChange={(v) => setName(v)}
+              disabled={!selectedScope || componentsLoading || componentNames.length === 0}
+            >
+              <SelectTrigger id="comp-select" className="w-full">
+                <SelectValue
+                  placeholder={
+                    !selectedScope
+                      ? 'Primero el alcance'
+                      : componentsLoading
+                        ? 'Cargando componentes…'
+                        : componentNames.length === 0
+                          ? 'Sin componentes en muestra'
+                          : 'Selecciona componente'
+                  }
+                />
+              </SelectTrigger>
+              <SelectContent className="max-h-[280px]">
+                {componentNames.map((cn) => (
+                  <SelectItem key={cn} value={cn}>
+                    {cn}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="space-y-1">
+            <Label htmlFor="depth">Profundidad</Label>
+            <Input
+              id="depth"
+              type="number"
+              min={1}
+              max={10}
+              value={depth}
+              onChange={(e) => setDepth(e.target.value)}
+              className="w-20"
+            />
+          </div>
+
+          <Button type="button" onClick={() => void load()} disabled={loading || !selectedScope}>
+            {loading ? 'Cargando…' : 'Cargar grafo'}
+          </Button>
         </div>
-        <div className="space-y-1">
-          <Label htmlFor="proj-id">projectId (opcional)</Label>
-          <Input
-            id="proj-id"
-            value={projectId}
-            onChange={(e) => setProjectId(e.target.value)}
-            placeholder="UUID índice / repo"
-            className="w-56 font-mono text-sm"
-          />
-        </div>
-        <div className="space-y-1">
-          <Label htmlFor="depth">Profundidad</Label>
-          <Input
-            id="depth"
-            type="number"
-            min={1}
-            max={10}
-            value={depth}
-            onChange={(e) => setDepth(e.target.value)}
-            className="w-20"
-          />
-        </div>
-        <Button type="button" onClick={() => void load()} disabled={loading}>
-          {loading ? 'Cargando…' : 'Cargar grafo'}
-        </Button>
       </Card>
+
+      {(scopesErr || componentsErr) && (
+        <div className="rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+          {scopesErr ?? componentsErr}
+        </div>
+      )}
 
       {err && (
         <div className="rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
