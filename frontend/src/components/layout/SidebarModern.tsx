@@ -76,7 +76,7 @@ export const SidebarModern = forwardRef<HTMLElement, SidebarModernProps>(
       <aside
         ref={ref}
         className={cn(
-          "flex flex-col h-screen bg-[var(--card)] border-r border-[var(--border)] transition-all duration-300 ease-in-out z-[var(--z-fixed)] relative",
+          "flex flex-col h-full min-h-0 bg-[var(--card)] border-r border-[var(--border)] transition-all duration-300 ease-in-out z-[var(--z-fixed)] relative pb-[env(safe-area-inset-bottom,0px)]",
           collapsed ? "w-20" : "w-72",
           className
         )}

@@ -58,12 +58,12 @@ export function ProjectList() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-row items-end justify-between">
-        <div>
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+        <div className="min-w-0">
           <h1 className="text-2xl font-bold tracking-tight">Proyectos</h1>
           <p className="text-muted-foreground mt-1">Cada proyecto puede tener varios repositorios (multi-root).</p>
         </div>
-        <Button asChild>
+        <Button asChild className="w-full shrink-0 sm:w-auto touch-manipulation">
           <Link to="/projects/new">Nuevo proyecto</Link>
         </Button>
       </div>

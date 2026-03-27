@@ -235,11 +235,15 @@ export class BitbucketService {
     return { cloneUrl, token, ref, tokenUsername: 'x-bitbucket-api-token-auth' };
   }
 
-  /** Lista workspaces del usuario autenticado (Bitbucket Cloud API 2.0). */
+  /**
+   * Lista workspaces accesibles para el usuario autenticado.
+   * Usa GET /2.0/user/workspaces (sustituye a /user/permissions/workspaces, retirado — CHANGE-2770).
+   * @see https://developer.atlassian.com/cloud/bitbucket/rest/api-group-workspaces/#api-user-workspaces-get
+   */
   async listWorkspaces(credentialsRef?: string | null): Promise<Array<{ slug: string; name?: string }>> {
     const seen = new Set<string>();
     const workspaces: Array<{ slug: string; name?: string }> = [];
-    let next: string | undefined = `${this.baseUrl}/user/permissions/workspaces?pagelen=100`;
+    let next: string | undefined = `${this.baseUrl}/user/workspaces?pagelen=100`;
     while (next) {
       const page: { values?: Array<{ workspace?: { slug?: string; name?: string } }>; next?: string } =
         await this.request(next, { credentialsRef });

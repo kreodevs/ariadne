@@ -1,11 +1,10 @@
 /**
  * Kreo AppLayout - Shell con Sidebar, Header y contenido principal
  */
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { useLocation } from "react-router-dom"
 import {
   Menu as MenuIcon,
-  Search,
   LayoutDashboard,
   FolderGit2,
   Plus,
@@ -16,6 +15,7 @@ import {
 import { cn } from "@/lib/utils"
 import { SidebarModern, type SidebarGroup } from "./layout/SidebarModern"
 import { Button } from "@/components/ui/button"
+import { HeaderSearch } from "./HeaderSearch"
 
 const navigationGroups: SidebarGroup[] = [
   {
@@ -33,6 +33,10 @@ const navigationGroups: SidebarGroup[] = [
 export function Layout({ children }: { children: React.ReactNode }) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const location = useLocation()
+
+  useEffect(() => {
+    setMobileMenuOpen(false)
+  }, [location.pathname])
 
   const path = location.pathname
   const activeHref =
@@ -53,7 +57,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
                   : "/"
 
   return (
-    <div className="flex h-screen bg-[var(--background)] overflow-hidden">
+    <div className="flex h-[100dvh] min-h-0 bg-[var(--background)] overflow-hidden">
       <SidebarModern
         groups={navigationGroups}
         activeHref={activeHref}
@@ -76,32 +80,32 @@ export function Layout({ children }: { children: React.ReactNode }) {
           activeHref={activeHref}
           collapsible={false}
           className={cn(
-            "relative w-72 h-full transition-transform duration-300",
+            "relative w-[min(18rem,88vw)] max-w-[18rem] h-full transition-transform duration-300 shadow-xl max-lg:pt-[env(safe-area-inset-top,0px)]",
             mobileMenuOpen ? "translate-x-0" : "-translate-x-full"
           )}
         />
       </div>
 
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
-        <header className="h-14 lg:h-16 bg-[var(--card)] border-b border-[var(--border)] flex items-center justify-between px-4 lg:px-6 shrink-0 z-20">
-          <div className="flex items-center gap-4">
-            <Button
-              variant="ghost"
-              size="icon"
-              className="lg:hidden text-[var(--foreground-muted)]"
-              onClick={() => setMobileMenuOpen(true)}
-            >
-              <MenuIcon className="w-5 h-5" />
-            </Button>
-            <div className="hidden md:flex items-center gap-2 px-3 py-2 bg-[var(--background)] border border-[var(--border)] rounded-[var(--radius-lg)] w-48 lg:w-72 text-[var(--foreground-subtle)] text-sm">
-              <Search className="w-4 h-4" />
-              <span>Buscar...</span>
+        <header className="min-h-14 lg:min-h-16 pt-[env(safe-area-inset-top,0px)] bg-[var(--card)]/95 backdrop-blur-md border-b border-[var(--border)] flex flex-col shrink-0 z-20">
+          <div className="flex items-center justify-between gap-3 px-3 sm:px-4 lg:px-6 py-2 sm:py-3 lg:py-0 lg:h-16 min-h-14">
+            <div className="flex flex-1 min-w-0 items-center gap-2 sm:gap-4">
+              <Button
+                variant="ghost"
+                size="icon"
+                className="lg:hidden shrink-0 h-11 w-11 text-[var(--foreground-muted)] touch-manipulation"
+                onClick={() => setMobileMenuOpen(true)}
+                aria-label="Abrir menú"
+              >
+                <MenuIcon className="w-5 h-5" />
+              </Button>
+              <HeaderSearch />
             </div>
           </div>
         </header>
 
-        <main className="flex-1 overflow-y-auto p-4 lg:p-6">
-          <div className="max-w-[1600px] mx-auto">{children}</div>
+        <main className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden p-3 sm:p-4 lg:p-6 pb-[max(0.75rem,env(safe-area-inset-bottom,0px))]">
+          <div className="max-w-[1600px] mx-auto w-full min-w-0">{children}</div>
         </main>
       </div>
     </div>

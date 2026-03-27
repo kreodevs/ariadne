@@ -5,7 +5,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { api } from '@/api';
-import type { Project, Repository } from '@/types';
+import type { ScopeOption } from '@/lib/graphScope';
+import { buildScopeOptions, extractComponentNames } from '@/lib/graphScope';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -22,63 +23,6 @@ import {
 
 type GraphNode = { id: string; kind: string; name?: string; path?: string };
 type GraphEdge = { source: string; target: string; kind: string };
-
-type ScopeOption = {
-  key: string;
-  /** UUID pasado a GET /graph/component?projectId= (nodo/shard en Falkor). */
-  graphProjectId: string;
-  label: string;
-  detail: string;
-  /** Repos cuyo graph-summary usamos para listar componentes. */
-  repoIdsForSummary: string[];
-  group: 'project' | 'standalone';
-};
-
-function buildScopeOptions(projects: Project[], repos: Repository[]): ScopeOption[] {
-  const repoIdsInProjects = new Set<string>();
-  for (const p of projects) {
-    for (const r of p.repositories) repoIdsInProjects.add(r.id);
-  }
-
-  const out: ScopeOption[] = [];
-
-  for (const p of projects) {
-    const repoIds = p.repositories.map((r) => r.id);
-    if (repoIds.length === 0) continue;
-    out.push({
-      key: `project:${p.id}`,
-      graphProjectId: p.id,
-      label: p.name?.trim() || `Proyecto ${p.id.slice(0, 8)}…`,
-      detail: p.repositories.map((r) => `${r.projectKey}/${r.repoSlug}`).join(', '),
-      repoIdsForSummary: repoIds,
-      group: 'project',
-    });
-  }
-
-  for (const r of repos) {
-    if (repoIdsInProjects.has(r.id)) continue;
-    out.push({
-      key: `repo:${r.id}`,
-      graphProjectId: r.id,
-      label: `${r.projectKey}/${r.repoSlug}`,
-      detail: 'Repositorio sin proyecto',
-      repoIdsForSummary: [r.id],
-      group: 'standalone',
-    });
-  }
-
-  return out.sort((a, b) => a.label.localeCompare(b.label, undefined, { sensitivity: 'base' }));
-}
-
-function extractComponentNames(samples: Record<string, unknown[]> | undefined): string[] {
-  const rows = (samples?.Component ?? []) as Array<{ name?: unknown }>;
-  const names = new Set<string>();
-  for (const row of rows) {
-    const n = row?.name;
-    if (typeof n === 'string' && n.trim()) names.add(n.trim());
-  }
-  return [...names].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
-}
 
 function labelFor(n: GraphNode): string {
   if (n.path) return n.path.split('/').pop() || n.path;

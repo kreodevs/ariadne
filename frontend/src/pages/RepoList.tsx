@@ -82,18 +82,18 @@ export function RepoList() {
 
         {!loading && !error && (
           <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <div>
+            <CardHeader className="flex flex-col gap-4 space-y-0 pb-2 sm:flex-row sm:items-center sm:justify-between">
+              <div className="min-w-0">
                 <CardTitle>Listado</CardTitle>
                 <CardDescription>
                   {repos.length} repositorio{repos.length !== 1 ? 's' : ''}
                 </CardDescription>
               </div>
-              <Button asChild>
+              <Button asChild className="w-full shrink-0 sm:w-auto touch-manipulation">
                 <Link to="/repos/new">Nuevo repo</Link>
               </Button>
             </CardHeader>
-            <CardContent>
+            <CardContent className="min-w-0">
               {repos.length === 0 ? (
                 <div className="flex flex-col items-center justify-center py-12 text-center">
                   <p className="text-muted-foreground mb-2">No hay repositorios configurados.</p>
@@ -102,7 +102,7 @@ export function RepoList() {
                   </Button>
                 </div>
               ) : (
-                <Table>
+                <Table className="min-w-[720px]">
                   <TableHeader>
                     <TableRow>
                       <TableHead>Provider</TableHead>

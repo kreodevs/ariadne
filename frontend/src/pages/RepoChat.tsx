@@ -179,22 +179,24 @@ export function RepoChat() {
   }
 
   return (
-    <div className="flex h-[calc(100vh-8rem)] flex-col">
-      <div className="flex shrink-0 items-center gap-2 pb-4">
-        <Button variant="ghost" size="sm" asChild>
-          <Link to="/">← Repos</Link>
-        </Button>
-        <Button variant="ghost" size="sm" asChild>
-          <Link to={`/repos/${id}`}>Detalle</Link>
-        </Button>
-        <span className="text-muted-foreground">
+    <div className="flex min-h-[min(100dvh,920px)] max-lg:min-h-0 lg:h-[calc(100dvh-10rem)] flex-col">
+      <div className="flex shrink-0 flex-col gap-2 pb-3 sm:flex-row sm:flex-wrap sm:items-center sm:gap-2 sm:pb-4">
+        <div className="flex flex-wrap items-center gap-2">
+          <Button variant="ghost" size="sm" className="touch-manipulation" asChild>
+            <Link to="/repos">← Repos</Link>
+          </Button>
+          <Button variant="ghost" size="sm" className="touch-manipulation" asChild>
+            <Link to={`/repos/${id}`}>Detalle</Link>
+          </Button>
+        </div>
+        <span className="text-muted-foreground text-sm font-mono line-clamp-2 sm:line-clamp-none">
           Chat con {repo.projectKey}/{repo.repoSlug}
         </span>
       </div>
 
-      <div className="flex min-h-0 flex-1 gap-4">
-        {/* Izquierda: diagnósticos e índice */}
-        <aside className="flex min-h-0 w-[min(420px,45%)] shrink-0 flex-col gap-4 overflow-hidden border-r pr-4">
+      <div className="flex min-h-0 flex-1 flex-col gap-4 lg:flex-row lg:gap-4">
+        {/* Herramientas / análisis: debajo del chat en móvil */}
+        <aside className="order-2 flex max-h-[38vh] w-full min-h-0 shrink-0 flex-col gap-4 overflow-y-auto overflow-x-hidden border-t border-[var(--border)] pt-4 lg:order-1 lg:max-h-none lg:w-[min(420px,45%)] lg:overflow-hidden lg:border-t-0 lg:border-r lg:pt-0 lg:pr-4">
           <div className="flex flex-wrap gap-2">
             <Button
               variant="outline"
@@ -325,8 +327,8 @@ export function RepoChat() {
           )}
         </aside>
 
-        {/* Derecha: chat */}
-        <Card className="flex min-w-0 flex-1 flex-col overflow-hidden">
+        {/* Chat: primero en móvil */}
+        <Card className="order-1 flex min-h-[min(52vh,560px)] min-w-0 flex-1 flex-col overflow-hidden lg:order-2 lg:min-h-0">
           <CardHeader className="shrink-0 pb-2">
             <CardTitle>Pregunta sobre el código</CardTitle>
             <p className="text-sm text-muted-foreground">
@@ -352,8 +354,8 @@ export function RepoChat() {
                 key={i}
                 className={
                   m.role === 'user'
-                    ? 'ml-8 rounded-lg bg-primary/10 p-3 text-sm'
-                    : 'mr-8 rounded-lg border bg-muted/50 p-3 text-sm'
+                    ? 'ml-2 sm:ml-8 rounded-lg bg-primary/10 p-3 text-sm'
+                    : 'mr-2 sm:mr-8 rounded-lg border bg-muted/50 p-3 text-sm'
                 }
               >
                 <div className="[&_ul]:my-1 [&_ol]:my-1 [&_li]:my-0 [&_p]:my-1 [&_strong]:font-semibold [&_h1]:text-lg [&_h2]:text-base [&_h3]:text-sm [&_pre]:overflow-x-auto [&_table]:w-full [&_th]:border [&_td]:border [&_td]:px-2 [&_td]:py-1">
@@ -406,17 +408,21 @@ export function RepoChat() {
             <div ref={scrollRef} />
             </div>
 
-            <div className="flex shrink-0 gap-2">
+            <div className="flex shrink-0 flex-col gap-2 sm:flex-row sm:items-end">
               <textarea
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={onKeyDown}
                 placeholder="¿Qué quieres saber del repo?"
                 rows={2}
-                className="flex-1 resize-none rounded-md border bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+                className="min-h-[4.5rem] flex-1 resize-none rounded-md border bg-background px-3 py-2 text-base sm:text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
                 disabled={loading}
               />
-              <Button onClick={send} disabled={loading || !input.trim()} className="self-end">
+              <Button
+                onClick={send}
+                disabled={loading || !input.trim()}
+                className="w-full shrink-0 sm:w-auto sm:self-end touch-manipulation"
+              >
                 Enviar
               </Button>
             </div>

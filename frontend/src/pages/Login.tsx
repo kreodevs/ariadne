@@ -82,7 +82,7 @@ export function Login() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-[var(--background)] p-4">
+    <div className="flex min-h-[100dvh] items-center justify-center bg-[var(--background)] p-4 pt-[max(1rem,env(safe-area-inset-top,0px))] pb-[max(1rem,env(safe-area-inset-bottom,0px))]">
       <Card className="w-full max-w-md">
         <CardHeader>
           <CardTitle className="text-2xl">ARIADNE</CardTitle>

@@ -138,21 +138,23 @@ export function ProjectChat() {
   const displayName = project.name || project.repositories[0]?.projectKey + '/' + project.repositories[0]?.repoSlug || projectId.slice(0, 8);
 
   return (
-    <div className="flex h-[calc(100vh-8rem)] flex-col">
-      <div className="flex shrink-0 items-center gap-2 pb-4">
-        <Button variant="ghost" size="sm" asChild>
-          <Link to="/">← Proyectos</Link>
-        </Button>
-        <Button variant="ghost" size="sm" asChild>
-          <Link to={`/projects/${projectId}`}>Detalle del proyecto</Link>
-        </Button>
-        <span className="text-muted-foreground">
+    <div className="flex min-h-[min(100dvh,920px)] max-lg:min-h-0 lg:h-[calc(100dvh-10rem)] flex-col">
+      <div className="flex shrink-0 flex-col gap-2 pb-3 sm:flex-row sm:flex-wrap sm:items-center sm:gap-2 sm:pb-4">
+        <div className="flex flex-wrap items-center gap-2">
+          <Button variant="ghost" size="sm" className="touch-manipulation" asChild>
+            <Link to="/">← Proyectos</Link>
+          </Button>
+          <Button variant="ghost" size="sm" className="touch-manipulation" asChild>
+            <Link to={`/projects/${projectId}`}>Detalle del proyecto</Link>
+          </Button>
+        </div>
+        <span className="text-muted-foreground text-sm line-clamp-2 sm:line-clamp-none">
           Chat del proyecto: {displayName} ({project.repositories.length} repo{project.repositories.length !== 1 ? 's' : ''})
         </span>
       </div>
 
-      <div className="flex min-h-0 flex-1 gap-4">
-        <aside className="flex w-[min(420px,45%)] shrink-0 flex-col gap-4 overflow-y-auto border-r pr-4">
+      <div className="flex min-h-0 flex-1 flex-col gap-4 lg:flex-row lg:gap-4">
+        <aside className="order-2 flex max-h-[38vh] w-full shrink-0 flex-col gap-4 overflow-y-auto overflow-x-hidden border-t border-[var(--border)] pt-4 lg:order-1 lg:max-h-none lg:w-[min(420px,45%)] lg:border-t-0 lg:border-r lg:pt-0 lg:pr-4">
           <div className="flex flex-wrap gap-2">
             <Button
               variant="outline"
@@ -211,7 +213,7 @@ export function ProjectChat() {
           )}
         </aside>
 
-        <Card className="flex min-w-0 flex-1 flex-col overflow-hidden">
+        <Card className="order-1 flex min-h-[min(52vh,560px)] min-w-0 flex-1 flex-col overflow-hidden lg:order-2 lg:min-h-0">
         <CardHeader className="shrink-0 pb-2">
           <CardTitle>Pregunta sobre todo el proyecto</CardTitle>
           <p className="text-sm text-muted-foreground">
@@ -236,8 +238,8 @@ export function ProjectChat() {
                 key={i}
                 className={
                   m.role === 'user'
-                    ? 'ml-8 rounded-lg bg-primary/10 p-3 text-sm'
-                    : 'mr-8 rounded-lg border bg-muted/50 p-3 text-sm'
+                    ? 'ml-2 sm:ml-8 rounded-lg bg-primary/10 p-3 text-sm'
+                    : 'mr-2 sm:mr-8 rounded-lg border bg-muted/50 p-3 text-sm'
                 }
               >
                 <div className="[&_ul]:my-1 [&_ol]:my-1 [&_li]:my-0 [&_p]:my-1 [&_strong]:font-semibold [&_h1]:text-lg [&_h2]:text-base [&_h3]:text-sm [&_pre]:overflow-x-auto [&_table]:w-full [&_th]:border [&_td]:border [&_td]:px-2 [&_td]:py-1">
@@ -290,17 +292,21 @@ export function ProjectChat() {
             <div ref={scrollRef} />
           </div>
 
-          <div className="flex shrink-0 gap-2">
+          <div className="flex shrink-0 flex-col gap-2 sm:flex-row sm:items-end">
             <textarea
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={onKeyDown}
               placeholder="¿Qué quieres saber del proyecto?"
               rows={2}
-              className="flex-1 resize-none rounded-md border bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+              className="min-h-[4.5rem] flex-1 resize-none rounded-md border bg-background px-3 py-2 text-base sm:text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
               disabled={loading}
             />
-            <Button onClick={send} disabled={loading || !input.trim()} className="self-end">
+            <Button
+              onClick={send}
+              disabled={loading || !input.trim()}
+              className="w-full shrink-0 sm:w-auto sm:self-end touch-manipulation"
+            >
               Enviar
             </Button>
           </div>
