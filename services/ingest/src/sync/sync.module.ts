@@ -1,7 +1,7 @@
 /**
  * @fileoverview Módulo Sync: BullMQ, SyncService, SyncProcessor. Encola jobs de indexación.
  */
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { BullModule } from '@nestjs/bullmq';
 import { SyncJob } from '../repositories/entities/sync-job.entity';
@@ -33,7 +33,7 @@ function getRedisConnection() {
 @Module({
   imports: [
     TypeOrmModule.forFeature([RepositoryEntity, SyncJob, IndexedFile, ProjectEntity]),
-    RepositoriesModule,
+    forwardRef(() => RepositoriesModule),
     BitbucketModule,
     ProvidersModule,
     BullModule.forRoot({
