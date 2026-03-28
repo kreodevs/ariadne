@@ -8,6 +8,7 @@ import { CreateRepositoryDto } from './dto/create-repository.dto';
 import { UpdateRepositoryDto } from './dto/update-repository.dto';
 import { FileContentService } from './file-content.service';
 import { EmbedIndexService } from '../embedding/embed-index.service';
+import { SyncService } from '../sync/sync.service';
 
 /** Rutas /repositories (CRUD, branches, file, embed-index, jobs). */
 @Controller('repositories')
@@ -17,6 +18,7 @@ export class RepositoriesController {
     private readonly fileContent: FileContentService,
     private readonly jobAnalysis: JobAnalysisService,
     private readonly embedIndexSvc: EmbedIndexService,
+    private readonly sync: SyncService,
   ) {}
 
   @Post()
@@ -30,8 +32,9 @@ export class RepositoriesController {
   }
 
   @Delete(':id')
-  remove(@Param('id') id: string) {
-    return this.service.remove(id);
+  async remove(@Param('id') id: string) {
+    await this.sync.clearGraphDataForRepository(id);
+    await this.service.remove(id);
   }
 
   @Get()

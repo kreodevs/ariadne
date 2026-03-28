@@ -406,6 +406,8 @@ export class ChatService {
       .map((r) => ({ path: r.path, repoId: r.repoId }))
       .sort((a, b) => a.path.localeCompare(b.path) || a.repoId.localeCompare(b.repoId))
       .slice(0, maxPlanFiles);
+    const restrictRepos = scope?.repoIds?.length ? new Set(scope.repoIds) : new Set([repositoryId]);
+    filesToModify = filesToModify.filter((f) => restrictRepos.has(f.repoId));
     if (scope) {
       filesToModify = filesToModify.filter((f) => matchesChatScope(f.path, f.repoId, scope));
     }
@@ -471,14 +473,16 @@ Máximo 5 preguntas. En español.`;
   }> {
     const repo = await this.repos.findOne(repositoryId);
     const projectId = await this.resolveProjectIdForRepo(repo.id);
-    const summary = await this.cypher.getGraphSummary(repositoryId);
+    const summary = await this.cypher.getGraphSummary(repositoryId, false, true);
 
     const riskCandidates = await this.cypher.executeCypher(
       projectId,
-      `MATCH (a:Function) WHERE a.projectId = $projectId
+      `MATCH (a:Function) WHERE a.projectId = $projectId AND a.repoId = $repoId
        OPTIONAL MATCH (a)-[:CALLS]->(b:Function)
-       WITH a, count(b) as outCalls
+       WITH a, collect(b) as outs
+       WITH a, size([x IN outs WHERE x IS NOT NULL AND x.repoId = $repoId]) as outCalls
        RETURN a.path as path, a.name as name, outCalls, a.complexity as complexity, a.loc as loc, a.description as description`,
+      { repoId: repositoryId },
     ) as Array<{ path: string; name: string; outCalls: number; complexity?: number; loc?: number; description?: string | null }>;
     const riskRanked = riskCandidates
       .map((r) => ({
@@ -505,20 +509,25 @@ Máximo 5 preguntas. En español.`;
     const highCoupling = await this.cypher.executeCypher(
       projectId,
       `MATCH (a:Function)-[:CALLS]->(b:Function) WHERE a.projectId = $projectId AND b.projectId = $projectId
+       AND a.repoId = $repoId AND b.repoId = $repoId
        WITH a, count(b) as outCalls
        WHERE outCalls > 5
        RETURN a.path as path, a.name as name, outCalls ORDER BY outCalls DESC`,
+      { repoId: repositoryId },
     );
     const noDescription = await this.cypher.executeCypher(
       projectId,
-      `MATCH (n:Function) WHERE n.projectId = $projectId AND (n.description IS NULL OR n.description = '')
+      `MATCH (n:Function) WHERE n.projectId = $projectId AND n.repoId = $repoId
+       AND (n.description IS NULL OR n.description = '')
        RETURN n.path as path, n.name as name`,
+      { repoId: repositoryId },
     );
     const componentProps = await this.cypher.executeCypher(
       projectId,
-      `MATCH (c:Component)-[:HAS_PROP]->(p:Prop) WHERE c.projectId = $projectId
+      `MATCH (c:Component)-[:HAS_PROP]->(p:Prop) WHERE c.projectId = $projectId AND c.repoId = $repoId AND p.repoId = $repoId
        WITH c, count(p) as propCount WHERE propCount > 5
        RETURN c.name as component, propCount ORDER BY propCount DESC`,
+      { repoId: repositoryId },
     );
 
     const antipatterns = await this.antipatterns.detectAntipatterns(repositoryId);
@@ -621,12 +630,13 @@ Sé conciso. Usa bullet points y tablas. Incluye TODOS los ítems de los datos e
 
     const structuralRows = (await this.cypher.executeCypher(
       projectId,
-      `MATCH (a:Function) WHERE a.projectId = $projectId
+      `MATCH (a:Function) WHERE a.projectId = $projectId AND a.repoId = $repoId
        WITH a.name as name, collect(DISTINCT a.path) as paths
        WHERE size(paths) > 1
        UNWIND paths as p1 UNWIND paths as p2
        WITH name, p1, p2 WHERE p1 < p2
        RETURN p1 as pathA, name, p2 as pathB`,
+      { repoId: repositoryId },
     )) as Array<{ pathA: string; name: string; pathB: string }>;
     const structuralPairs = structuralRows.filter((r) => !GENERIC_FUNCTION_NAMES.has(r.name.toLowerCase()));
     const sameNamePairs = structuralPairs.map((r) => ({
@@ -648,8 +658,8 @@ Sé conciso. Usa bullet points y tablas. Incluye TODOS los ítems de los datos e
 
       const limitClause = limit > 0 ? ` LIMIT ${limit}` : '';
       const funcsRes = (await graph.query(
-        `MATCH (n:Function) WHERE n.projectId = $projectId AND n.${vProp} IS NOT NULL RETURN n.path AS path, n.name AS name, n.description AS description, n.startLine AS startLine, n.endLine AS endLine${limitClause}`,
-        { params: { projectId } },
+        `MATCH (n:Function) WHERE n.projectId = $projectId AND n.repoId = $repoId AND n.${vProp} IS NOT NULL RETURN n.path AS path, n.name AS name, n.description AS description, n.startLine AS startLine, n.endLine AS endLine${limitClause}`,
+        { params: { projectId, repoId: repositoryId } },
       )) as { data?: unknown[] };
       const rawRows = funcsRes?.data ?? [];
       const funcs = rawRows.map((row): { path: string; name: string; description?: string | null; startLine?: number; endLine?: number } => {
@@ -888,9 +898,11 @@ Repositorio ${repo.projectKey}/${repo.repoSlug} — hallazgos automáticos (rege
     const projectId = await this.resolveProjectIdForRepo(repo.id);
     const MAX_FILES = 120;
 
+    const rid = repositoryId;
     const files = (await this.cypher.executeCypher(
       projectId,
-      `MATCH (f:File) WHERE f.projectId = $projectId RETURN f.path as path ORDER BY f.path`,
+      `MATCH (f:File) WHERE f.projectId = $projectId AND f.repoId = $repoId RETURN f.path as path ORDER BY f.path`,
+      { repoId: rid },
     )) as Array<{ path: string }>;
     const isPm2Config = (path: string) =>
       /^ecosystem[.-].*\.config\.(js|mjs|cjs)$/i.test(path.split('/').pop() ?? path);
@@ -901,12 +913,16 @@ Repositorio ${repo.projectKey}/${repo.repoSlug} — hallazgos automáticos (rege
 
     const imports = (await this.cypher.executeCypher(
       projectId,
-      `MATCH (a:File)-[:IMPORTS]->(b:File) WHERE a.projectId = $projectId AND b.projectId = $projectId RETURN a.path as fromPath, b.path as toPath`,
+      `MATCH (a:File)-[:IMPORTS]->(b:File) WHERE a.projectId = $projectId AND b.projectId = $projectId
+       AND a.repoId = $repoId AND b.repoId = $repoId RETURN a.path as fromPath, b.path as toPath`,
+      { repoId: rid },
     )) as Array<{ fromPath: string; toPath: string }>;
 
     const contains = (await this.cypher.executeCypher(
       projectId,
-      `MATCH (f:File)-[:CONTAINS]->(n) WHERE f.projectId = $projectId RETURN f.path as filePath, labels(n)[0] as label, n.name as name`,
+      `MATCH (f:File)-[:CONTAINS]->(n) WHERE f.projectId = $projectId AND f.repoId = $repoId AND n.repoId = $repoId
+       RETURN f.path as filePath, labels(n)[0] as label, n.name as name`,
+      { repoId: rid },
     )) as Array<{ filePath: string; label: string; name: string }>;
 
     const renders = (await this.cypher.executeCypher(
@@ -914,27 +930,33 @@ Repositorio ${repo.projectKey}/${repo.repoSlug} — hallazgos automáticos (rege
       `MATCH (fp:File)-[:CONTAINS]->(parent:Component)-[:RENDERS]->(child:Component)
        MATCH (fc:File)-[:CONTAINS]->(child)
        WHERE parent.projectId = $projectId AND child.projectId = $projectId
+       AND fp.repoId = $repoId AND fc.repoId = $repoId AND parent.repoId = $repoId AND child.repoId = $repoId
        RETURN fc.path as targetFile, child.name as childName, fp.path as referrerPath, parent.name as referrerComponent`,
+      { repoId: rid },
     )) as Array<{ targetFile: string; childName: string; referrerPath: string; referrerComponent: string }>;
 
     const calls = (await this.cypher.executeCypher(
       projectId,
       `MATCH (caller:Function)-[:CALLS]->(callee:Function) WHERE callee.projectId = $projectId AND caller.projectId = $projectId
+       AND caller.repoId = $repoId AND callee.repoId = $repoId
        RETURN callee.path as targetPath, callee.name as calleeName, caller.path as callerPath, caller.name as callerName`,
+      { repoId: rid },
     )) as Array<{ targetPath: string; calleeName: string; callerPath: string; callerName: string }>;
 
     const routes = (await this.cypher.executeCypher(
       projectId,
-      `MATCH (r:Route) WHERE r.projectId = $projectId RETURN r.componentName as name`,
+      `MATCH (r:Route) WHERE r.projectId = $projectId AND r.repoId = $repoId RETURN r.componentName as name`,
+      { repoId: rid },
     )) as Array<{ name: string }>;
     const routeComponents = new Set((routes ?? []).map((r) => r.name));
 
     const hookDefFiles = (await this.cypher.executeCypher(
       projectId,
       `MATCH (comp:Component)-[:USES_HOOK]->(h:Hook)
-       WHERE h.projectId = $projectId
-       MATCH (f:File)-[:CONTAINS]->(fn:Function) WHERE fn.name = h.name AND fn.projectId = $projectId
+       WHERE h.projectId = $projectId AND h.repoId = $repoId AND comp.repoId = $repoId
+       MATCH (f:File)-[:CONTAINS]->(fn:Function) WHERE fn.name = h.name AND fn.projectId = $projectId AND f.repoId = $repoId AND fn.repoId = $repoId
        RETURN f.path as targetPath, h.name as hookName`,
+      { repoId: rid },
     )) as Array<{ targetPath: string; hookName: string }>;
     const hookDefFileSet = new Set(hookDefFiles.map((r) => r.targetPath));
 
@@ -1498,8 +1520,8 @@ PROHIBIDO: instrucciones genéricas tipo "revisa los controladores", "asegúrate
         this.antipatterns.detectAntipatterns(repositoryId),
         this.analyzeCodigoMuerto(repositoryId),
         this.analyzeDuplicados(repositoryId, 0.78, 0),
-        this.getGodObjects(projectId),
-        this.getTopComplexityFunctions(projectId, 10),
+        this.getGodObjects(projectId, repositoryId),
+        this.getTopComplexityFunctions(projectId, repositoryId, 10),
         this.runSecurityScan(repositoryId, projectId, repoSlug),
       ]);
 
@@ -1575,29 +1597,35 @@ PROHIBIDO: instrucciones genéricas tipo "revisa los controladores", "asegúrate
     };
   }
 
-  private async getGodObjects(projectId: string): Promise<
-    Array<{ path: string; lineCount?: number; dependencyCount?: number; reason: string }>
-  > {
+  private async getGodObjects(
+    projectId: string,
+    repositoryId: string,
+  ): Promise<Array<{ path: string; lineCount?: number; dependencyCount?: number; reason: string }>> {
     const fileLoc = (await this.cypher.executeCypher(
       projectId,
-      `MATCH (f:File)-[:CONTAINS]->(fn:Function) WHERE f.projectId = $projectId AND fn.projectId = $projectId AND fn.loc IS NOT NULL
+      `MATCH (f:File)-[:CONTAINS]->(fn:Function) WHERE f.projectId = $projectId AND f.repoId = $repoId AND fn.projectId = $projectId AND fn.repoId = $repoId AND fn.loc IS NOT NULL
        WITH f.path as path, sum(fn.loc) as totalLoc
        WHERE totalLoc > 500
        RETURN path, totalLoc ORDER BY totalLoc DESC`,
+      { repoId: repositoryId },
     )) as Array<{ path: string; totalLoc: number }>;
 
     const inCounts = (await this.cypher.executeCypher(
       projectId,
       `MATCH (a:File)-[:IMPORTS]->(b:File) WHERE a.projectId = $projectId AND b.projectId = $projectId
+       AND a.repoId = $repoId AND b.repoId = $repoId
        WITH b.path as path, count(a) as inCnt
        RETURN path, inCnt`,
+      { repoId: repositoryId },
     )) as Array<{ path: string; inCnt: number }>;
 
     const outCounts = (await this.cypher.executeCypher(
       projectId,
       `MATCH (a:File)-[:IMPORTS]->(b:File) WHERE a.projectId = $projectId AND b.projectId = $projectId
+       AND a.repoId = $repoId AND b.repoId = $repoId
        WITH a.path as path, count(b) as outCnt
        RETURN path, outCnt`,
+      { repoId: repositoryId },
     )) as Array<{ path: string; outCnt: number }>;
 
     const depByPath = new Map<string, number>();
@@ -1630,13 +1658,15 @@ PROHIBIDO: instrucciones genéricas tipo "revisa los controladores", "asegúrate
 
   private async getTopComplexityFunctions(
     projectId: string,
+    repositoryId: string,
     limit: number,
   ): Promise<Array<{ path: string; name: string; complexity: number }>> {
     const rows = (await this.cypher.executeCypher(
       projectId,
-      `MATCH (fn:Function) WHERE fn.projectId = $projectId AND fn.complexity IS NOT NULL AND fn.complexity > 0
+      `MATCH (fn:Function) WHERE fn.projectId = $projectId AND fn.repoId = $repoId AND fn.complexity IS NOT NULL AND fn.complexity > 0
        RETURN fn.path as path, fn.name as name, fn.complexity as complexity
        ORDER BY fn.complexity DESC LIMIT ${limit}`,
+      { repoId: repositoryId },
     )) as Array<{ path: string; name: string; complexity: number }>;
     return rows;
   }
@@ -1650,7 +1680,8 @@ PROHIBIDO: instrucciones genéricas tipo "revisa los controladores", "asegúrate
     const maxFiles = opts?.maxFiles ?? 80;
     const files = (await this.cypher.executeCypher(
       projectId,
-      `MATCH (f:File) WHERE f.projectId = $projectId RETURN f.path as path ORDER BY f.path`,
+      `MATCH (f:File) WHERE f.projectId = $projectId AND f.repoId = $repoId RETURN f.path as path ORDER BY f.path`,
+      { repoId: repositoryId },
     )) as Array<{ path: string }>;
 
     const toScan = files

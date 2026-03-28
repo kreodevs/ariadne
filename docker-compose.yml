@@ -126,6 +126,8 @@ services:
       - FALKOR_SHARD_BY_DOMAIN=${FALKOR_SHARD_BY_DOMAIN:-false}
       - FALKOR_AUTO_DOMAIN_OVERFLOW=${FALKOR_AUTO_DOMAIN_OVERFLOW:-false}
       - FALKOR_GRAPH_NODE_SOFT_LIMIT=${FALKOR_GRAPH_NODE_SOFT_LIMIT:-100000}
+      # Vacía Falkor una sola vez (FLUSHALL al arrancar; marca en Postgres). Quitar tras el deploy o dejar: los reinicios no repiten.
+      - FALKOR_FLUSH_ALL_ONCE=${FALKOR_FLUSH_ALL_ONCE:-}
       - REDIS_URL=redis://redis:6379
       - NODE_ENV=production
       - EMBEDDING_PROVIDER=${EMBEDDING_PROVIDER:-openai}

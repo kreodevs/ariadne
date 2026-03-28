@@ -62,8 +62,9 @@ export function RepoIndex() {
     if (!id) return;
     setLoading(true);
     setError(null);
+    // Multi-root: varios repos comparten projectId en Falkor; acotar al repo de la ruta.
     api
-      .getGraphSummary(id, true)
+      .getGraphSummary(id, true, true)
       .then((res) => {
         setCounts(res.counts);
         setSamples(res.samples as Record<string, IndexRow[]>);

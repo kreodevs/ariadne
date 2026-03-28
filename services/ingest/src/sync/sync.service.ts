@@ -223,6 +223,25 @@ export class SyncService {
   }
 
   /**
+   * Antes de borrar un repositorio en Postgres: elimina nodos Falkor con este `repoId`
+   * para cada `projectId` bajo el que estuvo indexado (multi-root), o (repoId, repoId) si es standalone.
+   */
+  async clearGraphDataForRepository(repositoryId: string): Promise<{ deletedNodes: number }> {
+    const projectIds = await this.repos.getProjectIdsForRepo(repositoryId);
+    let deletedNodes = 0;
+    if (projectIds.length === 0) {
+      const r = await this.clearProjectRepo(repositoryId, repositoryId);
+      deletedNodes += r.deletedNodes;
+    } else {
+      for (const projectId of projectIds) {
+        const r = await this.clearProjectRepo(projectId, repositoryId);
+        deletedNodes += r.deletedNodes;
+      }
+    }
+    return { deletedNodes };
+  }
+
+  /**
    * Ejecuta full sync: mapping → deps → chunking (parse + producer) → FalkorDB → embed-index.
    * Escribe nodos en cada proyecto al que pertenece el repo (standalone + project_repositories).
    * @param {string} repositoryId - ID del repositorio.

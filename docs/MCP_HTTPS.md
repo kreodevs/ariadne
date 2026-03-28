@@ -206,10 +206,10 @@ Los nombres de argumentos deben coincidir con el esquema devuelto por `tools/lis
 | `get_contract_specs`            | `componentName`         | `projectId`, `currentFilePath`                                                       |
 | `get_component_graph`           | `componentName`         | `depth`, `projectId`, `currentFilePath`                                                |
 | `get_file_content`              | `path` + (`projectId` **o** `currentFilePath`) | `ref`                                                                              |
-| `semantic_search`             | `query`; con sharding también **`projectId`** | `limit` (sin sharding: `projectId` opcional para acotar)                             |
+| `semantic_search`             | `query`; con sharding también **`projectId`** | `limit`; **`projectId`** opcional sin sharding (acota al UUID proyecto o `roots[].id`). **No** admite `scope` ni `currentFilePath`. |
 | `validate_before_edit`        | `nodeName`              | `projectId`, `currentFilePath`                                                       |
 | `get_project_analysis`          | `projectId`             | `mode` (diagnostico, duplicados, reingenieria, codigo_muerto, seguridad)              |
-| `ask_codebase`                  | `question`              | `projectId`, `currentFilePath`, `scope`, `twoPhase`                                   |
+| `ask_codebase`                  | `question`              | `projectId`, `currentFilePath`, `scope`, `twoPhase`, **`responseMode`** (`default` \| **`evidence_first`**) — ver [mcp_server_specs.md](mcp_server_specs.md) (`evidence_first`: two-phase + más contexto al sintetizador, salida “evidencia primero”) |
 | `get_modification_plan`         | `userDescription`       | `projectId`, `currentFilePath`, `scope`                                               |
 | `get_definitions`               | `symbolName`            | `projectId`, `currentFilePath`                                                       |
 | `get_references`                | `symbolName`            | `projectId`, `currentFilePath`                                                       |
@@ -226,6 +226,8 @@ Los nombres de argumentos deben coincidir con el esquema devuelto por `tools/lis
 | `analyze_local_changes`        | —                       | `projectId` o `currentFilePath`; `workspaceRoot` o `stagedDiff`                      |
 
 > **projectId:** ID de proyecto Ariadne o ID de repo (`roots[].id`). Ver [mcp_server_specs.md §2](mcp_server_specs.md) (proyecto vs repo).
+>
+> **Esquema estricto:** `tools/list` devuelve `inputSchema` con **`additionalProperties: false`** en las herramientas. Los argumentos extra que no aparezcan en ese esquema pueden hacer fallar clientes que validen el payload antes de `tools/call`. Parámetros soportados por el ingest pero **no** listados en `tools/list` sí requerirían coordinación; `responseMode` **sí** está declarado para `ask_codebase` en `services/mcp-ariadne`.
 
 ### 7.1 Sharding Falkor (`FALKOR_SHARD_BY_PROJECT`)
 
@@ -233,7 +235,8 @@ Si el servidor MCP corre con **partición por proyecto** en FalkorDB (un grafo l
 
 - **Recomendado:** pasar siempre **`projectId`** (o **`currentFilePath`** para inferencia) en herramientas que leen el grafo.
 - Sin **`INGEST_URL`**, la inferencia solo desde ruta puede fallar si el grafo monolito por defecto está vacío.
-- Con sharding activo no hay búsqueda multi-shard: **`semantic_search`** exige **`projectId`** explícito (no admite `currentFilePath` en el esquema ni en el handler). **`find_similar_implementations`** exige **`projectId`** o **`currentFilePath`** (inferencia con ingest/shards).
+- **`semantic_search`:** sin `projectId` en grafo **monolito** (sharding apagado), las consultas **no** filtran por proyecto: se mezclan nodos de todos los UUID presentes en el grafo (no es “el primer root” ni inferencia desde el IDE). Con sharding activo exige **`projectId`** explícito (no admite `currentFilePath` en el esquema ni en el handler). Para acotar por repos/prefijos vía `scope`, usar **`ask_codebase`**, no `semantic_search`.
+- Con sharding activo no hay búsqueda multi-shard genérica: **`find_similar_implementations`** exige **`projectId`** o **`currentFilePath`** (inferencia con ingest/shards).
 - Detalle técnico: el MCP abre el grafo con `graphNameForProject(projectId)`; si hace falta inferir el proyecto desde path con sharding, puede barrer candidatos obtenidos del ingest (`/projects`, `/repositories`).
 
 La API REST Nest (`GET /api/graph/*`) también acepta query **`projectId`** cuando el índice está partido; ver despliegue (compose / env).
@@ -337,22 +340,22 @@ function extractToolResult(response: {
 
 ## 11. Cómo obtener esquema BD, rutas API y variables de entorno
 
-Estos datos **no están siempre en el grafo** (Prisma no se indexa; .env nunca). La app debe usar rutas convencionales o `execute_cypher` + `get_file_content`:
+Estos datos **no están siempre en el grafo** (Prisma no se indexa; .env nunca). Desde un cliente **solo MCP HTTP**, usa `get_file_content`, búsqueda/acceso vía herramientas listadas en §7, o la API REST del despliegue; el nombre `execute_cypher` corresponde al retriever **interno** del chat del ingest, no a una tool de `tools/list`:
 
 | Dato | Cómo obtener | ORM-agnóstico |
 |------|--------------|---------------|
-| **Tablas / esquema BD** | `get_file_content` con path fijo; o `execute_cypher` → `get_file_content` | Sí |
-| **Rutas API** | `execute_cypher` NestController/Route; luego `get_file_content` en path | Sí |
+| **Tablas / esquema BD** | `get_file_content` con path fijo; o `semantic_search` / herramientas de grafo del MCP → paths → `get_file_content` (el tool `execute_cypher` es interno del **chat** del ingest, no del servidor MCP HTTP) | Sí |
+| **Rutas API** | `semantic_search` o consultas vía herramientas del MCP; luego `get_file_content` en path (o API REST del despliegue si está expuesta) | Sí |
 | **Variables de entorno** | `get_file_content` en `.env.example`, `env.example`, etc. | Sí |
 
 **Flujo esquema BD (sin asumir Prisma/TypeORM):**
 
 1. Probar `get_file_content("prisma/schema.prisma")` — si existe, Prisma.
-2. Si falla: `execute_cypher` con `MATCH (m:Model) RETURN m.path` — TypeORM/entities.
+2. Si falla: obtener paths de nodos `Model` vía `ask_codebase` (pregunta explícita por entidades / paths) o endpoint de grafo del backend si está publicado — no hay herramienta `execute_cypher` en el MCP.
 3. Monorepo: `apps/api/prisma/schema.prisma`, `libs/db/prisma/schema.prisma`, `libs/*/entities/*.ts`.
 4. Con cada path obtenido: `get_file_content(path)`.
 
-**Rutas API:** `execute_cypher` con `MATCH (nc:NestController) RETURN nc.path, nc.name` (o `Route` para frontend).
+**Rutas API:** `semantic_search` con términos del controlador, o `ask_codebase`, o consulta Cypher fuera del MCP (API interna / ingest).
 
 **Env:** `get_file_content(".env.example")`; alternativas: `env.example`, `.env.sample`, `apps/*/.env.example`.
 

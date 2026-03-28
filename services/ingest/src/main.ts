@@ -9,6 +9,80 @@ import { getFalkorConfig, GRAPH_NAME, isProjectShardingEnabled } from './pipelin
 import { runFalkorRepoIdBackfill } from './pipeline/producer';
 import * as express from 'express';
 
+/** Clave en `ingest_runtime_flags`: evita repetir FLUSHALL en reinicios si el env sigue puesto. */
+const FALKOR_FLUSH_FLAG_KEY = 'falkor_flushall_once';
+
+function isTruthyEnv(v: string | undefined): boolean {
+  if (!v?.trim()) return false;
+  const s = v.trim().toLowerCase();
+  return s === '1' || s === 'true' || s === 'yes';
+}
+
+/**
+ * Si `FALKOR_FLUSH_ALL_ONCE` está activo y la flag no está en Postgres: ejecuta FLUSHALL en FalkorDB
+ * y registra la flag. Así el próximo deploy puede llevar el env una vez sin borrar el grafo en cada reinicio.
+ */
+async function runFalkorFlushAllOnceIfRequested(): Promise<void> {
+  if (!isTruthyEnv(process.env.FALKOR_FLUSH_ALL_ONCE)) return;
+
+  const pgDs = new DataSource({
+    type: 'postgres',
+    host: process.env.PGHOST ?? 'localhost',
+    port: parseInt(process.env.PGPORT ?? '5432', 10),
+    username: process.env.PGUSER ?? 'falkorspecs',
+    password: process.env.PGPASSWORD ?? 'falkorspecs',
+    database: process.env.PGDATABASE ?? 'falkorspecs',
+  });
+  await pgDs.initialize();
+  try {
+    const existing = await pgDs.query(
+      `SELECT 1 AS x FROM ingest_runtime_flags WHERE flag_key = $1 LIMIT 1`,
+      [FALKOR_FLUSH_FLAG_KEY],
+    );
+    if (Array.isArray(existing) && existing.length > 0) {
+      console.log(
+        `[ingest] FALKOR_FLUSH_ALL_ONCE omitido: ya aplicado (flag ${FALKOR_FLUSH_FLAG_KEY}). Quita el env si no lo necesitas.`,
+      );
+      return;
+    }
+  } finally {
+    await pgDs.destroy();
+  }
+
+  const config = getFalkorConfig();
+  let falkor: Awaited<ReturnType<typeof FalkorDB.connect>> | null = null;
+  try {
+    falkor = await FalkorDB.connect({ socket: { host: config.host, port: config.port } });
+    const redis = await falkor.connection;
+    const flush = (redis as { flushAll?: () => Promise<unknown> }).flushAll;
+    if (typeof flush !== 'function') {
+      throw new Error('Cliente Redis sin método flushAll');
+    }
+    await flush.call(redis);
+    console.warn('[ingest] FalkorDB: FLUSHALL ejecutado (FALKOR_FLUSH_ALL_ONCE). Re-sincroniza los repos.');
+  } catch (err) {
+    console.error('[ingest] FALKOR_FLUSH_ALL_ONCE falló:', (err as Error)?.message ?? err);
+    throw err;
+  } finally {
+    if (falkor) await falkor.close();
+  }
+
+  const pgInsert = new DataSource({
+    type: 'postgres',
+    host: process.env.PGHOST ?? 'localhost',
+    port: parseInt(process.env.PGPORT ?? '5432', 10),
+    username: process.env.PGUSER ?? 'falkorspecs',
+    password: process.env.PGPASSWORD ?? 'falkorspecs',
+    database: process.env.PGDATABASE ?? 'falkorspecs',
+  });
+  await pgInsert.initialize();
+  try {
+    await pgInsert.query(`INSERT INTO ingest_runtime_flags (flag_key) VALUES ($1)`, [FALKOR_FLUSH_FLAG_KEY]);
+  } finally {
+    await pgInsert.destroy();
+  }
+}
+
 /**
  * Ejecuta migraciones TypeORM pendientes antes de arrancar (necesario en prod con synchronize=false).
  * @returns {Promise<void>}
@@ -63,6 +137,7 @@ async function runFalkorRepoIdMigration(): Promise<void> {
 /** Arranca NestJS con body parser (rawBody para webhooks) y CORS. */
 async function bootstrap() {
   await runMigrations();
+  await runFalkorFlushAllOnceIfRequested();
   await runFalkorRepoIdMigration();
   const app = await NestFactory.create(AppModule, {
     bodyParser: false,

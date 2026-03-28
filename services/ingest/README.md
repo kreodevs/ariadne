@@ -20,6 +20,7 @@ Microservicio NestJS que reemplaza la ingesta basada en directorio local (chokid
 
 - `POST /repositories` — Registrar repositorio (provider, projectKey, repoSlug, defaultBranch, credentialsRef opcional)
 - `GET /repositories` — Listar repositorios
+- `DELETE /repositories/:id` — Borra el repo en Postgres (jobs, `indexed_files`, vínculos a proyectos vía CASCADE) y **antes** elimina en FalkorDB todos los nodos con ese `repoId` en cada `projectId` donde estuvo indexado (`clearProjectRepo`), para no dejar basura consultable vía MCP/RAG.
 - `GET /repositories/:id` — Detalle de un repositorio
 - `GET /repositories/:id/file?path=&ref=` — Contenido de un archivo (Bitbucket/GitHub). `path` relativo o del grafo (repo-slug/src/foo.ts)
 - `POST /repositories/:id/embed-index` — Embeddings en Function, Component y **Document** (chunks `.md`) para RAG; EMBEDDING_PROVIDER + API key, FalkorDB 4.0+
@@ -41,6 +42,7 @@ Tras cada sync (normal o resync), se ejecuta automáticamente `embed-index` si h
 - `PORT` — Puerto HTTP (default 3002)
 - `PGHOST`, `PGPORT`, `PGUSER`, `PGPASSWORD`, `PGDATABASE` — PostgreSQL
 - `FALKORDB_HOST`, `FALKORDB_PORT` — FalkorDB (sync en `FalkorSpecs`; shadow en `FalkorSpecsShadow:<sesión>` por request)
+- `FALKOR_FLUSH_ALL_ONCE` — Si es `1`/`true`/`yes`, en el **primer** arranque del ingest (tras migraciones) ejecuta **Redis FLUSHALL** sobre Falkor y guarda la marca `falkor_flushall_once` en la tabla `ingest_runtime_flags`. Reinicios posteriores **no** repiten el vaciado aunque el env siga puesto. Para otro reset en el futuro: `DELETE FROM ingest_runtime_flags WHERE flag_key = 'falkor_flushall_once';` y vuelve a definir el env en un deploy.
 - `FALKOR_SHARD_BY_PROJECT` — Un grafo Redis por `projectId` (`AriadneSpecs:<uuid>`).
 - `FALKOR_SHARD_BY_DOMAIN` — Partición adicional por **primer segmento** de la ruta relativa al repo (`apps/foo` → grafo `AriadneSpecs:<uuid>:apps`). Requiere sharding por proyecto. Alternativa a nivel BD: columna `projects.falkor_shard_mode = 'domain'` (p. ej. tras desborde).
 - `FALKOR_AUTO_DOMAIN_OVERFLOW` — Si está activo y el grafo monolítico supera `FALKOR_GRAPH_NODE_SOFT_LIMIT`, se actualiza `falkor_shard_mode` a `domain`; hace falta **resync** para repartir datos.

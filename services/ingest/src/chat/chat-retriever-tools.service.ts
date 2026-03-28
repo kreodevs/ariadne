@@ -94,7 +94,16 @@ export class ChatRetrieverToolsService {
           toolResult = `Búsqueda semántica: 0 resultados.\n${diag}\nPrueba execute_cypher si el índice vectorial no aplica.`;
         }
       } else if (fn === 'get_graph_summary') {
-        const summary = await this.cypher.getGraphSummary(repositoryId);
+        let summary: Awaited<ReturnType<ChatCypherService['getGraphSummary']>>;
+        if (projectScope) {
+          const single =
+            scope?.repoIds?.length === 1 ? scope.repoIds[0]! : undefined;
+          summary = single
+            ? await this.cypher.getGraphSummary(single, false, true)
+            : await this.cypher.getGraphSummaryForProject(projectId);
+        } else {
+          summary = await this.cypher.getGraphSummary(repositoryId, false, true);
+        }
         toolResult = `Conteos: ${JSON.stringify(summary.counts)}. Muestras: ${JSON.stringify(summary.samples, null, 2).slice(0, 3500)}...`;
       } else if (fn === 'get_file_content') {
         const p = String(req.arguments.path ?? '').trim();

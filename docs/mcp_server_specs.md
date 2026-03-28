@@ -31,7 +31,7 @@ Cuando el ingest/API despliegan **un grafo Redis/Falkor por `projectId`** (`Aria
 
 - El **MCP** selecciona el grafo con `graphNameForProject(projectId)` tras resolver/inferir el proyecto.
 - **Inferencia sin `projectId`:** si está configurado `INGEST_URL`, el MCP puede obtener candidatos con `GET /projects` y `GET /repositories` y probar el shard hasta acotar el archivo; si no hay ingest, conviene **`.ariadne-project`** o **`projectId` explícito**.
-- **`semantic_search`:** con sharding activo exige **`projectId`** explícito (no infiere desde ruta).
+- **`semantic_search`:** ver [Tool: `semantic_search`](#tool-semantic_search). Con sharding activo exige **`projectId`** explícito (no infiere desde ruta).
 - **`find_similar_implementations`:** con sharding activo exige **`projectId`** o **`currentFilePath`** (inferencia vía ingest cuando aplica).
 - La **API Nest** (`/api/graph/component`, `/impact`, etc.) acepta query **`projectId`** para caché y shard; el **manual** del grafo con sharding requiere `?projectId=`.
 
@@ -86,12 +86,20 @@ RETURN c, dependency
 - **Argumentos:** `path: string`, `projectId?: string`, `currentFilePath?: string`, `ref?: string` (rama).
 - **Implementación ingest:** Intenta `GET /repositories/:id/file`; si 404, `GET /projects/:id/file`. Acepta ID de proyecto o de repo.
 
+### Tool: `semantic_search`
+
+- **Descripción:** Búsqueda por palabra clave (y vectorial contra nodos indexados si hay embed-index y `/embed` disponible) sobre el grafo Falkor.
+- **Argumentos:** `query: string` (requerido), `projectId?: string`, `limit?: number`. **No** admite **`scope`** ni **`currentFilePath`**. Para acotar a un repo concreto, pasa el UUID adecuado como `projectId` (p. ej. `roots[].id` de `list_known_projects`).
+- **Sin sharding (`FALKOR_SHARD_BY_PROJECT` apagado):** si omites `projectId`, las consultas no filtran por `projectId` en el grafo monolito: el alcance es **global** respecto a todos los nodos mezclados en ese grafo (no elige “el primer root” del workspace).
+- **Con sharding activo:** `projectId` **obligatorio**; el handler no infiere proyecto desde la ruta del IDE.
+- **Contraste con `ask_codebase`:** acotar por `repoIds` / prefijos / globs va en el parámetro **`scope`** de **`ask_codebase`** (ingest), no en `semantic_search`.
+
 ### Tool: `ask_codebase`
 
 - **Descripción:** Pregunta en lenguaje natural sobre el código del proyecto. Delega al chat del ingest (Coordinator → CodeAnalysis o KnowledgeExtraction).
-- **Argumentos:** `question: string`, `projectId?: string`, `currentFilePath?: string` (para inferir proyecto), **`scope?`** (objeto opcional: `repoIds[]`, `includePathPrefixes[]`, `excludePathGlobs[]` — acota Cypher, búsqueda semántica y lectura de archivos en el ingest), **`twoPhase?`** (boolean; prioriza JSON de retrieval en el sintetizador; en ingest se alinea con `CHAT_TWO_PHASE`).
+- **Argumentos:** `question: string`, `projectId?: string`, `currentFilePath?: string` (para inferir proyecto), **`scope?`** (objeto opcional: `repoIds[]`, `includePathPrefixes[]`, `excludePathGlobs[]` — acota Cypher, búsqueda semántica y lectura de archivos en el ingest), **`twoPhase?`** (boolean; prioriza JSON de retrieval en el sintetizador; en ingest se alinea con `CHAT_TWO_PHASE`), **`responseMode?`:** `"default"` \| **`"evidence_first"`** — fuerza two-phase, aumenta el recorte de contexto hacia el sintetizador (`CHAT_EVIDENCE_FIRST_MAX_CHARS` en ingest) y aplica prompt SDD (“evidencia primero”, listados anclados). Expuesto en el MCP con `enum` en `tools/list`; con **`additionalProperties: false`**, solo se permiten las propiedades del esquema (incluido `responseMode`).
 - **Propósito:** Preguntas tipo "qué hace este proyecto", "cómo está implementado el login". Requiere INGEST_URL y OPENAI_API_KEY.
-- **Implementación ingest:** Intenta `POST /projects/:projectId/chat` (chat por proyecto, todos los repos); si 404, `POST /repositories/:projectId/chat` (chat por repo). Body admite `message`, `history`, `scope`, `twoPhase`.
+- **Implementación ingest:** Intenta `POST /projects/:projectId/chat` (chat por proyecto, todos los repos); si 404, `POST /repositories/:projectId/chat` (chat por repo). Body admite `message`, `history`, `scope`, `twoPhase`, `responseMode`.
 - **Listas exhaustivas:** Usar **`get_modification_plan`** para archivos a modificar y preguntas de afinación (flujo legacy/MaxPrime).
 
 ### Tool: `get_modification_plan` (contrato MaxPrime / flujo legacy)
@@ -123,7 +131,7 @@ Para que la IA no rompa código al refactorizar, el MCP implementa operaciones s
 
 **Contexto de proyecto:** Las herramientas basadas en grafo aceptan `projectId` y/o `currentFilePath`. Si no se pasa `projectId`, se infiere desde `currentFilePath` (monolito) o, con **sharding**, vía ingest + barrido de shards cuando `INGEST_URL` está definido. El `projectId` puede ser ID de proyecto (Ariadne) o ID de repo (`roots[].id`); las herramientas que llaman al ingest para file/chat resuelven automáticamente (fallback repo → project o project → repo según el caso).
 
-**Resumen ingest:** `get_file_content` / `get_file_context` / `get_project_standards`: intentan `GET /repositories/:id/file` y si 404 `GET /projects/:id/file`. `ask_codebase`: intenta `POST /projects/:id/chat` y si 404 `POST /repositories/:id/chat` (body opcional: `scope`, `twoPhase`). `get_modification_plan`: `POST /projects/:projectId/modification-plan` (body opcional: `scope`). `get_project_analysis`: `POST /repositories/:id/analyze` (id = repo; para análisis por proyecto usar el id de un repo del proyecto, p. ej. `roots[0].id`).
+**Resumen ingest:** `get_file_content` / `get_file_context` / `get_project_standards`: intentan `GET /repositories/:id/file` y si 404 `GET /projects/:id/file`. `ask_codebase`: intenta `POST /projects/:id/chat` y si 404 `POST /repositories/:id/chat` (body opcional: `scope`, `twoPhase`, `responseMode`). `get_modification_plan`: `POST /projects/:projectId/modification-plan` (body opcional: `scope`). `get_project_analysis`: `POST /repositories/:id/analyze` (id = repo; para análisis por proyecto usar el id de un repo del proyecto, p. ej. `roots[0].id`).
 
 ### Tool: `analyze_local_changes` (Pre-flight check)
 

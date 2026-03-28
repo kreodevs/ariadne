@@ -50,6 +50,7 @@ function getRedisConnection() {
   ],
   controllers: [SyncController],
   providers: [SyncService, SyncProcessor],
+  exports: [SyncService],
 })
 /** Módulo de sincronización con BullMQ (queue sync). */
 export class SyncModule {}

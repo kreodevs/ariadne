@@ -29,7 +29,7 @@ Cuando no hay `.ariadne-project`:
 |----------------------|-----------------|-------|
 | **Diagnóstico de archivo/componente/hook específico** ("diagnóstico de usePauta.tsx", "analiza Board") | **`get_component_graph`**, **`get_legacy_impact`**, **`get_definitions`**, **`get_references`** | `list_known_projects` → projectId → `get_component_graph(componentName/hookName)` + `get_legacy_impact(nodeName)` + `get_definitions` / `get_references` para estructura, impacto y usos. **No solo Read/Grep.** |
 | Diagnóstico por repo: deuda técnica, duplicados, reingeniería, código muerto, auditoría heurística de seguridad (`seguridad`) | **`get_project_analysis`** | `list_known_projects` → **`roots[].id`** del repo objetivo → `get_project_analysis(projectId, mode)` (parámetro MCP = id de repo) |
-| Preguntas abiertas en lenguaje natural ("¿cómo funciona X?", "explica el flujo de Y") | **`ask_codebase`** | Chat del ingest. Opcional **`scope`**, **`twoPhase`**. Requiere INGEST_URL y OPENAI_API_KEY. |
+| Preguntas abiertas en lenguaje natural ("¿cómo funciona X?", "explica el flujo de Y") | **`ask_codebase`** | Chat del ingest. Opcional **`scope`**, **`twoPhase`** y **`responseMode`** (`evidence_first` para síntesis “evidencia primero”). Requiere INGEST_URL y OPENAI_API_KEY. |
 | **Lista de archivos a modificar + preguntas de afinación (flujo legacy/MaxPrime)** | **`get_modification_plan`** | `list_known_projects` → `projectId` = `roots[].id` en multi-root. Body opcional **`scope`**. `POST /projects/:id/modification-plan` (proyecto o repo). |
 | Búsqueda por término, exploración | `semantic_search`, `find_similar_implementations` | Consulta directa al grafo. |
 | Antes de editar componente/función | `validate_before_edit` | Ver sección Flujo SDD. |

@@ -326,10 +326,11 @@ export class ChatHandlersService {
     const repo = await this.repos.findOne(repositoryId);
     const projectId = await this.resolveProjectIdForRepo(repo.id);
 
-    const summary = await this.cypher.getGraphSummary(repositoryId);
+    const summary = await this.cypher.getGraphSummary(repositoryId, false, true);
     const routes = await this.cypher.executeCypher(
       projectId,
-      `MATCH (r:Route) WHERE r.projectId = $projectId RETURN r.path as path, r.componentName as component ORDER BY r.path`,
+      `MATCH (r:Route) WHERE r.projectId = $projectId AND r.repoId = $repoId RETURN r.path as path, r.componentName as component ORDER BY r.path`,
+      { repoId: repositoryId },
     ) as Array<{ path: string; component?: string }>;
     const components = (summary.samples['Component'] ?? []) as Array<{ name: string }>;
     const files = (summary.samples['File'] ?? []) as Array<{ path: string }>;
@@ -928,7 +929,7 @@ ${SCHEMA}${EXAMPLES}
               toolResult = 'Búsqueda semántica no encontró resultados (puede no haber embed-index). Prueba execute_cypher con CONTAINS.';
             }
           } else if (fn.name === 'get_graph_summary') {
-            const summary = await this.cypher.getGraphSummary(repositoryId);
+            const summary = await this.cypher.getGraphSummary(repositoryId, false, true);
             toolResult = `Conteos: ${JSON.stringify(summary.counts)}. Muestras: ${JSON.stringify(summary.samples, null, 2).slice(0, 1500)}...`;
           } else if (fn.name === 'get_file_content') {
             const args = JSON.parse(fn.arguments) as { path: string };

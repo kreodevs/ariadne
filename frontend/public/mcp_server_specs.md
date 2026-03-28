@@ -75,9 +75,9 @@ RETURN c, dependency
 ### Tool: `ask_codebase`
 
 - **Descripción:** Pregunta en lenguaje natural sobre el código del proyecto. Delega al chat del ingest (Coordinator → CodeAnalysis o KnowledgeExtraction).
-- **Argumentos:** `question: string`, `projectId?: string`, `currentFilePath?: string` (para inferir proyecto), **`scope?`** (`repoIds[]`, `includePathPrefixes[]`, `excludePathGlobs[]`), **`twoPhase?`** (boolean; sintetizador prioriza JSON de retrieval; ingest: `CHAT_TWO_PHASE`).
+- **Argumentos:** `question: string`, `projectId?: string`, `currentFilePath?: string` (para inferir proyecto), **`scope?`** (`repoIds[]`, `includePathPrefixes[]`, `excludePathGlobs[]`), **`twoPhase?`** (boolean; sintetizador prioriza JSON de retrieval; ingest: `CHAT_TWO_PHASE`), **`responseMode?`:** `"default"` \| **`"evidence_first"`** (two-phase + más contexto al sintetizador, salida “evidencia primero”; ver ingest `CHAT_EVIDENCE_FIRST_MAX_CHARS`). Declarado en `tools/list` para `ask_codebase` junto con `additionalProperties: false`.
 - **Propósito:** Preguntas tipo "qué hace este proyecto", "cómo está implementado el login". Requiere INGEST_URL y OPENAI_API_KEY.
-- **Implementación ingest:** Intenta `POST /projects/:projectId/chat` (chat por proyecto, todos los repos); si 404, `POST /repositories/:projectId/chat` (chat por repo). Body: `message`, `history?`, `scope?`, `twoPhase?`.
+- **Implementación ingest:** Intenta `POST /projects/:projectId/chat` (chat por proyecto, todos los repos); si 404, `POST /repositories/:projectId/chat` (chat por repo). Body: `message`, `history?`, `scope?`, `twoPhase?`, `responseMode?`.
 - **Listas exhaustivas:** Usar **`get_modification_plan`** para archivos a modificar y preguntas de afinación (flujo legacy/MaxPrime).
 
 ### Tool: `get_modification_plan` (contrato MaxPrime / flujo legacy)
@@ -110,7 +110,7 @@ Para que la IA no rompa código al refactorizar, el MCP implementa operaciones s
 
 **Contexto de proyecto:** Casi todas aceptan `projectId` y `currentFilePath` (si falta, inferencia por ruta). Para **file/chat**, proyecto o `roots[].id` con fallback en ingest. **`get_project_analysis`** es excepción: solo **`roots[].id`** (repo), porque el endpoint es `POST /repositories/:id/analyze`.
 
-**Resumen ingest:** `get_file_content` / `get_file_context` / `get_project_standards`: intentan `GET /repositories/:id/file` y si 404 `GET /projects/:id/file`. `ask_codebase`: intenta `POST /projects/:id/chat` y si 404 `POST /repositories/:id/chat` (`scope`, `twoPhase` opcionales). `get_modification_plan`: `POST /projects/:projectId/modification-plan` (`scope` opcional). `get_project_analysis`: `POST /repositories/:id/analyze` (id = repo).
+**Resumen ingest:** `get_file_content` / `get_file_context` / `get_project_standards`: intentan `GET /repositories/:id/file` y si 404 `GET /projects/:id/file`. `ask_codebase`: intenta `POST /projects/:id/chat` y si 404 `POST /repositories/:id/chat` (`scope`, `twoPhase`, `responseMode` opcionales). `get_modification_plan`: `POST /projects/:projectId/modification-plan` (`scope` opcional). `get_project_analysis`: `POST /repositories/:id/analyze` (id = repo).
 
 ### Tool: `analyze_local_changes` (Pre-flight check)
 
