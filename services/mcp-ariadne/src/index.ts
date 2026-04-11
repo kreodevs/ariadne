@@ -10,6 +10,8 @@ import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/
 import { ListToolsRequestSchema, CallToolRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 import { isProjectShardingEnabled } from "ariadne-common";
 import { getGraph, closeFalkor, forEachProjectShardGraph } from "./falkor.js";
+import { getRedis, closeRedis } from "./redis.js";
+import { loadAriadneProjectConfig, resolveAbsolutePath } from "./utils.js";
 
 const MCP_PATH = "/mcp";
 
@@ -435,6 +437,45 @@ function createMcpServer(): Server {
           currentFilePath: { type: "string", description: "Ruta del archivo que el IDE está editando (opcional, para inferir projectId)." },
         },
         required: [],
+        additionalProperties: false,
+      },
+    },
+    {
+      name: "get_sync_status",
+      description:
+        "Consulta el estado de la última sincronización del proyecto (en curso, completado, fallido). Útil para saber si el grafo está actualizado.",
+      inputSchema: {
+        type: "object" as const,
+        properties: {
+          projectId: { type: "string", description: "ID del proyecto (list_known_projects)" },
+          currentFilePath: { type: "string", description: "Ruta del archivo para inferir proyecto (opcional)" },
+        },
+        additionalProperties: false,
+      },
+    },
+    {
+      name: "get_debt_report",
+      description:
+        "Genera un informe descriptivo sobre la deuda técnica: archivos huérfanos (dead code) y componentes con alta complejidad estructural.",
+      inputSchema: {
+        type: "object" as const,
+        properties: {
+          projectId: { type: "string", description: "ID del proyecto (list_known_projects)" },
+          currentFilePath: { type: "string", description: "Ruta del archivo para inferir proyecto (opcional)" },
+        },
+        additionalProperties: false,
+      },
+    },
+    {
+      name: "find_duplicates",
+      description:
+        "Busca fragmentos de lógica o componentes idénticos en el proyecto (análisis cross-package) basándose en huellas digitales de contenido.",
+      inputSchema: {
+        type: "object" as const,
+        properties: {
+          projectId: { type: "string", description: "ID del proyecto (list_known_projects)" },
+          currentFilePath: { type: "string", description: "Ruta del archivo para inferir proyecto (opcional)" },
+        },
         additionalProperties: false,
       },
     },
@@ -967,12 +1008,21 @@ async function fetchFileFromIngest(
 
   if (name === "get_component_graph") {
     const componentName = (args?.componentName as string) ?? "";
-    const depth = Math.min(Math.max(1, (args?.depth as number) ?? 2), 10); // Acotado 1-10; FalkorDB no soporta $depth en variable-length path
+    const depth = Math.min(Math.max(1, (args?.depth as number) ?? 2), 10);
     let projectId = args?.projectId as string | undefined;
     const currentFilePath = args?.currentFilePath as string | undefined;
+    
     if (!projectId && currentFilePath) {
       projectId = (await applyShardingInference(undefined, currentFilePath)) ?? undefined;
     }
+
+    const redis = getRedis();
+    const cacheKey = `ariadne:component_graph:${projectId ?? 'global'}:${componentName}:${depth}`;
+    try {
+      const cached = await redis.get(cacheKey);
+      if (cached) return { content: [{ type: "text", text: cached }] };
+    } catch (e) { console.error("[Redis Cache Error] get_component_graph:", e); }
+
     graph = await getGraph(projectId ?? undefined);
     const exists = await nodeExists(graph, componentName, projectId ?? null);
     if (!exists) {
@@ -996,6 +1046,11 @@ async function fetchFileFromIngest(
     const data = result.data ?? [];
     const headers = result.headers ?? ["c", "dependency"];
     const markdown = formatComponentGraph(componentName, data, headers);
+    
+    try {
+      await redis.set(cacheKey, markdown, "EX", 120); // 2 minutos de cache
+    } catch (e) { /* ignore */ }
+
     return { content: [{ type: "text", text: markdown }] };
   }
 
@@ -1006,6 +1061,14 @@ async function fetchFileFromIngest(
     if (!projectId && legacyFilePath) {
       projectId = (await applyShardingInference(undefined, legacyFilePath)) ?? undefined;
     }
+
+    const redis = getRedis();
+    const cacheKey = `ariadne:legacy_impact:${projectId ?? 'global'}:${nodeName}`;
+    try {
+      const cached = await redis.get(cacheKey);
+      if (cached) return { content: [{ type: "text", text: cached }] };
+    } catch (e) { console.error("[Redis Cache Error] get_legacy_impact:", e); }
+
     graph = await getGraph(projectId ?? undefined);
     const exists = await nodeExists(graph, nodeName, projectId ?? null);
     if (!exists) {
@@ -1033,6 +1096,11 @@ async function fetchFileFromIngest(
     const data = result.data ?? [];
     const headers = result.headers ?? ["name", "labels"];
     const markdown = formatLegacyImpact(nodeName, data, headers);
+
+    try {
+      await redis.set(cacheKey, markdown, "EX", 120);
+    } catch (e) { /* ignore */ }
+
     return { content: [{ type: "text", text: markdown }] };
   }
 
@@ -1372,6 +1440,107 @@ async function fetchFileFromIngest(
     return { content: [{ type: "text", text: lines.join("\n") }] };
   }
 
+  if (name === "get_sync_status") {
+    let projectId = args?.projectId as string | undefined;
+    const currentFilePath = args?.currentFilePath as string | undefined;
+    if (!projectId && currentFilePath) {
+      projectId = (await applyShardingInference(undefined, currentFilePath)) ?? undefined;
+    }
+    if (!projectId) {
+      return {
+        content: [{ type: "text", text: "**Error:** Se requiere `projectId` (list_known_projects) o `currentFilePath`." }],
+        isError: true,
+      };
+    }
+    const ingestUrl = (process.env.INGEST_URL ?? process.env.ARIADNESPEC_INGEST_URL ?? "http://localhost:3002").replace(/\/$/, "");
+    const redis = getRedis();
+    const cacheKey = `ariadne:sync_status:${projectId}`;
+
+    try {
+      const cached = await redis.get(cacheKey);
+      if (cached) {
+        return { content: [{ type: "text", text: `### Estado de Sincronización (Cached)\n\n${cached}` }] };
+      }
+
+      const res = await fetch(`${ingestUrl}/projects/${projectId}/sync-status`);
+      if (!res.ok) {
+        return { content: [{ type: "text", text: `**Error ${res.status}:** No se pudo obtener el estado del proyecto.` }], isError: true };
+      }
+      const data = (await res.json()) as any;
+      const statusIcon = data.status === "up_to_date" ? "✅" : data.status === "syncing" ? "⏳" : "⚠️";
+      const text = `${statusIcon} **Estatus:** \`${data.status}\`\n- **Última Sincronización:** ${data.lastSync ? new Date(data.lastSync).toLocaleString() : "Nunca"}\n\n**Jobs Recientes:**\n${(data.details || []).slice(0, 5).map((j: any) => `- [${j.type}] ${j.status === "completed" ? "✅" : "❌"} (${new Date(j.createdAt).toLocaleDateString()})`).join("\n")}`;
+      
+      await redis.set(cacheKey, text, "EX", 30);
+      return { content: [{ type: "text", text: `### Estado de Sincronización\n\n${text}` }] };
+    } catch (err: any) {
+      return { content: [{ type: "text", text: `**Error de red (Ingest):** ${err.message}` }], isError: true };
+    }
+  }
+
+  if (name === "get_debt_report") {
+    let projectId = args?.projectId as string | undefined;
+    const currentFilePath = args?.currentFilePath as string | undefined;
+    if (!projectId && currentFilePath) {
+      projectId = (await applyShardingInference(undefined, currentFilePath)) ?? undefined;
+    }
+    if (!projectId) {
+      return { content: [{ type: "text", text: "**Error:** Se requiere `projectId`." }], isError: true };
+    }
+
+    try {
+      const q = `
+        MATCH (n)
+        WHERE (n.projectId = $projectId OR n.repositoryId = $projectId) AND (n:Function OR n:Component)
+        WITH n, size((n)-[:CALLS]->()) AS outDegree, size((n)<-[:CALLS]-()) AS inDegree
+        WHERE outDegree = 0 AND inDegree = 0
+        RETURN n.name AS nodeName, n.path AS filePath
+        LIMIT 50
+      `;
+      const res = await graph.query(q, { params: { projectId } });
+      const isolated = res.data as Array<Record<string, any>> || [];
+      const lines = isolated.map((r) => `- \`${r.nodeName}\` en \`${r.filePath}\``);
+      const text = lines.length ? lines.join("\n") : "No se encontró código muerto o aislado evidente.";
+      return { content: [{ type: "text", text: `### Informe de Deuda Técnica (Nativo)\n\n**Posibles nodos huérfanos/muertos:**\n${text}` }] };
+    } catch (err: any) {
+      return { content: [{ type: "text", text: `**Error:** ${err.message}` }], isError: true };
+    }
+  }
+
+  if (name === "find_duplicates") {
+    let projectId = args?.projectId as string | undefined;
+    const currentFilePath = args?.currentFilePath as string | undefined;
+    if (!projectId && currentFilePath) {
+      projectId = (await applyShardingInference(undefined, currentFilePath)) ?? undefined;
+    }
+    if (!projectId) {
+      return { content: [{ type: "text", text: "**Error:** Se requiere `projectId`." }], isError: true };
+    }
+    
+    try {
+      const q = `
+        MATCH (f:File)
+        WHERE (f.projectId = $projectId OR f.repositoryId = $projectId) AND f.contentHash IS NOT NULL
+        WITH f.contentHash AS cHash, collect(f.path) AS files, count(f) AS count
+        WHERE count > 1
+        RETURN cHash, files, count
+        ORDER BY count DESC LIMIT 10
+      `;
+      const res = await graph.query(q, { params: { projectId } });
+      const duplicates = res.data as Array<Record<string, any>> || [];
+      if (duplicates.length === 0) {
+        return { content: [{ type: "text", text: "No se encontraron duplicados exactos basados en hash de contenido." }] };
+      }
+
+      const text = duplicates.map((r, i) => 
+        `#### Grupo ${i+1} (${r.count} archivos)\n- **Hash:** \`${String(r.cHash).substring(0, 8)}\`\n- **Archivos:**\n${(r.files as string[]).map(f => `  - \`${f}\``).join("\n")}`
+      ).join("\n\n");
+
+      return { content: [{ type: "text", text: `### Análisis de Duplicados (Nativo)\n\nSe encontraron ${duplicates.length} grupos de archivos idénticos en el proyecto.\n\n${text}` }] };
+    } catch (err: any) {
+      return { content: [{ type: "text", text: `**Error:** ${err.message}` }], isError: true };
+    }
+  }
+
   if (name === "get_project_analysis") {
     const projectId = (args?.projectId as string) ?? "";
     const mode = ((args?.mode as string) ?? "diagnostico") as
@@ -1409,7 +1578,22 @@ async function fetchFileFromIngest(
         data.mode === "codigo_muerto"
           ? "[Presentar este análisis tal cual, sin reformatear ni añadir categorías. Es la clasificación oficial.]\n\n"
           : "";
-      return { content: [{ type: "text", text: `## ${title}\n\n${passthrough}${data.summary}` }] };
+          
+      let summary = data.summary;
+      const config = loadAriadneProjectConfig(process.cwd());
+      if (config) {
+        summary = summary.replace(/`([^`\n]+\.[a-zA-Z0-9]{1,4})`/g, (match, p1) => {
+          if (p1.includes('/') || p1.includes('\\')) {
+            const abs = resolveAbsolutePath(p1, projectId, config);
+            if (abs && abs.startsWith('/')) { // Solo enlazamos si resolvió absoluto
+              return `[${match}](file://${abs})`;
+            }
+          }
+          return match;
+        });
+      }
+
+      return { content: [{ type: "text", text: `## ${title}\n\n${passthrough}${summary}` }] };
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       return { content: [{ type: "text", text: `**Error:** No se pudo obtener el análisis. ¿INGEST_URL configurado? ${msg}` }], isError: true };
@@ -1623,10 +1807,15 @@ async function fetchFileFromIngest(
     const compProj = projectId ? ", projectId: $projectId" : "";
     const compProjWhere = projectId ? " AND n.projectId = $projectId" : "";
     const projFilter = projectId ? " AND n.projectId = $projectId" : "";
-    const compQ = `MATCH (f:File)-[:CONTAINS]->(n:Component {name: $symbolName${compProj}}) RETURN f.path AS path, n.name AS name, 'Component' AS kind LIMIT 5`;
-    const compFallbackQ = `MATCH (n:Component {name: $symbolName}) WHERE 1=1${compProjWhere} OPTIONAL MATCH (f:File)-[:CONTAINS]->(n) WITH coalesce(f.path, '(sin path)') AS path, n.name AS name RETURN path, name, 'Component' AS kind LIMIT 5`;
-    const funcQ = `MATCH (n:Function) WHERE n.name = $symbolName${projFilter} RETURN n.path AS path, n.name AS name, n.startLine AS startLine, n.endLine AS endLine, 'Function' AS kind LIMIT 5`;
-    const modelQ = `MATCH (n:Model) WHERE n.name = $symbolName${projFilter} RETURN n.path AS path, n.name AS name, 'Model' AS kind LIMIT 5`;
+    
+    // Cargamos config local para resolución de paths
+    const config = loadAriadneProjectConfig();
+
+    const compQ = `MATCH (f:File)-[:CONTAINS]->(n:Component {name: $symbolName${compProj}}) RETURN f.path AS path, n.name AS name, 'Component' AS kind, n.repoId AS repoId LIMIT 5`;
+    const compFallbackQ = `MATCH (n:Component {name: $symbolName}) WHERE 1=1${compProjWhere} OPTIONAL MATCH (f:File)-[:CONTAINS]->(n) WITH coalesce(f.path, '(sin path)') AS path, n.name AS name, n.repoId AS repoId RETURN path, name, 'Component' AS kind, repoId LIMIT 5`;
+    const funcQ = `MATCH (n:Function) WHERE n.name = $symbolName${projFilter} RETURN n.path AS path, n.name AS name, n.startLine AS startLine, n.endLine AS endLine, 'Function' AS kind, n.repoId AS repoId LIMIT 5`;
+    const modelQ = `MATCH (n:Model) WHERE n.name = $symbolName${projFilter} RETURN n.path AS path, n.name AS name, 'Model' AS kind, n.repoId AS repoId LIMIT 5`;
+    
     const [compRes, funcRes, modelRes] = await Promise.all([
       graph.query(compQ, { params }) as Promise<{ data?: unknown[][] }>,
       graph.query(funcQ, { params }) as Promise<{ data?: unknown[][] }>,
@@ -1640,24 +1829,32 @@ async function fetchFileFromIngest(
     }
     const results: string[] = [];
     for (const row of compData) {
-      const path = _rv<string>(row, "path");
+      const rawPath = _rv<string>(row, "path");
       const n = _rv<string>(row, "name");
-      if (n) results.push(`**Component** \`${n}\` → \`${path ?? "(sin path)"}\``);
+      const repoId = _rv<string>(row, "repoId");
+      const resolvedPath = rawPath ? resolveAbsolutePath(rawPath, repoId, config) : "(sin path)";
+      if (n) results.push(`**Component** \`${n}\` → \`${resolvedPath}\``);
     }
     for (const row of asObjRows(funcRes.data)) {
-      const path = _rv<string>(row, "path");
+      const rawPath = _rv<string>(row, "path");
       const n = _rv<string>(row, "name");
+      const repoId = _rv<string>(row, "repoId");
       const startLine = _rv<number | null>(row, "startLine");
       const endLine = _rv<number | null>(row, "endLine");
-      if (path && n) {
+      if (rawPath && n) {
+        const resolvedPath = resolveAbsolutePath(rawPath, repoId, config);
         const lineInfo = startLine != null && endLine != null ? ` (L${startLine}-${endLine})` : "";
-        results.push(`**Function** \`${n}\` → \`${path}\`${lineInfo}`);
+        results.push(`**Function** \`${n}\` → \`${resolvedPath}\`${lineInfo}`);
       }
     }
-    for (const row of (modelRes.data ?? [])) {
-      const path = _rv<string>(row, "path");
+    for (const row of asObjRows(modelRes.data)) {
+      const rawPath = _rv<string>(row, "path");
       const n = _rv<string>(row, "name");
-      if (path && n) results.push(`**Model** \`${n}\` → \`${path}\``);
+      const repoId = _rv<string>(row, "repoId");
+      if (rawPath && n) {
+        const resolvedPath = resolveAbsolutePath(rawPath, repoId, config);
+        results.push(`**Model** \`${n}\` → \`${resolvedPath}\``);
+      }
     }
     if (results.length === 0) {
       return {
@@ -1691,19 +1888,27 @@ async function fetchFileFromIngest(
       : [];
     const where = whereParts.length ? ` WHERE ${whereParts.join(" AND ")}` : "";
     const refsQ = `MATCH (n {name: $symbolName})<-[:CALLS|RENDERS]-(dep)${where}
-      RETURN labels(dep)[0] AS kind, dep.name AS name, dep.path AS path`;
+      RETURN labels(dep)[0] AS kind, dep.name AS name, dep.path AS path, dep.repoId AS repoId`;
     const refsRes = (await graph.query(refsQ, { params })) as { data?: unknown[][] };
     const data = (refsRes.data ?? []);
+    
+    // Config local para resolución
+    const config = loadAriadneProjectConfig();
+
     const seen = new Set<string>();
     const lines = [`## Referencias: ${symbolName}`, ""];
     for (const row of data) {
       const kind = _rv<string>(row, "kind");
       const depName = _rv<string>(row, "name");
-      const path = _rv<string | null>(row, "path");
-      const key = `${kind}:${depName}:${path ?? ""}`;
+      const rawPath = _rv<string | null>(row, "path");
+      const repoId = _rv<string | null>(row, "repoId");
+      
+      const resolvedPath = rawPath ? resolveAbsolutePath(rawPath, repoId, config) : null;
+      const key = `${kind}:${depName}:${resolvedPath ?? ""}`;
+      
       if (seen.has(key)) continue;
       seen.add(key);
-      const pathStr = path ? ` — \`${path}\`` : "";
+      const pathStr = resolvedPath ? ` — \`${resolvedPath}\`` : "";
       lines.push(`- **${kind}** \`${depName}\`${pathStr}`);
     }
     if (lines.length === 2) lines.push("Ninguna referencia encontrada (nadie lo llama ni lo renderiza).");
@@ -2521,12 +2726,14 @@ async function main() {
   process.on("SIGTERM", () => {
     console.log("[AriadneSpecs MCP] SIGTERM received, closing...");
     closeFalkor();
+    closeRedis();
     httpServer.close(() => process.exit(0));
   });
 
   process.on("SIGINT", () => {
     console.log("[AriadneSpecs MCP] SIGINT received, closing...");
     closeFalkor();
+    closeRedis();
     httpServer.close(() => process.exit(0));
   });
 }

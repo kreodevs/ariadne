@@ -16,7 +16,8 @@
   "dependencies": {
     "ariadne-common": "file:../../packages/ariadne-common",
     "@modelcontextprotocol/sdk": "^1.0.0",
-    "falkordb": "^6.0.0"
+    "falkordb": "^6.0.0",
+    "ioredis": "^5.4.2"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
