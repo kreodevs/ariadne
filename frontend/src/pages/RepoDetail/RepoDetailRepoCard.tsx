@@ -10,9 +10,12 @@ interface RepoDetailRepoCardProps {
   syncing: boolean;
   deleting: boolean;
   syncFeedback: string | null;
+  embedding: boolean;
+  embedFeedback: string | null;
   onDelete: () => void;
   onSync: () => void;
   onResync: () => void;
+  onEmbedIndex: () => void;
 }
 
 function IdChip({
@@ -49,9 +52,12 @@ export function RepoDetailRepoCard({
   syncing,
   deleting,
   syncFeedback,
+  embedding,
+  embedFeedback,
   onDelete,
   onSync,
   onResync,
+  onEmbedIndex,
 }: RepoDetailRepoCardProps) {
   const effectiveProjectId = repo.projectIds?.[0] ?? repo.id;
   const idsCollide = effectiveProjectId === repo.id;
@@ -115,8 +121,20 @@ export function RepoDetailRepoCard({
           >
             Re-sincronizar todo
           </Button>
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={onEmbedIndex}
+            disabled={embedding || syncing}
+            title="Vectores en Falkor: código, chunks .md legados, StorybookDoc y MarkdownDoc (tras Fase 4 o cambio de modelo)."
+          >
+            {embedding ? 'Embeddings…' : 'Indexar embeddings'}
+          </Button>
           {syncFeedback && (
             <span className="text-sm text-green-600 dark:text-green-400">{syncFeedback}</span>
+          )}
+          {embedFeedback && (
+            <span className="text-sm text-muted-foreground">{embedFeedback}</span>
           )}
         </div>
       </CardHeader>

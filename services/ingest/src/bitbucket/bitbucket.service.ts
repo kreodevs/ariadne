@@ -5,35 +5,7 @@
 import { Injectable } from '@nestjs/common';
 import type { BitbucketAuth } from '../credentials/credentials.service';
 import { CredentialsService } from '../credentials/credentials.service';
-
-/** Extensiones indexadas (Tree-sitter JS/TS); .mjs/.cjs se parsean como JS. */
-const EXT = ['.js', '.jsx', '.ts', '.tsx', '.mjs', '.cjs', '.prisma', '.md'];
-const IGNORE_DIRS = new Set([
-  'node_modules',
-  '.git',
-  'dist',
-  'build',
-  'coverage',
-  'venv',
-  '.venv',
-  '__pycache__',
-]);
-const IGNORE_FILE = /\.(test|spec)\.(js|jsx|ts|tsx|mjs|cjs)$|\.log$|\/\.env$|^\.env$/;
-const IGNORE_FILE_WITH_TESTS = /\.log$|\/\.env$|^\.env$/;
-
-function shouldIndexTests(): boolean {
-  const v = process.env.INDEX_TESTS;
-  return v === 'true' || v === '1';
-}
-
-/** Comprueba si el path es un archivo fuente relevante (.js,.ts,.jsx,.tsx) y no test/spec (salvo INDEX_TESTS=true). */
-function matchesFilter(path: string): boolean {
-  const base = path.split('/').pop() ?? '';
-  if (IGNORE_DIRS.has(base)) return false;
-  const ext = path.slice(path.lastIndexOf('.'));
-  const ignoreRe = shouldIndexTests() ? IGNORE_FILE_WITH_TESTS : IGNORE_FILE;
-  return EXT.includes(ext) && !ignoreRe.test(path);
-}
+import { SYNC_IGNORE_DIRS, shouldSyncIndexPath } from '../providers/sync-path-filter';
 
 interface SrcEntry {
   path: string;
@@ -179,8 +151,8 @@ export class BitbucketService {
         for (const v of page.values ?? []) {
           if (v.type === 'commit_directory') {
             const dirName = v.path.split('/').pop();
-            if (dirName && !IGNORE_DIRS.has(dirName)) queue.push(v.path);
-          } else if (v.type === 'commit_file' && matchesFilter(v.path)) {
+            if (dirName && !SYNC_IGNORE_DIRS.has(dirName)) queue.push(v.path);
+          } else if (v.type === 'commit_file' && shouldSyncIndexPath(v.path)) {
             files.push(v.path);
           }
         }
@@ -215,7 +187,7 @@ export class BitbucketService {
         const p = m[1].trim();
         if (p && !seen.has(p)) {
           seen.add(p);
-          if (matchesFilter(p)) paths.push(p);
+          if (shouldSyncIndexPath(p)) paths.push(p);
         }
       }
     }
@@ -234,7 +206,7 @@ export class BitbucketService {
       const page: DiffstatPage = await this.request<DiffstatPage>(next, { credentialsRef });
       for (const v of page.values ?? []) {
         const p = (v.new ?? v.old)?.path;
-        if (p && matchesFilter(p)) paths.push(p);
+        if (p && shouldSyncIndexPath(p)) paths.push(p);
       }
       next = page.next;
     }

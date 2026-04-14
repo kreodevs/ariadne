@@ -14,6 +14,8 @@ import { Badge } from '@/components/ui/badge';
 
 interface JobAnalysisModalProps {
   repoId: string | null;
+  /** Si existe (p. ej. primer `projectIds` del repo), usa `GET /projects/:id/jobs/:jobId/analysis` para validar enlace multi-root. */
+  projectId: string | null;
   jobId: string | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -27,6 +29,7 @@ const SEVERITY_COLOR: Record<string, string> = {
 
 export function JobAnalysisModal({
   repoId,
+  projectId,
   jobId,
   open,
   onOpenChange,
@@ -36,19 +39,19 @@ export function JobAnalysisModal({
   const [data, setData] = useState<JobAnalysisResult | null>(null);
 
   useEffect(() => {
-    if (!open || !repoId || !jobId) {
+    if (!open || !jobId || (!repoId && !projectId)) {
       setData(null);
       setError(null);
       return;
     }
     setLoading(true);
     setError(null);
-    api
-      .getJobAnalysis(repoId, jobId)
-      .then(setData)
-      .catch((e) => setError(e.message))
-      .finally(() => setLoading(false));
-  }, [open, repoId, jobId]);
+    const req =
+      projectId != null && projectId !== ''
+        ? api.getJobAnalysisByProject(projectId, jobId)
+        : api.getJobAnalysis(repoId!, jobId);
+    req.then(setData).catch((e) => setError(e.message)).finally(() => setLoading(false));
+  }, [open, repoId, projectId, jobId]);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>

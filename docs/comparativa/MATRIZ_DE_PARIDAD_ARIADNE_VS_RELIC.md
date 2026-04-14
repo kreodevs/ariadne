@@ -19,6 +19,7 @@ Este documento identifica la paridad funcional entre Ariadne y Relic. Aunque com
 | **Análisis de Impacto** | `get_legacy_impact` (Tool) | Impact Analysis Service | **Idéntico** |
 | **Inteligencia AI** | `ask_codebase` (Tool) | Chat NL→Cypher | **Total** |
 | **Planificación** | `get_modification_plan` (Tool) | Motor de Planes de Cambio | **Total** |
+| **Análisis estructurado** | `get_project_analysis` (Tool) | Ingest `POST /repositories/.../analyze` y `POST /projects/.../analyze` (`AnalyticsService`) | **Total** |
 | **Almacenamiento** | Grafo de Herramientas | Grafo de Conocimiento (FalkorDB) | **Técnica** |
 
 ---

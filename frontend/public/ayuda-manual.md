@@ -83,7 +83,7 @@ Levantar FalkorDB, PostgreSQL y Redis por tu cuenta (binarios o contenedores sue
   Body: `{ "provider": "bitbucket"|"github", "projectKey": "<workspace|owner>", "repoSlug": "<repo>", "defaultBranch": "main", "credentialsRef": "<uuid>" }` (opcional).
 - **Contenido de archivo:** `GET /repositories/:id/file?path=src/App.tsx&ref=main` — devuelve `{ content }` desde Bitbucket/GitHub.
 - **Embedding para RAG:** `GET /embed?text=` — devuelve `{ embedding }` (requiere EMBEDDING_PROVIDER + OPENAI_API_KEY o GOOGLE_API_KEY).
-- **Indexar embeddings:** `POST /repositories/:id/embed-index` — indexa Function y Component con vectores (FalkorDB 4.0+). Si cambias de proveedor (OpenAI ↔ Google), reejecuta este endpoint: las dimensiones son distintas (1536 vs 768).
+- **Indexar embeddings:** `POST /repositories/:id/embed-index` — vectoriza **Function**, **Component**, **Document** (chunks legado), **StorybookDoc** y **MarkdownDoc** (FalkorDB 4.0+). Si cambias de proveedor (OpenAI ↔ Google), reejecuta este endpoint: las dimensiones son distintas (1536 vs 768).
 - **Credenciales:** `GET /credentials`, `POST /credentials`, `DELETE /credentials/:id`. Tokens cifrados en BD.
 - **Listar:** `GET /repositories`.
 - **Detalle:** `GET /repositories/:id`.
@@ -93,7 +93,7 @@ Levantar FalkorDB, PostgreSQL y Redis por tu cuenta (binarios o contenedores sue
 
 Tras cada sync (normal o resync), se ejecuta automáticamente el indexado de embeddings si EMBEDDING_PROVIDER está configurado; si no, se omite sin error.
 
-**Chat y análisis:** `POST /repositories/:id/chat` con `{ message, history? }` — preguntas NL → Cypher → FalkorDB. `POST /repositories/:id/analyze` con `{ mode: 'diagnostico'|'duplicados'|'reingenieria' }` — diagnóstico (top riesgo, antipatrones), duplicados (embeddings), plan de reingeniería. Requiere `OPENAI_API_KEY`.
+**Chat y análisis:** `POST /repositories/:id/chat` con `{ message, history?, scope?, twoPhase?, responseMode? }` — preguntas NL → Cypher → FalkorDB. **`POST /repositories/:id/analyze`** (`:id` = repo): `{ mode: 'diagnostico'|'duplicados'|'reingenieria'|'codigo_muerto'|'seguridad' }`. **`POST /projects/:id/analyze`:** mismos modos de código; en proyecto con **varios repos**, añadir `idePath` y/o `repositoryId` (`roots[].id`); o `mode: 'agents'|'skill'` para informes AGENTS/SKILL. Requiere `OPENAI_API_KEY`.
 **Métricas y anti-patrones:** El parser calcula complejidad ciclomática (McCabe), LOC, anidamiento (nestingDepth) y acoplamiento. El diagnóstico detecta: código spaguetti (nesting>4), God functions (acoplamiento>8), alto fan-in (shotgun surgery), imports circulares, componentes sobrecargados.
 - **Webhook Bitbucket:** `POST /webhooks/bitbucket`. Evento esperado: `repo:push`. Secret desde credencial en BD (kind=webhook_secret) o `BITBUCKET_WEBHOOK_SECRET`. Ver [bitbucket_webhook.md](../bitbucket_webhook.md).
 - **Shadow (índice en grafo shadow):** `POST /shadow` con body `{ "files": [ { "path": "ruta/archivo.ts", "content": "código..." } ] }`.

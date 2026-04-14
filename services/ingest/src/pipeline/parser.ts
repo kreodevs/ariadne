@@ -12,6 +12,13 @@ import type { DomainConfig } from './domain-types';
 import JavaScript from 'tree-sitter-javascript';
 import TypeScript from 'tree-sitter-typescript';
 import { recordParseFailed, recordParseTruncated } from '../metrics/ingest-metrics';
+import {
+  isStorybookDocumentationPath,
+  parseProjectMarkdown,
+  parseStorybookDocumentation,
+  type StorybookDocumentationExtract,
+} from './storybook-documentation';
+import { extractStorybookCsfMetaTargets, isStorybookStoriesPath } from './storybook-csf-ast';
 
 const ts = TypeScript as unknown as { typescript: unknown; tsx: unknown };
 const LANG_JS = JavaScript as unknown;
@@ -178,6 +185,12 @@ export interface ParsedFile {
   models: ModelInfo[];
   /** Conceptos de dominio (tipos, opciones) extraídos heurísticamente. */
   domainConcepts: DomainConceptInfo[];
+  /** Docs Storybook (MDX/MD indexable): texto para embedding y enlaces heurísticos a :Component. */
+  storybookDocumentation?: StorybookDocumentationExtract;
+  /** Markdown de proyecto (README, docs, etc.): nodo :MarkdownDoc + RAG. */
+  projectMarkdown?: StorybookDocumentationExtract;
+  /** CSF en .stories.ts(x): targets desde `meta.component`, export default y `Meta<typeof X>`. */
+  storybookCsf?: { storyMetaTargets: string[] };
 }
 
 /** Devuelve el lenguaje Tree-sitter según la extensión del archivo. */
@@ -447,6 +460,9 @@ function tryParseTruncated(
     }
     collectContextsAndDefinedHooks(root, tr, result);
     collectFunctionsAndCalls(root, tr, result);
+    if (isStorybookStoriesPath(path)) {
+      result.storybookCsf = { storyMetaTargets: extractStorybookCsfMetaTargets(root, tr) };
+    }
     console.warn(`[parser] Truncated parse OK for ${path} (${result.components.length} components, ${result.functions.length} functions)`);
     recordParseTruncated();
     return result;
@@ -497,6 +513,33 @@ export function parseSource(
   };
 
   collectStrapiFromPath(path, result);
+
+  if (isStorybookDocumentationPath(path)) {
+    const doc = parseStorybookDocumentation(path, source);
+    if (!doc) return null;
+    result.storybookDocumentation = doc;
+    if (options.returnAst) {
+      const stubParser = new Parser();
+      stubParser.setLanguage(LANG_TS as Parameters<Parser['setLanguage']>[0]);
+      return { parsed: result, root: stubParser.parse('').rootNode, source };
+    }
+    result.domainConcepts = [];
+    return result;
+  }
+
+  const normPath = path.replace(/\\/g, '/');
+  if (normPath.toLowerCase().endsWith('.md') && !/\/node_modules\//i.test(normPath)) {
+    const doc = parseProjectMarkdown(path, source);
+    if (!doc) return null;
+    result.projectMarkdown = doc;
+    if (options.returnAst) {
+      const stubParser = new Parser();
+      stubParser.setLanguage(LANG_TS as Parameters<Parser['setLanguage']>[0]);
+      return { parsed: result, root: stubParser.parse('').rootNode, source };
+    }
+    result.domainConcepts = [];
+    return result;
+  }
 
   const lang = getLanguageForPath(path);
   const parser = new Parser();
@@ -688,6 +731,9 @@ export function parseSource(
   collectPropTypes(root, source, componentNames, result.propsByComponent);
   collectRoutes(root, source, result);
   collectFunctionsAndCalls(root, source, result);
+  if (isStorybookStoriesPath(path)) {
+    result.storybookCsf = { storyMetaTargets: extractStorybookCsfMetaTargets(root, source) };
+  }
   if (options.returnAst) {
     result.domainConcepts = [];
     return { parsed: result, root, source };

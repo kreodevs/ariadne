@@ -33,6 +33,8 @@ Proporciona una interfaz estandarizada para que agentes de IA (como Cursor o Ant
 *   **Búsqueda Semántica:** Localización de implementaciones y lógica de negocio basada en el significado, no solo en palabras clave.
 *   **Detección de Duplicados:** Análisis cross-package para encontrar código redundante en monorepos.
 *   **Análisis de Código Muerto:** Identificación de nodos en el grafo que no tienen referencias activas.
+*   **Auditoría heurística de seguridad:** Modo dedicado (secretos/higiene en fuentes indexadas), complementario a SAST formal.
+*   **Análisis por `projectId` Ariadne:** Endpoint de ingest que resuelve el repositorio objetivo en proyectos multi-root (`idePath` / `repositoryId`) antes de ejecutar el mismo pipeline que por repo.
 
 ---
 

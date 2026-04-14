@@ -7,7 +7,7 @@ Ariadne es la interfaz de "Oráculo" del ecosistema Relic, encargada de exponer 
 ## 1. Interfaz de Contexto IA (MCP Server)
 *   **Servidor MCP de 23 Herramientas:** Implementación de un catálogo robusto de funciones invocables por la IA para evitar alucinaciones.
 *   **Transporte Streamable HTTP:** Optimizado para integraciones con Cursor e IDEs modernos sin problemas de estado.
-*   **Resolución Inteligente de Proyectos:** Capacidad de mapear archivos locales a proyectos indexados mediante `.relic-project` o inferencia de rutas.
+*   **Resolución Inteligente de Proyectos:** Mapeo de archivos locales a proyectos indexados mediante `.ariadne-project`, `list_known_projects` e inferencia por `currentFilePath`.
 
 ---
 
@@ -35,6 +35,7 @@ Ariadne es la interfaz de "Oráculo" del ecosistema Relic, encargada de exponer 
 ## 5. Consultas en Lenguaje Natural
 *   **Codebase Chat (`ask_codebase`):** Interfaz que traduce preguntas del desarrollador en insights precisos sobre la arquitectura e implementación del proyecto.
 *   **Generación de Planes Quirúrgicos (`get_modification_plan`):** Identificación de archivos específicos a modificar y preguntas críticas de negocio antes de iniciar una tarea.
+*   **Análisis estructurado (`get_project_analysis`):** Informes de deuda técnica, duplicados, reingeniería, código muerto y auditoría heurística de seguridad vía ingest; en proyectos multi-root usa `currentFilePath` o `roots[].id` para acotar el repositorio.
 
 ---
 

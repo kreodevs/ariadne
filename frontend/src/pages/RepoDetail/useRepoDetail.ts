@@ -162,6 +162,8 @@ export function useRepoDetail() {
   const [deleting, setDeleting] = useState(false);
   const [analysisJobId, setAnalysisJobId] = useState<string | null>(null);
   const [analysisModalOpen, setAnalysisModalOpen] = useState(false);
+  const [embedding, setEmbedding] = useState(false);
+  const [embedFeedback, setEmbedFeedback] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     if (!id) return;
@@ -219,6 +221,25 @@ export function useRepoDetail() {
     setAnalysisModalOpen(true);
   }, []);
 
+  const onEmbedIndex = useCallback(async () => {
+    if (!id) return;
+    setEmbedding(true);
+    setEmbedFeedback(null);
+    try {
+      const r = await api.runEmbedIndex(id);
+      setEmbedFeedback(
+        r.errors > 0
+          ? `Embeddings: ${r.indexed} indexados, ${r.errors} errores (revisa logs ingest).`
+          : `Embeddings: ${r.indexed} nodos indexados.`,
+      );
+      setTimeout(() => setEmbedFeedback(null), 8000);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setEmbedding(false);
+    }
+  }, [id]);
+
   return {
     id,
     repo,
@@ -234,5 +255,8 @@ export function useRepoDetail() {
     analysisModalOpen,
     onAnalyzeJob,
     setAnalysisModalOpen,
+    embedding,
+    embedFeedback,
+    onEmbedIndex,
   };
 }

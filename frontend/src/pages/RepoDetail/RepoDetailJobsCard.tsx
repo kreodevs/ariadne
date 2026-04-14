@@ -17,6 +17,8 @@ import { formatJobPayload } from './utils';
 
 interface RepoDetailJobsCardProps {
   repoId: string | undefined;
+  /** Proyecto Ariadne (opcional): análisis de job vía ruta por proyecto. */
+  projectId: string | null;
   jobs: SyncJob[];
   selectedJobIds: Set<string>;
   deletingJobs: boolean;
@@ -34,6 +36,7 @@ interface RepoDetailJobsCardProps {
 /** Card con tabla de jobs, análisis por job y modal de archivos omitidos. */
 export function RepoDetailJobsCard({
   repoId,
+  projectId,
   jobs,
   selectedJobIds,
   deletingJobs,
@@ -90,6 +93,7 @@ export function RepoDetailJobsCard({
         />
         <JobAnalysisModal
           repoId={repoId ?? null}
+          projectId={projectId}
           jobId={analysisJobId}
           open={analysisModalOpen}
           onOpenChange={setAnalysisModalOpen}

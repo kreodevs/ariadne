@@ -13,10 +13,12 @@ import {
 import {
   ChatService,
   type AnalyzeMode,
+  type AnalyzeRequestOptions,
   type ChatRequest,
   type ChatResponse,
   type ChatScope,
   type ModificationPlanResult,
+  type ModificationPlanQuestionsMode,
   type AnalyzeResult,
 } from './chat.service';
 import { AnalyticsService } from './analytics.service';
@@ -41,6 +43,8 @@ export class ProjectChatController {
       mode?: AnalyzeMode;
       idePath?: string;
       repositoryId?: string;
+      scope?: ChatScope;
+      crossPackageDuplicates?: boolean;
     },
   ): Promise<AnalyzeResult> {
     const mode = (body?.mode ?? 'agents') as AnalyzeMode;
@@ -51,9 +55,17 @@ export class ProjectChatController {
       if (!this.analyticsService.isCodeAnalysisMode(mode)) {
         throw new BadRequestException(`Modo de análisis no soportado en esta ruta: ${String(mode)}`);
       }
+      const analyzeOpts: AnalyzeRequestOptions | undefined =
+        body?.scope || body?.crossPackageDuplicates
+          ? {
+              ...(body.scope ? { scope: body.scope } : {}),
+              ...(body.crossPackageDuplicates ? { crossPackageDuplicates: true } : {}),
+            }
+          : undefined;
       return await this.analyticsService.analyzeByProjectId(projectId, mode, {
         idePath: body?.idePath,
         repositoryId: body?.repositoryId,
+        analyzeOptions: analyzeOpts,
       });
     } catch (err) {
       if (err instanceof BadRequestException) throw err;
@@ -76,17 +88,36 @@ export class ProjectChatController {
   }
 
   /**
-   * Plan de modificación: `projectId` puede ser UUID de **proyecto** Ariadne o UUID de **repositorio** (`roots[].id`; recomendado en multi-root para elegir el root correcto, p. ej. frontend).
+   * Plan de modificación: multi-root vía `scope.repoIds` / `currentFilePath` / un solo repo; ver `modification-plan-resolve.util.ts`.
    */
   @Post(':projectId/modification-plan')
   async getModificationPlan(
     @Param('projectId') projectId: string,
-    @Body() body: { userDescription: string; scope?: ChatScope },
+    @Body()
+    body: {
+      userDescription: string;
+      scope?: ChatScope;
+      currentFilePath?: string;
+      questionsMode?: ModificationPlanQuestionsMode;
+    },
   ): Promise<ModificationPlanResult> {
     const userDescription = body?.userDescription?.trim() ?? '';
     if (!userDescription) {
-      return { filesToModify: [], questionsToRefine: [] };
+      return {
+        filesToModify: [],
+        questionsToRefine: [],
+        diagnostic: {
+          code: 'MISSING_USER_DESCRIPTION',
+          message: 'Se requiere userDescription (texto no vacío).',
+        },
+      };
     }
-    return this.chatService.getModificationPlanByProject(projectId, userDescription, body?.scope);
+    return this.chatService.getModificationPlanByProject(
+      projectId,
+      userDescription,
+      body?.scope,
+      body?.currentFilePath?.trim() || null,
+      body?.questionsMode,
+    );
   }
 }

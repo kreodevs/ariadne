@@ -7,41 +7,19 @@ import { execSync, spawnSync } from 'child_process';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-
-const CODE_EXT = ['.js', '.jsx', '.ts', '.tsx', '.mjs', '.cjs', '.prisma', '.md'];
-const IGNORE_DIRS = new Set([
-  'node_modules',
-  '.git',
-  'dist',
-  'build',
-  'coverage',
-  'venv',
-  '.venv',
-  '__pycache__',
-]);
-const IGNORE_FILE = /\.(test|spec)\.(js|jsx|ts|tsx|mjs|cjs)$|\.log$|\/\.env$|^\.env$/;
-const IGNORE_FILE_WITH_TESTS = /\.log$|\/\.env$|^\.env$/;
-
-function shouldIndexTests(): boolean {
-  const v = process.env.INDEX_TESTS;
-  return v === 'true' || v === '1';
-}
+import { SYNC_IGNORE_DIRS, shouldSyncIndexPath } from './sync-path-filter';
 
 function walkDir(dir: string, base = ''): string[] {
-  const ignoreRe = shouldIndexTests() ? IGNORE_FILE_WITH_TESTS : IGNORE_FILE;
   const files: string[] = [];
   const entries = fs.readdirSync(dir, { withFileTypes: true });
   for (const e of entries) {
     const rel = base ? `${base}/${e.name}` : e.name;
     if (e.isDirectory()) {
-      if (!IGNORE_DIRS.has(e.name)) {
+      if (!SYNC_IGNORE_DIRS.has(e.name)) {
         files.push(...walkDir(path.join(dir, e.name), rel));
       }
-    } else if (e.isFile()) {
-      const ext = path.extname(e.name);
-      if (CODE_EXT.includes(ext) && !ignoreRe.test(rel)) {
-        files.push(rel);
-      }
+    } else if (e.isFile() && shouldSyncIndexPath(rel)) {
+      files.push(rel);
     }
   }
   return files;

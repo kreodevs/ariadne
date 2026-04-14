@@ -208,7 +208,7 @@ Los nombres de argumentos deben coincidir con el esquema devuelto por `tools/lis
 | `get_file_content`              | `path` + (`projectId` **o** `currentFilePath`) | `ref`                                                                              |
 | `semantic_search`             | `query`; con sharding también **`projectId`** | `limit`; **`projectId`** opcional sin sharding (acota al UUID proyecto o `roots[].id`). **No** admite `scope` ni `currentFilePath`. |
 | `validate_before_edit`        | `nodeName`              | `projectId`, `currentFilePath`                                                       |
-| `get_project_analysis`          | `projectId`             | `mode` (diagnostico, duplicados, reingenieria, codigo_muerto, seguridad)              |
+| `get_project_analysis`          | —                       | `projectId`, `currentFilePath` (multi-root → `idePath` en ingest), `mode` (`diagnostico`, `duplicados`, `reingenieria`, `codigo_muerto`, `seguridad`) |
 | `ask_codebase`                  | `question`              | `projectId`, `currentFilePath`, `scope`, `twoPhase`, **`responseMode`** (`default` \| **`evidence_first`**) — ver [mcp_server_specs.md](mcp_server_specs.md) (`evidence_first`: two-phase + más contexto al sintetizador, salida “evidencia primero”) |
 | `get_modification_plan`         | `userDescription`       | `projectId`, `currentFilePath`, `scope`                                               |
 | `get_definitions`               | `symbolName`            | `projectId`, `currentFilePath`                                                       |

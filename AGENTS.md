@@ -19,7 +19,7 @@ Al iniciar una sesión de desarrollo con el MCP AriadneSpecs Oracle:
 
 Cuando no hay `.ariadne-project`:
 
-- Pasa **`projectId`** a las herramientas para evitar ambigüedad. Suele valer proyecto Ariadne o **`roots[].id`**; file/chat resuelven con fallback. **`get_project_analysis`** → `POST /repositories/:id/analyze`: usa **`roots[].id` del repo**. **`get_modification_plan`** en multi-root: preferir **`roots[].id`**.
+- Pasa **`projectId`** a las herramientas para evitar ambigüedad. Suele valer proyecto Ariadne o **`roots[].id`**; file/chat resuelven con fallback. **`get_project_analysis`:** el MCP llama a `POST /repositories/:id/analyze` si el UUID es **repo** (`roots[].id`) o a `POST /projects/:id/analyze` si es **proyecto** (body con `mode` y, en multi-root, `idePath` / `repositoryId` cuando el ingest lo requiere). **`get_modification_plan`** en multi-root: preferir **`roots[].id`**.
 - Si no pasas `projectId`, usa **`currentFilePath`** (ruta del archivo que el IDE está editando); el sistema intentará inferir el proyecto.
 - **Prioriza pasar `projectId`** explícito. Nunca inventes ni asumas IDs.
 
@@ -28,13 +28,13 @@ Cuando no hay `.ariadne-project`:
 | Intención del usuario | Herramienta MCP | Flujo |
 |----------------------|-----------------|-------|
 | **Diagnóstico de archivo/componente/hook específico** ("diagnóstico de usePauta.tsx", "analiza Board") | **`get_component_graph`**, **`get_legacy_impact`**, **`get_definitions`**, **`get_references`** | `list_known_projects` → projectId → `get_component_graph(componentName/hookName)` + `get_legacy_impact(nodeName)` + `get_definitions` / `get_references` para estructura, impacto y usos. **No solo Read/Grep.** |
-| Diagnóstico por repo: deuda técnica, duplicados, reingeniería, código muerto, auditoría heurística de seguridad (`seguridad`) | **`get_project_analysis`** | `list_known_projects` → **`roots[].id`** del repo objetivo → `get_project_analysis(projectId, mode)` (parámetro MCP = id de repo) |
+| Diagnóstico por repo/proyecto: deuda técnica, duplicados, reingeniería, código muerto, auditoría heurística de seguridad (`seguridad`) | **`get_project_analysis`** | `list_known_projects` → `projectId` = **`roots[].id`** del repo **o** id del proyecto Ariadne; con varios roots, **`currentFilePath`** (o `repositoryId` explícito en ingest) para resolver el repo → `get_project_analysis(projectId?, mode, currentFilePath?)` |
 | Preguntas abiertas en lenguaje natural ("¿cómo funciona X?", "explica el flujo de Y") | **`ask_codebase`** | Chat del ingest. Opcional **`scope`**, **`twoPhase`** y **`responseMode`** (`evidence_first` para síntesis “evidencia primero”). Requiere INGEST_URL y OPENAI_API_KEY. |
 | **Lista de archivos a modificar + preguntas de afinación (flujo legacy/MaxPrime)** | **`get_modification_plan`** | `list_known_projects` → `projectId` = `roots[].id` en multi-root. Body opcional **`scope`**. `POST /projects/:id/modification-plan` (proyecto o repo). |
 | Búsqueda por término, exploración | `semantic_search`, `find_similar_implementations` | Consulta directa al grafo. |
 | Antes de editar componente/función | `validate_before_edit` | Ver sección Flujo SDD. |
 
-**Proyecto por nombre:** `list_known_projects` → localizar por `name`. Para **`get_project_analysis`**, el **`roots[].id`** del repo a analizar. Para **`get_modification_plan`** (multi-root), **`roots[].id`** del repo donde está el código.
+**Proyecto por nombre:** `list_known_projects` → localizar por `name`. Para **`get_project_analysis`**, preferir **`roots[].id`** del repo a analizar; si pasas el **`id` del proyecto** y hay varios repos, aporta **`currentFilePath`** para que el MCP envíe `idePath` al ingest. Para **`get_modification_plan`** (multi-root), **`roots[].id`** del repo donde está el código.
 
 ## Flujo de diagnóstico de archivo/componente/hook
 

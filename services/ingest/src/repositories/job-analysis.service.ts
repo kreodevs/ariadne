@@ -7,6 +7,7 @@ import { Repository } from 'typeorm';
 import { FalkorDB } from 'falkordb';
 import { SyncJob } from './entities/sync-job.entity';
 import { RepositoryEntity } from './entities/repository.entity';
+import { ProjectRepositoryEntity } from './entities/project-repository.entity';
 import { FileContentService } from './file-content.service';
 import { getFalkorConfig } from '../pipeline/falkor';
 import { graphNameForProject, isProjectShardingEnabled } from '../pipeline/falkor';
@@ -47,6 +48,8 @@ export class JobAnalysisService {
     private readonly jobsRepo: Repository<SyncJob>,
     @InjectRepository(RepositoryEntity)
     private readonly repoRepo: Repository<RepositoryEntity>,
+    @InjectRepository(ProjectRepositoryEntity)
+    private readonly projectRepoLink: Repository<ProjectRepositoryEntity>,
     private readonly fileContent: FileContentService,
   ) {}
 
@@ -56,6 +59,29 @@ export class JobAnalysisService {
    * @param {string} jobId - ID del sync job (debe ser type incremental con payload.paths).
    * @returns {Promise<JobAnalysisResult>} riskScore, impacto.dependents, seguridad.findings, resumenEjecutivo.
    */
+  /**
+   * Mismo análisis que `analyzeJob`, pero direccionado por **proyecto Ariadne** + `jobId`.
+   * El job ya tiene `repositoryId`; se comprueba que ese repo esté enlazado al `projectId` (multi-root).
+   */
+  async analyzeJobForProject(projectId: string, jobId: string): Promise<JobAnalysisResult> {
+    const job = await this.jobsRepo.findOne({
+      where: { id: jobId },
+      select: ['id', 'repositoryId', 'type', 'status', 'payload'],
+    });
+    if (!job) throw new NotFoundException(`Job ${jobId} not found`);
+
+    const link = await this.projectRepoLink.findOne({
+      where: { projectId, repoId: job.repositoryId },
+    });
+    if (!link) {
+      throw new BadRequestException(
+        `El job ${jobId} no pertenece al proyecto ${projectId} (repositoryId ${job.repositoryId})`,
+      );
+    }
+
+    return this.analyzeJob(job.repositoryId, jobId);
+  }
+
   async analyzeJob(repositoryId: string, jobId: string): Promise<JobAnalysisResult> {
     const repo = await this.repoRepo.findOne({ where: { id: repositoryId } });
     if (!repo) throw new NotFoundException(`Repository ${repositoryId} not found`);

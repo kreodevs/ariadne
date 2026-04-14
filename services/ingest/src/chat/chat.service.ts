@@ -4,7 +4,10 @@
  */
 
 import { Injectable, Logger } from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
 import { FalkorDB } from 'falkordb';
+import { IndexedFile } from '../repositories/entities/indexed-file.entity';
 import { getFalkorConfig, graphNameForProject, isProjectShardingEnabled } from '../pipeline/falkor';
 import { RepositoriesService } from '../repositories/repositories.service';
 import { FileContentService } from '../repositories/file-content.service';
@@ -24,6 +27,9 @@ import {
   FULL_AUDIT_SECRET_PATTERNS,
   EXPLORER_TOOLS_ALL,
   truncateAntipatterns,
+  getMaxAnalyzeCallEdges,
+  wantsFullComponentListing,
+  wantsFullGenericIndexedInventory,
 } from './chat.constants';
 import {
   computeRiskScore,
@@ -36,8 +42,77 @@ import { ChatAntipatternsService } from './chat-antipatterns.service';
 import { ChatHandlersService } from './chat-handlers.service';
 import { ChatRetrieverToolsService, type RetrieverToolName } from './chat-retriever-tools.service';
 import { ProjectsService } from '../projects/projects.service';
-import { type ChatScope, matchesChatScope } from './chat-scope.util';
+import {
+  type ChatScope,
+  filterCypherRowsByScope,
+  hasExplicitChatScopeNarrowing,
+  matchesChatScope,
+} from './chat-scope.util';
+import {
+  resolveRepositoryIdForModificationPlan,
+  type ModificationPlanDiagnostic,
+  type ModificationPlanRepoInput,
+} from './modification-plan-resolve.util';
+import { modificationPlanPathExcludedByDefaults } from './modification-plan-path-exclusions.util';
+import { modificationPlanScopeCypher } from './modification-plan-scope-cypher.util';
+import {
+  extractModificationPlanCypherTerms,
+  expandModificationPlanTermPairs,
+} from './modification-plan-terms.util';
+import {
+  extractLikelyRepoRelativePaths,
+  prioritizeModificationPlanFiles,
+} from './modification-plan-path-hints.util';
 import { observeChatPipelineComplete, recordChatPipelineError } from '../metrics/ingest-metrics';
+import {
+  analyzeCacheDisabledFromEnv,
+  analyzeCacheFullFingerprintMaxRows,
+  analyzeCacheMaxEntries,
+  analyzeCacheRedisTtlSec,
+  analyzeCacheTtlMs,
+  buildAnalyzeCacheKey,
+  buildDiagnosticoExtrinsicLayerCacheKey,
+  buildPartitionedIndexFingerprint,
+  extrinsicLayerCacheDisabledFromEnv,
+  extrinsicLayerCacheMaxEntries,
+  extrinsicLayerCacheRedisTtlSec,
+  extrinsicLayerCacheTtlMs,
+  extrinsicLayerRedisDisabledFromEnv,
+  hashDegradedIndexState,
+  stableScopeKeyForCache,
+  type DiagnosticoExtrinsicLayerPayload,
+  type IndexRowForFingerprint,
+} from './analyze-cache.util';
+import {
+  aggregateCallEdgesForScope,
+  buildAnalyzeReportMeta,
+  isAnalyzeScopeActive,
+  pathFromPairLabel,
+  pathInAnalyzeFocus,
+  validateAnalyzeScope,
+  type AnalyzeReportMeta,
+  type CallEdgeRow,
+  type FanInStats,
+} from './analyze-focus.util';
+import { AnalyzeDistributedCacheService } from './analyze-distributed-cache.service';
+import {
+  attachExtrinsicMetricsToRiskRows,
+  buildDiagnosticoAntipatternsScoped,
+  fetchDiagnosticoIntrinsicBase,
+} from './diagnostico-intrinsic-layer';
+import { appendDiagnosticoPathValidationFooter } from './diagnostico-validate.util';
+import { stripOuterMarkdownFence } from './markdown-fence.util';
+import {
+  extractPathCandidatesForRepoResolve,
+  filterCollectedResultsByTargetRepo,
+  filterGatheredContextByTargetRepo,
+  repoIdsInCollectedResults,
+} from './chat-preflight-scope.util';
+import {
+  inferChatRepoScopeFromMessage,
+  isChatRoleScopeInferenceEnabled,
+  type ProjectRepoRoleCandidate,
+} from './resolve-chat-scope-from-message.util';
 
 /** Mensaje del historial de chat (usuario o asistente). */
 export interface ChatMessage {
@@ -49,6 +124,22 @@ export interface ChatMessage {
 
 /** Re-export para controladores y MCP. */
 export type { ChatScope } from './chat-scope.util';
+
+/** Origen del alcance según cliente (telemetría, `CHAT_TELEMETRY_LOG`). */
+export type ChatClientMetaScopeSource =
+  | 'explicit'
+  | 'mcp_default_repo'
+  | 'mcp_path_prefix'
+  | 'mcp_path_heuristic'
+  | 'mcp_graph_repo_id'
+  | 'mcp_wide'
+  | 'ingest_role_message';
+
+export interface ChatClientMeta {
+  scopeSource?: ChatClientMetaScopeSource;
+  scopeInferred?: boolean;
+  scopePotentiallyAmbiguous?: boolean;
+}
 
 /** Payload para enviar un mensaje al chat. */
 export interface ChatRequest {
@@ -68,6 +159,13 @@ export interface ChatRequest {
   responseMode?: 'default' | 'evidence_first';
   /** Reenviado al orchestrator cuando ORCHESTRATOR_URL está activo (Redis codebase:chat:*). */
   threadId?: string;
+  /** Telemetría de alcance; no altera el pipeline. */
+  clientMeta?: ChatClientMeta;
+  /**
+   * Proyecto multi-repo: si es `true` u omite, exige `scope` explícito o inferencia por roles (`CHAT_INFER_SCOPE_FROM_ROLES`).
+   * `false` = chat amplio sobre todos los repos (riesgo de mezcla en el contexto).
+   */
+  strictChatScope?: boolean;
 }
 
 /** Respuesta del chat con texto, opcional cypher ejecutado y resultados. */
@@ -77,15 +175,21 @@ export interface ChatResponse {
   result?: unknown[];
 }
 
+/** Modo de preguntas de afinación en `get_modification_plan` (default: negocio). */
+export type ModificationPlanQuestionsMode = 'business' | 'technical' | 'both';
+
 /**
  * Plan de modificación para flujo legacy (ej. MaxPrime).
  * filesToModify: rutas que existen en el grafo con repoId (multi-root).
- * questionsToRefine: solo preguntas de negocio/funcionalidad.
  */
 export interface ModificationPlanResult {
   filesToModify: Array<{ path: string; repoId: string }>;
   questionsToRefine: string[];
+  warnings?: string[];
+  diagnostic?: ModificationPlanDiagnostic;
 }
+
+export type { ModificationPlanDiagnostic } from './modification-plan-resolve.util';
 
 /** Modos de análisis estructurado (diagnóstico, duplicados, reingeniería, código muerto, seguridad, AGENTS.md, SKILL.md). */
 export type AnalyzeMode =
@@ -102,7 +206,17 @@ export interface AnalyzeResult {
   mode: AnalyzeMode;
   summary: string;
   details?: unknown;
+  reportMeta?: AnalyzeReportMeta;
 }
+
+/** Opciones de `analyze`: alcance y flags por modo. */
+export type AnalyzeRequestOptions = {
+  scope?: ChatScope;
+  /** Modo `duplicados`: pares con un solo extremo en el foco. */
+  crossPackageDuplicates?: boolean;
+};
+
+export type { AnalyzeReportMeta } from './analyze-focus.util';
 
 /** Payload hacia orchestrator tras /internal/.../analyze-prep (sin LLM en ingest). */
 export type AnalyzeOrchestratorPrepDto =
@@ -217,6 +331,12 @@ export interface FullAuditResult {
 export class ChatService {
   private readonly logger = new Logger(ChatService.name);
 
+  private readonly analyzeResultCache = new Map<string, { storedAt: number; result: AnalyzeResult }>();
+  private readonly diagnosticoExtrinsicLayerCache = new Map<
+    string,
+    { storedAt: number; payload: DiagnosticoExtrinsicLayerPayload }
+  >();
+
   constructor(
     private readonly repos: RepositoriesService,
     private readonly fileContent: FileContentService,
@@ -228,12 +348,422 @@ export class ChatService {
     private readonly handlers: ChatHandlersService,
     private readonly projects: ProjectsService,
     private readonly retrieverTools: ChatRetrieverToolsService,
+    @InjectRepository(IndexedFile)
+    private readonly indexedFileRepo: Repository<IndexedFile>,
+    private readonly analyzeDistributedCache: AnalyzeDistributedCacheService,
   ) {}
+
+  private async getIndexFingerprintForAnalyzeCache(
+    repositoryId: string,
+    lastCommitSha: string | null,
+    scope: ChatScope | undefined,
+  ): Promise<{ fingerprint: string; mode: 'full' | 'degraded'; scopePartitioned: boolean }> {
+    const count = await this.indexedFileRepo.count({ where: { repositoryId } });
+    if (count === 0) {
+      return {
+        fingerprint: hashDegradedIndexState({
+          rowCount: 0,
+          lastCommitSha,
+          maxIndexedAt: null,
+          minIndexedAt: null,
+        }),
+        mode: 'degraded',
+        scopePartitioned: false,
+      };
+    }
+    if (count > analyzeCacheFullFingerprintMaxRows()) {
+      const raw = await this.indexedFileRepo
+        .createQueryBuilder('f')
+        .select('MAX(f.indexedAt)', 'max')
+        .addSelect('MIN(f.indexedAt)', 'min')
+        .where('f.repositoryId = :repositoryId', { repositoryId })
+        .getRawOne<{ max: Date | null; min: Date | null }>();
+      return {
+        fingerprint: hashDegradedIndexState({
+          rowCount: count,
+          lastCommitSha,
+          maxIndexedAt: raw?.max ?? null,
+          minIndexedAt: raw?.min ?? null,
+        }),
+        mode: 'degraded',
+        scopePartitioned: false,
+      };
+    }
+    const rows = (await this.indexedFileRepo.find({
+      where: { repositoryId },
+      select: ['path', 'revision', 'indexedAt', 'contentHash'],
+      order: { path: 'ASC' },
+    })) as IndexRowForFingerprint[];
+    const part = buildPartitionedIndexFingerprint(rows, scope, repositoryId);
+    return {
+      fingerprint: part.fingerprint,
+      mode: 'full',
+      scopePartitioned: part.scopePartitioned,
+    };
+  }
+
+  private getAnalyzeCache(key: string): AnalyzeResult | undefined {
+    const e = this.analyzeResultCache.get(key);
+    if (!e) return undefined;
+    if (Date.now() - e.storedAt > analyzeCacheTtlMs()) {
+      this.analyzeResultCache.delete(key);
+      return undefined;
+    }
+    return e.result;
+  }
+
+  private setAnalyzeCache(key: string, result: AnalyzeResult): void {
+    const max = analyzeCacheMaxEntries();
+    while (this.analyzeResultCache.size >= max) {
+      const first = this.analyzeResultCache.keys().next().value as string | undefined;
+      if (!first) break;
+      this.analyzeResultCache.delete(first);
+    }
+    this.analyzeResultCache.set(key, { storedAt: Date.now(), result });
+  }
+
+  private getDiagnosticoExtrinsicLayerCache(key: string): DiagnosticoExtrinsicLayerPayload | undefined {
+    const e = this.diagnosticoExtrinsicLayerCache.get(key);
+    if (!e) return undefined;
+    if (Date.now() - e.storedAt > extrinsicLayerCacheTtlMs()) {
+      this.diagnosticoExtrinsicLayerCache.delete(key);
+      return undefined;
+    }
+    return e.payload;
+  }
+
+  private setDiagnosticoExtrinsicLayerCache(key: string, payload: DiagnosticoExtrinsicLayerPayload): void {
+    const max = extrinsicLayerCacheMaxEntries();
+    while (this.diagnosticoExtrinsicLayerCache.size >= max) {
+      const first = this.diagnosticoExtrinsicLayerCache.keys().next().value as string | undefined;
+      if (!first) break;
+      this.diagnosticoExtrinsicLayerCache.delete(first);
+    }
+    this.diagnosticoExtrinsicLayerCache.set(key, { storedAt: Date.now(), payload });
+  }
+
+  private mergeAnalyzeReportMeta(
+    result: AnalyzeResult,
+    extras: Partial<
+      Pick<AnalyzeReportMeta, 'fromCache' | 'cacheFingerprintMode' | 'cacheScopePartitioned'>
+    >,
+  ): AnalyzeResult {
+    const base: AnalyzeReportMeta = result.reportMeta ?? {
+      scopeApplied: false,
+      focusPrefixes: [],
+      filesAnalyzedInFocus: 0,
+      filesTotalInFocus: 0,
+    };
+    return {
+      ...result,
+      reportMeta: { ...base, ...extras },
+    };
+  }
+
+  /** Bundle datos + prompts LLM para diagnóstico (sin llamar al modelo). */
+  private async runDiagnosticoDataAndPrompts(
+    repositoryId: string,
+    scope?: ChatScope,
+  ): Promise<{
+    systemPrompt: string;
+    userPrompt: string;
+    detailsPayload: Record<string, unknown>;
+    reportMeta: AnalyzeReportMeta;
+    scopeActive: boolean;
+    extrinsicCallsLayerCacheHit: boolean;
+    extrinsicCallsLayerRedisHit: boolean;
+  }> {
+    const repo = await this.repos.findOne(repositoryId);
+    const projectId = await this.resolveProjectIdForRepo(repo.id);
+    const scopeActive = isAnalyzeScopeActive(scope);
+
+    const intrinsic = await fetchDiagnosticoIntrinsicBase({
+      projectId,
+      repositoryId,
+      scope,
+      cypher: this.cypher,
+      detectAntipatterns: (rid) => this.antipatterns.detectAntipatterns(rid),
+    });
+    const {
+      allIndexedFilePaths,
+      graphSummary,
+      riskRankedCore,
+      highCouplingScoped,
+      noDescriptionScoped,
+      componentPropsScoped,
+      antipatternsRaw,
+    } = intrinsic;
+
+    let fanInByCalleeKey = new Map<string, FanInStats>();
+    let outCallsOutsideFocusByCallerKey = new Map<string, number>();
+    let callEdgesTruncated = false;
+    let extrinsicCallsLayerCacheHit = false;
+    let extrinsicCallsLayerRedisHit = false;
+    if (scopeActive) {
+      const edgeLimit = getMaxAnalyzeCallEdges();
+      const lastSha = repo.lastCommitSha ?? null;
+      const { fingerprint: indexFp } = await this.getIndexFingerprintForAnalyzeCache(
+        repositoryId,
+        lastSha,
+        scope,
+      );
+      const layerKey = buildDiagnosticoExtrinsicLayerCacheKey({
+        repositoryId,
+        scopeKey: stableScopeKeyForCache(scope),
+        indexFingerprint: indexFp,
+        edgeLimit,
+      });
+
+      const applyLayerPayload = (p: DiagnosticoExtrinsicLayerPayload, fromRedis: boolean) => {
+        fanInByCalleeKey = new Map(p.fanInEntries);
+        outCallsOutsideFocusByCallerKey = new Map(p.outCallsOutsideEntries);
+        callEdgesTruncated = p.callEdgesTruncated;
+        extrinsicCallsLayerCacheHit = true;
+        if (fromRedis) extrinsicCallsLayerRedisHit = true;
+      };
+
+      if (!extrinsicLayerCacheDisabledFromEnv()) {
+        const memHit = this.getDiagnosticoExtrinsicLayerCache(layerKey);
+        if (memHit) {
+          applyLayerPayload(memHit, false);
+        } else if (
+          !extrinsicLayerRedisDisabledFromEnv() &&
+          this.analyzeDistributedCache.isEnabled()
+        ) {
+          const rawRedis = await this.analyzeDistributedCache.getJson(layerKey);
+          if (rawRedis) {
+            try {
+              const parsed = JSON.parse(rawRedis) as DiagnosticoExtrinsicLayerPayload;
+              if (parsed && Array.isArray(parsed.fanInEntries) && Array.isArray(parsed.outCallsOutsideEntries)) {
+                applyLayerPayload(parsed, true);
+                this.setDiagnosticoExtrinsicLayerCache(layerKey, parsed);
+              }
+            } catch {
+              /* ignore */
+            }
+          }
+        }
+      }
+
+      if (!extrinsicCallsLayerCacheHit) {
+        const rawCallEdges = (await this.cypher.executeCypher(
+          projectId,
+          `MATCH (a:Function)-[:CALLS]->(b:Function) WHERE a.projectId = $projectId AND b.projectId = $projectId
+           AND a.repoId = $repoId AND b.repoId = $repoId
+           RETURN a.path as fromPath, a.name as fromName, b.path as toPath, b.name as toName
+           LIMIT ${edgeLimit}`,
+          { repoId: repositoryId },
+        )) as CallEdgeRow[];
+        callEdgesTruncated = rawCallEdges.length >= edgeLimit;
+        const agg = aggregateCallEdgesForScope(rawCallEdges, scope, repo.id);
+        fanInByCalleeKey = agg.fanInByCalleeKey;
+        outCallsOutsideFocusByCallerKey = agg.outCallsOutsideFocusByCallerKey;
+
+        if (!extrinsicLayerCacheDisabledFromEnv()) {
+          const payload: DiagnosticoExtrinsicLayerPayload = {
+            fanInEntries: [...fanInByCalleeKey.entries()],
+            outCallsOutsideEntries: [...outCallsOutsideFocusByCallerKey.entries()],
+            callEdgesTruncated,
+          };
+          this.setDiagnosticoExtrinsicLayerCache(layerKey, payload);
+          if (!extrinsicLayerRedisDisabledFromEnv() && this.analyzeDistributedCache.isEnabled()) {
+            await this.analyzeDistributedCache.setJson(
+              layerKey,
+              JSON.stringify(payload),
+              extrinsicLayerCacheRedisTtlSec(),
+            );
+          }
+        }
+      }
+    }
+
+    let riskRanked = attachExtrinsicMetricsToRiskRows(
+      riskRankedCore,
+      scopeActive,
+      fanInByCalleeKey,
+      outCallsOutsideFocusByCallerKey,
+    );
+
+    const antipatterns = await buildDiagnosticoAntipatternsScoped({
+      projectId,
+      repositoryId: repo.id,
+      scope,
+      scopeActive,
+      antipatternsRaw,
+      fanInByCalleeKey,
+      executeCypher: this.cypher.executeCypher.bind(this.cypher),
+    });
+
+    const riskTrunc = riskRanked.slice(0, MAX_RISK_ITEMS);
+    const couplingTrunc = highCouplingScoped.slice(0, MAX_HIGH_COUPLING);
+    const noDescTrunc = noDescriptionScoped.slice(0, MAX_NO_DESC);
+    const propsTrunc = componentPropsScoped.slice(0, MAX_COMPONENT_PROPS);
+
+    const scopeDisclaimer = scopeActive
+      ? `
+- **Alcance (foco):** el fan-in/inCalls incluye llamadas desde **todo** el grafo indexado del repo; columnas inCallsInsideFocus / inCallsOutsideFocus y sampleCallersOutsideFocus explican riesgo global vs local. Un outCallsOutsideFocus > 0 indica dependencias salientes hacia rutas fuera del prefijo.
+- **Código / imports:** un símbolo puede ser “seguro” en el foco y aun así consumido desde otras apps o paquetes; no interpretes el foco como aislamiento de runtime.
+`
+      : '';
+
+    const context = `
+Estadísticas del proyecto ${repo.projectKey}/${repo.repoSlug}:
+- Nodos indexados: ${JSON.stringify(graphSummary.counts)}
+${scopeDisclaimer}
+- **Riesgo** (ordenado por riskScore descendente, top ${MAX_RISK_ITEMS}): ${JSON.stringify(riskTrunc)}${riskRanked.length > MAX_RISK_ITEMS ? `\n  (+ ${riskRanked.length - MAX_RISK_ITEMS} más en details)` : ''}
+- Funciones con alto acoplamiento (más de 5 llamadas salientes): ${JSON.stringify(couplingTrunc)}
+- Funciones sin JSDoc/descripción: ${JSON.stringify(noDescTrunc)}${noDescriptionScoped.length > MAX_NO_DESC ? ` (+ ${noDescriptionScoped.length - MAX_NO_DESC} más)` : ''}
+- Componentes con muchas props (>5): ${JSON.stringify(propsTrunc)}
+- **Anti-patrones y malas prácticas:** ${JSON.stringify(truncateAntipatterns(antipatterns))}
+${callEdgesTruncated ? `\n\u26a0\ufe0f Aristas CALLS truncadas a ${getMaxAnalyzeCallEdges()}; fan-in/fan-out parciales.` : ''}
+
+Métricas estándar: acoplamiento (CALLS), complejidad ciclomática (McCabe), LOC, documentación, anidamiento.
+`;
+
+    const systemPrompt = `<rol>Arquitecto senior que analiza DEUDA TÉCNICA. \u00danica fuente de verdad: datos JSON.</rol>
+
+<cot>Pensemos paso a paso: 1) Revisar métricas y conteos. 2) Priorizar por riskScore y antipatrones. 3) Generar acciones concretas.</cot>
+
+<glosario_para_desarrolladores>
+Antes de cada **tabla o lista sustancial** de una categoría, escribe un párrafo corto (2-5 líneas) para que el lector entienda la métrica y qué vigilar. Puedes condensar estas definiciones (no inventes otras):
+
+- **Riesgo (riskScore):** Puntuación del índice: \`outCalls×3 + complejidad_ciclomática×2 + penalización si no hay JSDoc + penalización por LOC\`. Valores altos = más coste y riesgo al cambiar la función (más dependencias salientes, ramas, líneas o falta de documentación).
+- **Alto acoplamiento (outCalls en la lista del grafo):** Cuántas **otras funciones** llama esta función (aristas CALLS salientes). Aquí se listan las que superan el umbral del análisis (más de 5 llamadas salientes): orquestadores frágiles ante cambios en dependencias.
+- **Funciones sin JSDoc:** Sin \`description\` en el nodo Function; dificulta mantenimiento y onboarding y empeora el término de riesgo.
+- **Componentes con muchas props (>5):** Muchas props en el modelo del grafo sugiere superficie de API ancha y acoplamiento en la UI.
+- **Spaghetti (nestingDepth):** Profundidad de anidamiento en el AST; umbral de detección **>4**. Por encima, flujo difícil de seguir y testear.
+- **God function:** \`outCalls > 8\` — llama a demasiadas funciones; concentra lógica.
+- **High fan-in:** \`inCalls > 5\` — muchas funciones llaman a esta; cambios impactan muchos call sites.
+- **Imports circulares / componentes sobrecargados:** Si aparecen en datos, explica brevemente el riesgo (dependencias cíclicas o demasiados hijos renderizados).
+</glosario_para_desarrolladores>
+
+<instrucciones>
+- Deriva TODO de los datos. Cada ítem debe referenciar path/name concreto.
+- Métricas estándar: acoplamiento (CALLS), complejidad, LOC, documentación, anidamiento.
+- PROHIBIDO inventar problemas genéricos sin soporte. PROHIBIDO incluir antipatrones con arrays vacíos.
+- Si una sección tiene datos, **no** saltes el párrafo pedagógico del glosario antes de tabla o lista.
+</instrucciones>
+
+<formato_salida>Markdown con bullet points y tablas. NO envuelvas la respuesta completa en un bloque de código (triple comilla + markdown); escribe el markdown directo desde el primer encabezado.</formato_salida>`;
+
+    const prefill =
+      riskRanked.length > 0
+        ? `Riesgos (${riskRanked.length}): ${riskRanked.slice(0, 5).map((r) => `${r.path}/${r.name}(${r.riskScore})`).join(', ')}${riskRanked.length > 5 ? `… y ${riskRanked.length - 5} más. ` : '. '}`
+        : '';
+    const prefillDesc =
+      noDescriptionScoped.length > 0 ? `Funciones sin JSDoc: ${noDescriptionScoped.length} ítems. ` : '';
+    const prefillAntip =
+      antipatterns.spaghetti.length + antipatterns.godFunctions.length > 0
+        ? `Quick wins potenciales: antipatrones Spaghetti/GodFunctions detectados. `
+        : '';
+
+    const userPrompt = `${context}
+
+<prefill>${prefill}${prefillDesc}${prefillAntip}</prefill>
+
+Genera un diagnóstico estructurado en markdown con:
+1. **Resumen ejecutivo** — 2-4 líneas basadas SOLO en los conteos y métricas mostradas (opcional: una línea sobre qué resume este informe respecto al grafo indexado).
+2. **Riesgo (ordenado por riskScore)** — **Primero** el párrafo pedagógico sobre qué es riskScore y cómo interpretarlo. **Después** tabla con TODOS los ítems: Path | Name | Risk Score | (opcional: columnas útiles del JSON: outCalls, complexity, loc si aportan).
+3. **Alto acoplamiento** — solo si hay datos en "Funciones con alto acoplamiento": párrafo pedagógico (outCalls salientes, umbral >5) y tabla o lista con path, name, outCalls.
+4. **Funciones sin JSDoc** — solo si hay datos: párrafo pedagógico y lista/tabla con path y name (todos los ítems mostrados en JSON).
+5. **Componentes con muchas props** — solo si hay datos: párrafo pedagógico y lista con componente y propCount.
+6. **Anti-patrones detectados** — párrafo introductorio general; luego SOLO subsecciones con datos no vacíos. Antes de cada subsección (Spaghetti, God Functions, High Fan In, etc.), una línea o dos del glosario. OBLIGATORIO la MÉTRICA en cada ítem:
+   - **Spaghetti:** \`path/name (nestingDepth: N)\` — umbral de listado: nestingDepth > 4 en el grafo.
+   - **God Functions:** \`path/name (outCalls: N)\` — umbral > 8.
+   - **High Fan In:** \`path/name (inCalls: N)\` — umbral > 5.
+   - Imports circulares / componentes sobrecargados: solo si vienen en datos.
+7. **Riesgos y prioridades** — síntesis breve basada solo en métricas; sin consejos genéricos. Párrafo introductorio opcional de 1-2 líneas sobre cómo leer las prioridades frente a las tablas anteriores.
+
+Sé conciso en los párrafos pedagógicos. Usa bullet points y tablas. Incluye TODOS los ítems de los datos en las tablas y listas. Omite secciones 3–5 si el JSON correspondiente está vacío.`;
+
+    const detailsPayload = {
+      riskRanked,
+      highCoupling: highCouplingScoped,
+      noDescription: noDescriptionScoped,
+      componentProps: componentPropsScoped,
+      antipatterns,
+      scopeActive,
+      callEdgesTruncated,
+    };
+
+    const reportMeta = buildAnalyzeReportMeta({
+      scope,
+      repositoryId: repo.id,
+      allIndexedFilePaths,
+      truncatedFiles: callEdgesTruncated,
+    });
+    if (scopeActive && extrinsicCallsLayerCacheHit) {
+      reportMeta.extrinsicCallsLayerCacheHit = true;
+    }
+    if (scopeActive && extrinsicCallsLayerRedisHit) {
+      reportMeta.extrinsicCallsLayerRedisHit = true;
+    }
+    if (callEdgesTruncated) {
+      const edgeNote = `Aristas CALLS limitadas a ${getMaxAnalyzeCallEdges()}; fan-in/fan-out pueden ser parciales.`;
+      reportMeta.graphCoverageNote = reportMeta.graphCoverageNote
+        ? `${reportMeta.graphCoverageNote} ${edgeNote}`
+        : edgeNote;
+    }
+
+    return {
+      systemPrompt,
+      userPrompt,
+      detailsPayload,
+      reportMeta,
+      scopeActive,
+      extrinsicCallsLayerCacheHit,
+      extrinsicCallsLayerRedisHit,
+    };
+  }
 
   /** Proyecto a usar para un repo: primer proyecto asociado o repo.id (standalone). */
   private async resolveProjectIdForRepo(repoId: string): Promise<string> {
     const ids = await this.repos.getProjectIdsForRepo(repoId);
     return ids[0] ?? repoId;
+  }
+
+  private async resolveModificationPlanRepositoryId(
+    projectIdOrRepoId: string,
+    scope?: ChatScope,
+    currentFilePath?: string | null,
+  ): Promise<
+    | { ok: true; repositoryId: string }
+    | { ok: false; diagnostic: ModificationPlanDiagnostic }
+  > {
+    const reposAsProject = await this.repos.findAll(projectIdOrRepoId);
+    if (reposAsProject.length > 0) {
+      const roleById = new Map<string, string | null>();
+      try {
+        const pw = await this.projects.findOne(projectIdOrRepoId);
+        for (const r of pw.repositories) {
+          roleById.set(r.id, r.role ?? null);
+        }
+      } catch {
+        /* no es fila en projects o proyecto inexistente */
+      }
+      const reposForResolve: ModificationPlanRepoInput[] = reposAsProject.map((r) => ({
+        id: r.id,
+        projectKey: r.projectKey,
+        repoSlug: r.repoSlug,
+        role: roleById.get(r.id) ?? null,
+      }));
+      return resolveRepositoryIdForModificationPlan(projectIdOrRepoId, reposForResolve, {
+        scope,
+        currentFilePath: currentFilePath ?? null,
+        resolveWorkspacePath: (pid, path) => this.projects.resolveRepositoryForWorkspacePath(pid, path),
+      });
+    }
+    const asRepo = await this.repos.findOptionalById(projectIdOrRepoId);
+    if (asRepo) {
+      return { ok: true, repositoryId: asRepo.id };
+    }
+    return {
+      ok: false,
+      diagnostic: {
+        code: 'NOT_FOUND',
+        message: 'No existe un proyecto ni un repositorio con este UUID.',
+      },
+    };
   }
 
   /** Resumen de lo indexado en FalkorDB. full=true devuelve todos los ítems (sin LIMIT); si no, muestras de 12. repoScoped acota nodos al repo indicado (mismo projectId Falkor). */
@@ -246,16 +776,14 @@ export class ChatService {
 
   /**
    * Plan de modificación por proyecto Ariadne o por repo concreto (multi-root).
-   * - Si `projectIdOrRepoId` es un **UUID de repositorio** (`roots[].id`), se usa ese repo (recomendado p. ej. para acotar al frontend).
-   * - Si es un **UUID de proyecto**, se usa el primer repo asociado (orden `createdAt` DESC) — puede no ser el deseado si hay varios roots.
-   * @param {string} projectIdOrRepoId - ID de proyecto Ariadne o ID de repositorio (root).
-   * @param {string} userDescription - Descripción de la modificación.
-   * @returns {Promise<ModificationPlanResult>}
+   * Proyecto multi-root: ancla por `scope.repoIds` (un uuid), `currentFilePath` resoluble, o `MODIFICATION_PLAN_LEGACY_FIRST_REPO=true`.
    */
   async getModificationPlanByProject(
     projectIdOrRepoId: string,
     userDescription: string,
     scope?: ChatScope,
+    currentFilePath?: string | null,
+    questionsMode?: ModificationPlanQuestionsMode,
   ): Promise<ModificationPlanResult> {
     const orch = process.env.ORCHESTRATOR_URL?.trim();
     if (orch && userDescription.trim()) {
@@ -264,35 +792,31 @@ export class ChatService {
         const res = await fetch(url, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ userDescription, scope }),
+          body: JSON.stringify({
+            userDescription,
+            scope,
+            ...(currentFilePath ? { currentFilePath } : {}),
+            ...(questionsMode ? { questionsMode } : {}),
+          }),
         });
         if (!res.ok) throw new Error(`orchestrator ${res.status}: ${await res.text()}`);
         return (await res.json()) as ModificationPlanResult;
       } catch {
-        /* fallback */
+        /* fallback local */
       }
     }
 
-    const directRepo = await this.repos.findOptionalById(projectIdOrRepoId);
-    if (directRepo) {
-      return this.getModificationPlan(directRepo.id, userDescription, scope);
+    const resolved = await this.resolveModificationPlanRepositoryId(
+      projectIdOrRepoId,
+      scope,
+      currentFilePath,
+    );
+    if (!resolved.ok) {
+      return { filesToModify: [], questionsToRefine: [], diagnostic: resolved.diagnostic };
     }
-    const repos = await this.repos.findAll(projectIdOrRepoId);
-    const repo = repos[0];
-    if (!repo) {
-      return { filesToModify: [], questionsToRefine: [] };
-    }
-    return this.getModificationPlan(repo.id, userDescription, scope);
+    return this.getModificationPlan(resolved.repositoryId, userDescription, scope, questionsMode);
   }
 
-  /**
-   * Plan de modificación basado solo en el codebase indexado (contrato MaxPrime/legacy).
-   * - filesToModify: únicamente rutas que existen en el grafo (File nodes). Sin inventar paths.
-   * - questionsToRefine: solo preguntas de negocio/funcionalidad (valores por defecto, reglas, criterios).
-   * @param {string} repositoryId - ID del repositorio indexado.
-   * @param {string} userDescription - Descripción en lenguaje natural de la modificación.
-   * @returns {Promise<ModificationPlanResult>}
-   */
   /**
    * Solo archivos a tocar (grafo), sin LLM. Para orchestrator / internal.
    */
@@ -308,15 +832,15 @@ export class ChatService {
     projectIdOrRepoId: string,
     userDescription: string,
     scope?: ChatScope,
+    currentFilePath?: string | null,
   ): Promise<Array<{ path: string; repoId: string }>> {
-    const directRepo = await this.repos.findOptionalById(projectIdOrRepoId);
-    if (directRepo) {
-      return this.collectModificationPlanFiles(directRepo.id, userDescription, scope);
-    }
-    const repos = await this.repos.findAll(projectIdOrRepoId);
-    const repo = repos[0];
-    if (!repo) return [];
-    return this.collectModificationPlanFiles(repo.id, userDescription, scope);
+    const resolved = await this.resolveModificationPlanRepositoryId(
+      projectIdOrRepoId,
+      scope,
+      currentFilePath,
+    );
+    if (!resolved.ok) return [];
+    return this.collectModificationPlanFiles(resolved.repositoryId, userDescription, scope);
   }
 
   /** Candidatos (path, repoId) desde Cypher + semántica; respeta MODIFICATION_PLAN_MAX_FILES y scope. */
@@ -327,87 +851,84 @@ export class ChatService {
   ): Promise<Array<{ path: string; repoId: string }>> {
     const repo = await this.repos.findOne(repositoryId);
     const projectId = await this.resolveProjectIdForRepo(repo.id);
+    const sc = modificationPlanScopeCypher(scope);
+    const scopeParams = sc.params;
 
     const indexedRows = (await this.cypher.executeCypher(
       projectId,
-      `MATCH (f:File) WHERE f.projectId = $projectId RETURN f.path as path, coalesce(f.repoId, f.projectId) as repoId`,
+      `MATCH (f:File) WHERE f.projectId = $projectId${sc.fileClause} RETURN f.path as path, coalesce(f.repoId, f.projectId) as repoId`,
+      { ...scopeParams },
     )) as Array<{ path: string; repoId: string }>;
 
     const candidatePathRepoSet = new Set<string>();
+    const addIfScoped = (path: string, repoId: string) => {
+      if (modificationPlanPathExcludedByDefaults(path)) return;
+      if (!scope || matchesChatScope(path, repoId, scope)) {
+        candidatePathRepoSet.add(`${path}\t${repoId}`);
+      }
+    };
 
-    const stopwords = new Set([
-      'el', 'la', 'los', 'las', 'un', 'una', 'unos', 'unas', 'de', 'del', 'en', 'y', 'o', 'pero', 'si', 'no',
-      'que', 'para', 'por', 'con', 'al', 'lo', 'como', 'más', 'menos', 'este', 'esta', 'eso', 'que', 'se', 'los',
-      'the', 'a', 'an', 'to', 'of', 'in', 'on', 'for', 'with', 'is', 'are', 'be', 'this', 'that',
-    ]);
-    const words = userDescription
-      .replace(/[^\w\sáéíóúñ]/gi, ' ')
-      .split(/\s+/)
-      .filter((w) => w.length >= 2 && !stopwords.has(w.toLowerCase()));
-    const terms = Array.from(new Set([...words, userDescription.trim().slice(0, 80)]))
-      .filter((t) => t.length >= 2)
-      .slice(0, 12);
-    const termPairs = terms.flatMap((t) => {
-      const cap = t.charAt(0).toUpperCase() + t.slice(1);
-      return [t, cap].filter((x, i, a) => a.indexOf(x) === i);
-    });
+    const cypherTerms = extractModificationPlanCypherTerms(userDescription);
+    const termPairs = expandModificationPlanTermPairs(cypherTerms);
 
     for (const term of termPairs) {
       const filesByPath = (await this.cypher.executeCypher(
         projectId,
-        `MATCH (f:File) WHERE f.projectId = $projectId AND (f.path CONTAINS $term) RETURN f.path as path, coalesce(f.repoId, f.projectId) as repoId`,
-        { term },
+        `MATCH (f:File) WHERE f.projectId = $projectId${sc.fileClause} AND (f.path CONTAINS $term) RETURN f.path as path, coalesce(f.repoId, f.projectId) as repoId`,
+        { ...scopeParams, term },
       )) as Array<{ path: string; repoId: string }>;
-      filesByPath.forEach((r) => candidatePathRepoSet.add(`${r.path}\t${r.repoId}`));
+      filesByPath.forEach((r) => addIfScoped(r.path, r.repoId));
 
       const filesByComponent = (await this.cypher.executeCypher(
         projectId,
-        `MATCH (f:File)-[:CONTAINS]->(c:Component) WHERE f.projectId = $projectId AND c.projectId = $projectId AND (c.name CONTAINS $term) RETURN f.path as path, coalesce(f.repoId, f.projectId) as repoId`,
-        { term },
+        `MATCH (f:File)-[:CONTAINS]->(c:Component) WHERE f.projectId = $projectId AND c.projectId = $projectId${sc.fileClause} AND (c.name CONTAINS $term) RETURN f.path as path, coalesce(f.repoId, f.projectId) as repoId`,
+        { ...scopeParams, term },
       )) as Array<{ path: string; repoId: string }>;
-      filesByComponent.forEach((r) => candidatePathRepoSet.add(`${r.path}\t${r.repoId}`));
+      filesByComponent.forEach((r) => addIfScoped(r.path, r.repoId));
 
       const filesByFunction = (await this.cypher.executeCypher(
         projectId,
-        `MATCH (fn:Function) WHERE fn.projectId = $projectId AND (fn.path CONTAINS $term OR fn.name CONTAINS $term) RETURN fn.path as path, coalesce(fn.repoId, fn.projectId) as repoId`,
-        { term },
+        `MATCH (fn:Function) WHERE fn.projectId = $projectId${sc.fnClause} AND (fn.path CONTAINS $term OR fn.name CONTAINS $term) RETURN fn.path as path, coalesce(fn.repoId, fn.projectId) as repoId`,
+        { ...scopeParams, term },
       )) as Array<{ path: string; repoId: string }>;
-      filesByFunction.forEach((r) => candidatePathRepoSet.add(`${r.path}\t${r.repoId}`));
+      filesByFunction.forEach((r) => addIfScoped(r.path, r.repoId));
     }
 
     const semantic = await this.handlers.semanticSearchFallback(projectId, userDescription, 25);
     for (const row of semantic.result as Array<{ path?: string; name?: string; tipo?: string; repoId?: string }>) {
       const p = row.path;
-      if (p && (p.includes('/') || p.endsWith('.ts') || p.endsWith('.tsx') || p.endsWith('.js') || p.endsWith('.jsx'))) {
+      if (
+        p &&
+        (p.includes('/') ||
+          p.endsWith('.ts') ||
+          p.endsWith('.tsx') ||
+          p.endsWith('.js') ||
+          p.endsWith('.jsx') ||
+          p.endsWith('.mdx') ||
+          p.endsWith('.md'))
+      ) {
         if (row.repoId) {
-          candidatePathRepoSet.add(`${p}\t${row.repoId}`);
+          addIfScoped(p, String(row.repoId));
         } else {
-          indexedRows.filter((r) => r.path === p).forEach((r) => candidatePathRepoSet.add(`${r.path}\t${r.repoId}`));
+          indexedRows.filter((r) => r.path === p).forEach((r) => addIfScoped(r.path, r.repoId));
         }
       }
       if (row.tipo === 'Component' && row.name) {
         const fileRows = (await this.cypher.executeCypher(
           projectId,
-          `MATCH (f:File)-[:CONTAINS]->(c:Component {name: $name, projectId: $projectId}) RETURN f.path as path, coalesce(f.repoId, f.projectId) as repoId LIMIT 5`,
-          { name: row.name, projectId },
+          `MATCH (f:File)-[:CONTAINS]->(c:Component {name: $name, projectId: $projectId}) WHERE f.projectId = $projectId${sc.fileClause} RETURN f.path as path, coalesce(f.repoId, f.projectId) as repoId LIMIT 5`,
+          { ...scopeParams, name: row.name, projectId },
         )) as Array<{ path: string; repoId: string }>;
-        fileRows.forEach((r) => candidatePathRepoSet.add(`${r.path}\t${r.repoId}`));
+        fileRows.forEach((r) => addIfScoped(r.path, r.repoId));
       }
     }
 
-    const maxPlanFiles = (() => {
-      const raw = process.env.MODIFICATION_PLAN_MAX_FILES?.trim();
-      const n = raw ? parseInt(raw, 10) : 150;
-      if (!Number.isFinite(n) || n < 1) return 150;
-      return Math.min(n, 2000);
-    })();
-    let filesToModify = indexedRows
+    const sortedFull = indexedRows
       .filter((r) => candidatePathRepoSet.has(`${r.path}\t${r.repoId}`))
       .map((r) => ({ path: r.path, repoId: r.repoId }))
-      .sort((a, b) => a.path.localeCompare(b.path) || a.repoId.localeCompare(b.repoId))
-      .slice(0, maxPlanFiles);
+      .sort((a, b) => a.path.localeCompare(b.path) || a.repoId.localeCompare(b.repoId));
     const restrictRepos = scope?.repoIds?.length ? new Set(scope.repoIds) : new Set([repositoryId]);
-    filesToModify = filesToModify.filter((f) => restrictRepos.has(f.repoId));
+    let filesToModify = sortedFull.filter((f) => restrictRepos.has(f.repoId));
     if (scope) {
       filesToModify = filesToModify.filter((f) => matchesChatScope(f.path, f.repoId, scope));
     }
@@ -417,29 +938,56 @@ export class ChatService {
   private async buildModificationPlanQuestionsToRefine(
     userDescription: string,
     filesToModify: Array<{ path: string; repoId: string }>,
+    questionsMode: ModificationPlanQuestionsMode,
   ): Promise<string[]> {
     if (!process.env.OPENAI_API_KEY?.trim()) return [];
-    const systemPrompt = `Eres un analista que genera preguntas para afinar un cambio en el software.
+    const mode = questionsMode;
+    const businessSystem = `Eres un analista que genera preguntas para afinar un cambio en el software.
 Regla: SOLO preguntas de negocio o funcionalidad: valores por defecto, reglas de validación, criterios de negocio, umbrales, opciones permitidas.
 PROHIBIDO: preguntas como "¿hay otros componentes a considerar?", "¿qué más archivos?", "¿otras dependencias?". La lista de archivos ya es exhaustiva; no preguntes por exhaustividad.
 Formato: devuelve una lista numerada, una pregunta por línea. Si no hay preguntas relevantes, devuelve "Ninguna.".
 Máximo 5 preguntas. En español.`;
-    const userPrompt = `Descripción del cambio que el usuario quiere hacer:\n\n"${userDescription.slice(0, 800)}"\n\nArchivos que se van a modificar (ya determinados): ${filesToModify.slice(0, 20).map((f) => f.path).join(', ')}${filesToModify.length > 20 ? '...' : ''}\n\nGenera solo preguntas de negocio/funcionalidad para afinar el cambio (valores por defecto, reglas, criterios).`;
+    const technicalSystem = `Eres un analista que genera preguntas **técnicas** para afinar un refactor o migración (dependencias, convenciones de código, orden de cambios, pruebas, compatibilidad).
+Regla: SOLO preguntas técnicas: versiones de librerías, orden de migración, estrategia de reemplazo, impacto en build/bundler/linter, tokens CSS, convenciones del monorepo, tests o snapshots a actualizar.
+PROHIBIDO: preguntas de reglas de negocio del dominio ni "¿qué más archivos buscar?".
+Formato: lista numerada, una pregunta por línea. Si no aplica, devuelve "Ninguna.".
+Máximo 5. En español.`;
+    const bothSystem = `Eres un analista que genera preguntas para afinar un cambio.
+Genera como máximo 3 preguntas de **negocio/funcionalidad** (valores por defecto, reglas de validación, umbrales) y hasta 3 de **implementación técnica** (dependencias, convenciones, orden de migración, tests).
+Formato: lista numerada. Si un bloque no aplica, escribe una línea con "Negocio: Ninguna." o "Técnico: Ninguna.".
+Máximo 6 líneas útiles. En español.`;
+    const systemPrompt =
+      mode === 'technical' ? technicalSystem : mode === 'both' ? bothSystem : businessSystem;
+    const userTail =
+      mode === 'technical'
+        ? 'Genera solo preguntas técnicas de implementación para afinar el cambio.'
+        : mode === 'both'
+          ? 'Genera el mix negocio + técnico indicado en el sistema.'
+          : 'Genera solo preguntas de negocio/funcionalidad para afinar el cambio (valores por defecto, reglas, criterios).';
+    const userPrompt = `Descripción del cambio que el usuario quiere hacer:\n\n"${userDescription.slice(0, 800)}"\n\nArchivos que se van a modificar (ya determinados): ${filesToModify.slice(0, 20).map((f) => f.path).join(', ')}${filesToModify.length > 20 ? '...' : ''}\n\n${userTail}`;
     const raw = await this.llm.callLlm(
       [{ role: 'system', content: systemPrompt }, { role: 'user', content: userPrompt }],
       512,
     );
+    const minLine = mode === 'both' ? 6 : 10;
     const lines = raw
       .split(/\n+/)
       .map((l) => l.replace(/^\s*\d+[.)]\s*/, '').trim())
-      .filter((l) => l.length > 10 && !/^ninguna\.?$/i.test(l));
-    return lines.slice(0, 5);
+      .filter(
+        (l) =>
+          l.length > minLine &&
+          !/^ninguna\.?$/i.test(l) &&
+          !/^negocio:\s*ninguna\.?$/i.test(l) &&
+          !/^t[eé]cnico:\s*ninguna\.?$/i.test(l),
+      );
+    return lines.slice(0, mode === 'both' ? 6 : 5);
   }
 
   async getModificationPlan(
     repositoryId: string,
     userDescription: string,
     scope?: ChatScope,
+    questionsMode?: ModificationPlanQuestionsMode,
   ): Promise<ModificationPlanResult> {
     const orch = process.env.ORCHESTRATOR_URL?.trim();
     if (orch && userDescription.trim()) {
@@ -448,7 +996,11 @@ Máximo 5 preguntas. En español.`;
         const res = await fetch(url, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ userDescription, scope }),
+          body: JSON.stringify({
+            userDescription,
+            scope,
+            ...(questionsMode ? { questionsMode } : {}),
+          }),
         });
         if (!res.ok) throw new Error(`orchestrator ${res.status}: ${await res.text()}`);
         return (await res.json()) as ModificationPlanResult;
@@ -460,155 +1012,70 @@ Máximo 5 preguntas. En español.`;
     if (!userDescription.trim()) {
       return { filesToModify: [], questionsToRefine: [] };
     }
-    const filesToModify = await this.collectModificationPlanFiles(repositoryId, userDescription, scope);
-    const questionsToRefine = await this.buildModificationPlanQuestionsToRefine(userDescription, filesToModify);
-    return { filesToModify, questionsToRefine };
-  }
+    const qm: ModificationPlanQuestionsMode =
+      questionsMode === 'technical' || questionsMode === 'both' ? questionsMode : 'business';
+    const maxPlanFiles = (() => {
+      const raw = process.env.MODIFICATION_PLAN_MAX_FILES?.trim();
+      const n = raw ? parseInt(raw, 10) : 150;
+      if (!Number.isFinite(n) || n < 1) return 150;
+      return Math.min(n, 2000);
+    })();
 
-  /** Métricas y prompts LLM para diagnóstico (compartido con orchestrator prep). */
-  private async buildDiagnosticoLlmPayload(repositoryId: string): Promise<{
-    systemPrompt: string;
-    userPrompt: string;
-    details: Record<string, unknown>;
-  }> {
-    const repo = await this.repos.findOne(repositoryId);
-    const projectId = await this.resolveProjectIdForRepo(repo.id);
-    const summary = await this.cypher.getGraphSummary(repositoryId, false, true);
+    const filesFull = await this.collectModificationPlanFiles(repositoryId, userDescription, scope);
+    const totalBeforeCap = filesFull.length;
+    let filesToModify = filesFull.slice(0, maxPlanFiles);
+    const pathHints = extractLikelyRepoRelativePaths(userDescription);
+    filesToModify = prioritizeModificationPlanFiles(filesToModify, pathHints);
 
-    const riskCandidates = await this.cypher.executeCypher(
-      projectId,
-      `MATCH (a:Function) WHERE a.projectId = $projectId AND a.repoId = $repoId
-       OPTIONAL MATCH (a)-[:CALLS]->(b:Function)
-       WITH a, collect(b) as outs
-       WITH a, size([x IN outs WHERE x IS NOT NULL AND x.repoId = $repoId]) as outCalls
-       RETURN a.path as path, a.name as name, outCalls, a.complexity as complexity, a.loc as loc, a.description as description`,
-      { repoId: repositoryId },
-    ) as Array<{ path: string; name: string; outCalls: number; complexity?: number; loc?: number; description?: string | null }>;
-    const riskRanked = riskCandidates
-      .map((r) => ({
-        ...r,
-        noDesc: !r.description || String(r.description).trim() === '',
-        riskScore: computeRiskScore({
-          outCalls: r.outCalls,
-          complexity: r.complexity,
-          loc: r.loc,
-          noDesc: !r.description || String(r.description).trim() === '',
-        }),
-      }))
-      .sort((a, b) => b.riskScore - a.riskScore)
-      .map(({ path, name, outCalls, complexity, loc, noDesc, riskScore }) => ({
-        path,
-        name,
-        outCalls,
-        complexity: complexity ?? '—',
-        loc: loc ?? '—',
-        noDesc: noDesc ? 'Sí' : 'No',
-        riskScore,
-      }));
+    const warnings: string[] = [];
+    if (totalBeforeCap > maxPlanFiles) {
+      warnings.push(
+        `Lista truncada: ${totalBeforeCap} archivos candidatos coincidían con la descripción y el alcance; se devolvieron ${maxPlanFiles} (MODIFICATION_PLAN_MAX_FILES). Acota scope.includePathPrefixes o userDescription para menos ruido.`,
+      );
+    }
 
-    const highCoupling = await this.cypher.executeCypher(
-      projectId,
-      `MATCH (a:Function)-[:CALLS]->(b:Function) WHERE a.projectId = $projectId AND b.projectId = $projectId
-       AND a.repoId = $repoId AND b.repoId = $repoId
-       WITH a, count(b) as outCalls
-       WHERE outCalls > 5
-       RETURN a.path as path, a.name as name, outCalls ORDER BY outCalls DESC`,
-      { repoId: repositoryId },
-    );
-    const noDescription = await this.cypher.executeCypher(
-      projectId,
-      `MATCH (n:Function) WHERE n.projectId = $projectId AND n.repoId = $repoId
-       AND (n.description IS NULL OR n.description = '')
-       RETURN n.path as path, n.name as name`,
-      { repoId: repositoryId },
-    );
-    const componentProps = await this.cypher.executeCypher(
-      projectId,
-      `MATCH (c:Component)-[:HAS_PROP]->(p:Prop) WHERE c.projectId = $projectId AND c.repoId = $repoId AND p.repoId = $repoId
-       WITH c, count(p) as propCount WHERE propCount > 5
-       RETURN c.name as component, propCount ORDER BY propCount DESC`,
-      { repoId: repositoryId },
-    );
+    let diagnostic: ModificationPlanDiagnostic | undefined;
+    if (filesToModify.length === 0) {
+      diagnostic = {
+        code: 'NO_MATCHING_FILES',
+        message:
+          'Ningún archivo indexado coincide con la descripción y el alcance. Revisa términos, scope.repoIds / includePathPrefixes, embed-index o pasa una descripción más concreta (p. ej. path relativo al repo).',
+      };
+    }
 
-    const antipatterns = await this.antipatterns.detectAntipatterns(repositoryId);
-
-    const riskTrunc = riskRanked.slice(0, MAX_RISK_ITEMS);
-    const couplingTrunc = (highCoupling as unknown[]).slice(0, MAX_HIGH_COUPLING);
-    const noDescTrunc = (noDescription as unknown[]).slice(0, MAX_NO_DESC);
-    const propsTrunc = (componentProps as unknown[]).slice(0, MAX_COMPONENT_PROPS);
-
-    const context = `
-Estadísticas del proyecto ${repo.projectKey}/${repo.repoSlug}:
-- Nodos indexados: ${JSON.stringify(summary.counts)}
-- **Riesgo** (ordenado por riskScore descendente, top ${MAX_RISK_ITEMS}): ${JSON.stringify(riskTrunc)}${riskRanked.length > MAX_RISK_ITEMS ? `\n  (+ ${riskRanked.length - MAX_RISK_ITEMS} más en details)` : ''}
-- Funciones con alto acoplamiento (más de 5 llamadas salientes): ${JSON.stringify(couplingTrunc)}
-- Funciones sin JSDoc/descripción: ${JSON.stringify(noDescTrunc)}${(noDescription as unknown[]).length > MAX_NO_DESC ? ` (+ ${(noDescription as unknown[]).length - MAX_NO_DESC} más)` : ''}
-- Componentes con muchas props (>5): ${JSON.stringify(propsTrunc)}
-- **Anti-patrones y malas prácticas:** ${JSON.stringify(truncateAntipatterns(antipatterns))}
-
-Métricas estándar: acoplamiento (CALLS), complejidad ciclomática (McCabe), LOC, documentación, anidamiento.
-`;
-
-    const systemPrompt = `<rol>Arquitecto senior que analiza DEUDA TÉCNICA. Única fuente de verdad: datos JSON.</rol>
-
-<cot>Pensemos paso a paso: 1) Revisar métricas y conteos. 2) Priorizar por riskScore y antipatrones. 3) Generar acciones concretas.</cot>
-
-<instrucciones>
-- Deriva TODO de los datos. Cada ítem debe referenciar path/name concreto.
-- Métricas estándar: acoplamiento (CALLS), complejidad, LOC, documentación, anidamiento.
-- PROHIBIDO inventar problemas genéricos sin soporte. PROHIBIDO incluir antipatrones con arrays vacíos.
-</instrucciones>
-
-<formato_salida>Markdown con bullet points y tablas.</formato_salida>`;
-
-    const prefill =
-      riskRanked.length > 0
-        ? `Riesgos (${riskRanked.length}): ${riskRanked.slice(0, 5).map((r) => `${r.path}/${r.name}(${r.riskScore})`).join(', ')}${riskRanked.length > 5 ? `… y ${riskRanked.length - 5} más. ` : '. '}`
-        : '';
-    const prefillDesc =
-      (noDescription as unknown[]).length > 0
-        ? `Funciones sin JSDoc: ${(noDescription as unknown[]).length} ítems. `
-        : '';
-    const prefillAntip =
-      antipatterns.spaghetti.length + antipatterns.godFunctions.length > 0
-        ? `Quick wins potenciales: antipatrones Spaghetti/GodFunctions detectados. `
-        : '';
-
-    const userPrompt = `${context}
-
-<prefill>${prefill}${prefillDesc}${prefillAntip}</prefill>
-
-Genera un diagnóstico estructurado en markdown con:
-1. **Resumen ejecutivo** — 2-3 líneas basadas SOLO en los conteos y métricas mostradas.
-2. **Riesgo (ordenado por riskScore)** — tabla markdown con los ítems mostrados: Path | Name | Risk Score.
-3. **Anti-patrones detectados** — enumera SOLO los que aparecen. OBLIGATORIO incluir la MÉTRICA que justifica cada uno:
-   - **Spaghetti:** listar cada ítem como \`path/name (nestingDepth: N)\` — el umbral es 4, valores >4 indican anidamiento excesivo.
-   - **God Functions:** \`path/name (outCalls: N)\` — umbral 8.
-   - **High Fan In:** \`path/name (inCalls: N)\` — umbral 5.
-   - Si algún array está vacío, no lo incluyas.
-4. **Riesgos** — solo los que se infieran de las métricas. Sin consejos genéricos.
-5. **Prioridades** — ordena por riskScore y antipatrones; cada ítem debe referenciar path/name concreto de los datos. Sin recomendaciones sin soporte en datos.
-
-Sé conciso. Usa bullet points y tablas. Incluye TODOS los ítems de los datos en las tablas y listas.`;
+    let questionsToRefine: string[] = [];
+    if (filesToModify.length > 0) {
+      questionsToRefine = await this.buildModificationPlanQuestionsToRefine(
+        userDescription,
+        filesToModify,
+        qm,
+      );
+    }
 
     return {
-      systemPrompt,
-      userPrompt,
-      details: { riskRanked, highCoupling, noDescription, componentProps, antipatterns },
+      filesToModify,
+      questionsToRefine,
+      ...(warnings.length > 0 ? { warnings } : {}),
+      ...(diagnostic ? { diagnostic } : {}),
     };
   }
 
-  /** Diagnóstico de deuda técnica. Usa CoT/ToT (NotebookLM: Arquitectura Prompts). */
-  async analyzeDiagnostico(repositoryId: string): Promise<AnalyzeResult> {
-    const p = await this.buildDiagnosticoLlmPayload(repositoryId);
+  /** Diagnóstico de deuda técnica (scope opcional; validación de paths vía `DIAGNOSTICO_VALIDATE_PATHS`). */
+  async analyzeDiagnostico(repositoryId: string, scope?: ChatScope): Promise<AnalyzeResult> {
+    const bundle = await this.runDiagnosticoDataAndPrompts(repositoryId, scope);
     const answer = await this.llm.callLlm(
-      [{ role: 'system', content: p.systemPrompt }, { role: 'user', content: p.userPrompt }],
+      [{ role: 'system', content: bundle.systemPrompt }, { role: 'user', content: bundle.userPrompt }],
       8192,
     );
+    let summary = stripOuterMarkdownFence(answer);
+    if (process.env.DIAGNOSTICO_VALIDATE_PATHS?.trim() !== '0') {
+      summary = appendDiagnosticoPathValidationFooter(summary, bundle.detailsPayload);
+    }
     return {
       mode: 'diagnostico',
-      summary: answer,
-      details: p.details,
+      summary,
+      details: bundle.detailsPayload,
+      reportMeta: bundle.reportMeta,
     };
   }
 
@@ -624,9 +1091,24 @@ Sé conciso. Usa bullet points y tablas. Incluye TODOS los ítems de los datos e
   }
 
   /** Detecta código potencialmente duplicado: embeddings (umbral 0.78) + fallback nombres idénticos en archivos distintos. Sin límite de funciones a analizar. */
-  async analyzeDuplicados(repositoryId: string, threshold = 0.78, limit = 0): Promise<AnalyzeResult> {
+  async analyzeDuplicados(
+    repositoryId: string,
+    threshold = 0.78,
+    limit = 0,
+    scope?: ChatScope,
+    crossPackageDuplicates = false,
+  ): Promise<AnalyzeResult> {
     const repo = await this.repos.findOne(repositoryId);
     const projectId = await this.resolveProjectIdForRepo(repo.id);
+    const inF = (p: string) => pathInAnalyzeFocus(p, scope, repo.id);
+    const scopeActive = isAnalyzeScopeActive(scope);
+
+    const allFilesRows = (await this.cypher.executeCypher(
+      projectId,
+      `MATCH (f:File) WHERE f.projectId = $projectId AND f.repoId = $repoId RETURN f.path as path ORDER BY f.path`,
+      { repoId: repositoryId },
+    )) as Array<{ path: string }>;
+    const allIndexedFilePaths = allFilesRows.map((r) => r.path);
 
     const structuralRows = (await this.cypher.executeCypher(
       projectId,
@@ -639,7 +1121,10 @@ Sé conciso. Usa bullet points y tablas. Incluye TODOS los ítems de los datos e
       { repoId: repositoryId },
     )) as Array<{ pathA: string; name: string; pathB: string }>;
     const structuralPairs = structuralRows.filter((r) => !GENERIC_FUNCTION_NAMES.has(r.name.toLowerCase()));
-    const sameNamePairs = structuralPairs.map((r) => ({
+    const structuralForScope = scopeActive
+      ? structuralPairs.filter((r) => inF(r.pathA) && inF(r.pathB))
+      : structuralPairs;
+    const sameNamePairs = structuralForScope.map((r) => ({
       a: `${r.pathA}::${r.name}`,
       b: `${r.pathB}::${r.name}`,
       score: 1,
@@ -662,7 +1147,7 @@ Sé conciso. Usa bullet points y tablas. Incluye TODOS los ítems de los datos e
         { params: { projectId, repoId: repositoryId } },
       )) as { data?: unknown[] };
       const rawRows = funcsRes?.data ?? [];
-      const funcs = rawRows.map((row): { path: string; name: string; description?: string | null; startLine?: number; endLine?: number } => {
+      let funcs = rawRows.map((row): { path: string; name: string; description?: string | null; startLine?: number; endLine?: number } => {
         const arr = Array.isArray(row) ? row : [row];
         const r = typeof row === 'object' && row !== null ? (row as Record<string, unknown>) : {};
         return {
@@ -673,6 +1158,9 @@ Sé conciso. Usa bullet points y tablas. Incluye TODOS los ítems de los datos e
           endLine: typeof r.endLine === 'number' ? r.endLine : typeof arr[4] === 'number' ? arr[4] : undefined,
         };
       });
+      if (scopeActive) {
+        funcs = funcs.filter((f) => inF(f.path));
+      }
       await client.close();
 
       const seen = new Set<string>();
@@ -691,11 +1179,17 @@ Sé conciso. Usa bullet points y tablas. Incluye TODOS los ítems de los datos e
           const vecStr = `[${vec.join(',')}]`;
           const res = await this.cypher.executeCypherRaw(
             `CALL db.idx.vector.queryNodes('Function', '${vProp}', 25, vecf32(${vecStr})) YIELD node, score
-             RETURN node.path AS path, node.name AS name, node.projectId AS projectId, score`,
+             RETURN node.path AS path, node.name AS name, node.projectId AS projectId, node.repoId AS repoId, score`,
             projectId,
           );
-          for (const row of (res as Array<{ path: string; name: string; projectId: string; score: number }>).filter(
-            (r) => r.projectId === projectId && r.score >= threshold && r.score < 0.999,
+          for (const row of (
+            res as Array<{ path: string; name: string; projectId: string; repoId?: string | null; score: number }>
+          ).filter(
+            (r) =>
+              r.projectId === projectId &&
+              (r.repoId == null || r.repoId === repositoryId) &&
+              r.score >= threshold &&
+              r.score < 0.999,
           )) {
             const bothGeneric = GENERIC_FUNCTION_NAMES.has(f.name.toLowerCase()) && GENERIC_FUNCTION_NAMES.has(row.name.toLowerCase());
             if (bothGeneric) continue;
@@ -721,35 +1215,100 @@ Sé conciso. Usa bullet points y tablas. Incluye TODOS los ítems de los datos e
       }
     }
 
+    if (scopeActive && crossPackageDuplicates) {
+      for (const r of structuralPairs) {
+        const fa = inF(r.pathA);
+        const fb = inF(r.pathB);
+        if ((fa && fb) || (!fa && !fb)) continue;
+        const p = { a: `${r.pathA}::${r.name}`, b: `${r.pathB}::${r.name}`, score: 1 };
+        const key = [p.a, p.b].sort().join('|');
+        if (!seenKey.has(key)) {
+          seenKey.add(key);
+          pairs.push(p);
+        }
+      }
+    }
+
     if (pairs.length === 0 && !embedForRead?.isAvailable()) {
       return {
         mode: 'duplicados',
-        summary: '## Código duplicado\n\n⚠️ **Embeddings no configurados.** Ejecuta `POST /repositories/:id/embed-index` tras un sync para indexar el cuerpo de las funciones y detectar duplicados semánticos.',
+        summary:
+          '## Código duplicado\n\n\u26a0\ufe0f **Embeddings no configurados.** Ejecuta `POST /repositories/:id/embed-index` tras un sync para indexar el cuerpo de las funciones y detectar duplicados semánticos.',
+        reportMeta: buildAnalyzeReportMeta({ scope, repositoryId: repo.id, allIndexedFilePaths }),
       };
     }
 
-    const { byName, byCluster } = groupDuplicates(pairs);
+    let pairsPrimary = pairs;
+    let pairsCrossBoundary: Array<{ a: string; b: string; score: number }> = [];
+    if (scopeActive) {
+      pairsPrimary = pairs.filter(
+        (p) => inF(pathFromPairLabel(p.a)) && inF(pathFromPairLabel(p.b)),
+      );
+      if (crossPackageDuplicates) {
+        pairsCrossBoundary = pairs.filter((p) => {
+          const fa = inF(pathFromPairLabel(p.a));
+          const fb = inF(pathFromPairLabel(p.b));
+          return fa !== fb;
+        });
+      }
+    }
 
-    const summary = formatDuplicatesSummary(pairs.length, byName, byCluster);
-    return { mode: 'duplicados', summary, details: { pairs, byName, byCluster } };
+    const { byName, byCluster } = groupDuplicates(pairsPrimary);
+
+    let summary = formatDuplicatesSummary(pairsPrimary.length, byName, byCluster);
+    if (scopeActive && pairsPrimary.length === 0 && pairs.length > 0) {
+      summary =
+        '## Código duplicado (foco)\n\n_No hay pares con **ambos** extremos dentro del prefijo de análisis._\n\n' +
+        `Total de pares en el repositorio (sin filtrar por foco): **${pairs.length}**.`;
+    }
+    if (pairsCrossBoundary.length > 0) {
+      summary += `\n\n### Duplicados que cruzan la frontera del scope\n\n`;
+      summary += `_Fuera del foco actual — consolidar puede afectar otros paquetes._\n\n`;
+      summary += pairsCrossBoundary
+        .slice(0, 40)
+        .map((p) => `- \`${p.a}\` ↔ \`${p.b}\` (${(p.score * 100).toFixed(0)}%)`)
+        .join('\n');
+      if (pairsCrossBoundary.length > 40) {
+        summary += `\n\n_… y ${pairsCrossBoundary.length - 40} pares más._`;
+      }
+    }
+
+    return {
+      mode: 'duplicados',
+      summary,
+      details: {
+        pairs: pairsPrimary,
+        pairsAll: pairs,
+        pairsCrossBoundary: crossPackageDuplicates ? pairsCrossBoundary : undefined,
+        byName,
+        byCluster,
+        scopeActive,
+      },
+      reportMeta: buildAnalyzeReportMeta({ scope, repositoryId: repo.id, allIndexedFilePaths }),
+    };
   }
 
   /** Payload LLM reingeniería sin ejecutar el síntesis de diagnóstico (orchestrator). */
-  private async buildReingenieriaLlmPayload(repositoryId: string): Promise<{
+  private async buildReingenieriaLlmPayload(
+    repositoryId: string,
+    options?: AnalyzeRequestOptions,
+  ): Promise<{
     systemPrompt: string;
     userPrompt: string;
     details: { diagnostico: Record<string, unknown>; duplicadosDetails: unknown };
   }> {
-    const [diagPayload, duplicados] = await Promise.all([
-      this.buildDiagnosticoLlmPayload(repositoryId),
-      this.analyzeDuplicados(repositoryId, 0.78, 0),
+    const scope = options?.scope;
+    const crossPkg = options?.crossPackageDuplicates === true;
+    const [diagBundle, duplicados] = await Promise.all([
+      this.runDiagnosticoDataAndPrompts(repositoryId, scope),
+      this.analyzeDuplicados(repositoryId, 0.78, 0, scope, crossPkg),
     ]);
 
     const hayDuplicados =
       Array.isArray((duplicados.details as { pairs?: unknown[] })?.pairs) &&
       ((duplicados.details as { pairs: unknown[] }).pairs?.length ?? 0) > 0;
 
-    const rawDetails = diagPayload.details as {
+    const rawDetails = diagBundle.detailsPayload as {
       riskRanked?: unknown[];
       highCoupling?: unknown[];
       noDescription?: unknown[];
@@ -827,21 +1386,98 @@ Estructura OBLIGATORIA (reflejar el diagnóstico):
     return {
       systemPrompt,
       userPrompt,
-      details: { diagnostico: diagPayload.details, duplicadosDetails: duplicados.details },
+      details: { diagnostico: diagBundle.detailsPayload, duplicadosDetails: duplicados.details },
     };
   }
 
   /** Recomendaciones de reingeniería basadas 100% en datos del grafo. Sin límites. */
-  async analyzeReingenieria(repositoryId: string): Promise<AnalyzeResult> {
-    const p = await this.buildReingenieriaLlmPayload(repositoryId);
+  async analyzeReingenieria(repositoryId: string, options?: AnalyzeRequestOptions): Promise<AnalyzeResult> {
+    const scope = options?.scope;
+    const crossPackageDuplicates = options?.crossPackageDuplicates === true;
+    const [diagnostico, duplicados] = await Promise.all([
+      this.analyzeDiagnostico(repositoryId, scope),
+      this.analyzeDuplicados(repositoryId, 0.78, 0, scope, crossPackageDuplicates),
+    ]);
+
+    const hayDuplicados =
+      Array.isArray((duplicados.details as { pairs?: unknown[] })?.pairs) &&
+      ((duplicados.details as { pairs: unknown[] }).pairs?.length ?? 0) > 0;
+
+    const rawDetails = diagnostico.details as {
+      riskRanked?: unknown[];
+      highCoupling?: unknown[];
+      noDescription?: unknown[];
+      componentProps?: unknown[];
+      antipatterns?: unknown;
+    };
+
+    const riskRe = (rawDetails?.riskRanked ?? []).slice(0, MAX_RISK_ITEMS);
+    const couplingRe = (rawDetails?.highCoupling ?? []).slice(0, MAX_HIGH_COUPLING);
+    const noDescRe = (rawDetails?.noDescription ?? []).slice(0, MAX_NO_DESC);
+    const propsRe = (rawDetails?.componentProps ?? []).slice(0, MAX_COMPONENT_PROPS);
+    const pairsRe = ((duplicados.details as { pairs?: unknown[] })?.pairs ?? []).slice(0, MAX_DUPLICATES);
+    const diagSummary =
+      diagnostico.summary.slice(0, MAX_SUMMARY_CHARS) +
+      (diagnostico.summary.length > MAX_SUMMARY_CHARS ? '\n...[resumido]' : '');
+
+    const context = `
+**Datos crudos del análisis (usa SOLO estos para tus recomendaciones; muestras top por categoría):**
+
+Riesgo (ordenado por riskScore): ${JSON.stringify(riskRe)}
+Alto acoplamiento: ${JSON.stringify(couplingRe)}
+Sin JSDoc: ${JSON.stringify(noDescRe)}
+Componentes con muchas props: ${JSON.stringify(propsRe)}
+Anti-patrones: ${JSON.stringify(truncateAntipatterns((rawDetails?.antipatterns ?? {}) as { spaghetti?: unknown[]; godFunctions?: unknown[]; highFanIn?: unknown[]; circularImports?: unknown[]; overloadedComponents?: unknown[] }))}
+Duplicados: ${JSON.stringify(pairsRe)}
+
+Resumen diagnóstico (referencia): ${diagSummary}
+${!hayDuplicados ? '\n\u26a0\ufe0f No hay duplicados detectados. PROHIBIDO recomendar "eliminar duplicados" o "consolidar código repetido".' : ''}
+`;
+
+    const systemPrompt = `<rol>Arquitecto que genera planes de REINGENIERÍA basados en datos concretos.</rol>
+
+<cot>Pensemos paso a paso: 1) Priorizar por riskScore y antipatrones. 2) Mapear acciones concretas (path/name). 3) Quick wins primero.</cot>
+
+<restricciones>
+- Cada acción DEBE referenciar path/name/component de los datos.
+- PROHIBIDO consejos genéricos sin soporte. Sin duplicados → PROHIBIDO recomendar eliminar duplicados.
+</restricciones>
+
+<formato>Markdown estructurado con los ítems mostrados. NO envuelvas el documento entero en triple comilla; salida directa en markdown.</formato>`;
+
+    const riskRanked = (rawDetails?.riskRanked ?? []) as Array<{ path?: string; name?: string; riskScore?: number }>;
+    const noDesc = (rawDetails?.noDescription ?? []) as Array<{ path?: string; name?: string }>;
+    const prefillRe = riskRanked.length > 0 ? `Riesgos (${riskRanked.length} ítems total). ` : '';
+    const prefillReDesc = noDesc.length > 0 ? `Funciones sin JSDoc: ${noDesc.length} ítems. ` : '';
+    const prefillReQuick = hayDuplicados ? 'Quick win: consolidar duplicados detectados. ' : '';
+
+    const userPrompt = `${context}
+
+<prefill>${prefillRe}${prefillReDesc}${prefillReQuick}</prefill>
+
+Genera un PLAN DE REINGENIERÍA en markdown basándote \u00daNICAMENTE en los datos crudos JSON anteriores.
+
+IMPORTANTE: El plan debe estar ALINEADO con el diagnóstico. Misma estructura y mismos ítems para que un agente pueda ejecutar cada acción.
+
+Estructura OBLIGATORIA (reflejar el diagnóstico):
+1. **Objetivos** — prioridades extraídas de los datos (riesgo, documentación, antipatrones, duplicados).
+2. **Acciones** — agrupadas por categoría, una acción por ítem de los datos:
+   - **Riesgo (ordenado por riskScore):** Para cada ítem en Riesgo, una acción "Documentar la función X en path" o "Refactorizar X en path" con Path/Name y Risk Score.
+   - **Alto acoplamiento:** Una acción por ítem en Alto acoplamiento (path/name, Out Calls).
+   - **Funciones sin JSDoc:** Una acción por ítem en Sin JSDoc: "Agregar JSDoc a X en path" con Path/Name.
+   - **Antipatrones:** Una acción por ítem en Spaghetti/God Functions/etc.: "Refactorizar X en path (Nesting Depth: N)" o "(Out Calls: N)".
+3. **Quick wins** — lista explícita: funciones sin JSDoc (path/name) y consolidar duplicados solo si Duplicados no está vacío.
+4. Incluir TODOS los path/name de los datos en las acciones. Sin inventar ítems. Sin omitir categorías que tengan datos.`;
+
     const answer = await this.llm.callLlm(
-      [{ role: 'system', content: p.systemPrompt }, { role: 'user', content: p.userPrompt }],
+      [{ role: 'system', content: systemPrompt }, { role: 'user', content: userPrompt }],
       8192,
     );
     return {
       mode: 'reingenieria',
-      summary: answer,
-      details: { diagnostico: p.details.diagnostico, duplicados: p.details.duplicadosDetails },
+      summary: stripOuterMarkdownFence(answer),
+      details: { diagnostico: diagnostico.details, duplicados: duplicados.details },
+      reportMeta: diagnostico.reportMeta ?? duplicados.reportMeta,
     };
   }
 
@@ -889,11 +1525,27 @@ Repositorio ${repo.projectKey}/${repo.repoSlug} — hallazgos automáticos (rege
     return { mode: 'seguridad', summary: answer, details: p.details };
   }
 
+  /** Globs extra para código muerto (`CODIGO_MUERTO_EXTRA_EXCLUDE_GLOBS`, coma o salto de línea). */
+  private mergeCodigoMuertoExcludeGlobs(scope?: ChatScope): ChatScope | undefined {
+    const extra = process.env.CODIGO_MUERTO_EXTRA_EXCLUDE_GLOBS?.trim();
+    if (!extra) return scope;
+    const parts = extra
+      .split(/[,\n]+/)
+      .map((s) => s.trim())
+      .filter(Boolean);
+    if (parts.length === 0) return scope;
+    return {
+      ...scope,
+      excludePathGlobs: [...(scope?.excludePathGlobs ?? []), ...parts],
+    };
+  }
+
   /**
    * Análisis de código muerto: propósito, referencias y conclusión por archivo.
    * Formato detallado: ruta, quién lo importa/renderiza/llama, detalle funcional, conclusión.
    */
-  async analyzeCodigoMuerto(repositoryId: string): Promise<AnalyzeResult> {
+  async analyzeCodigoMuerto(repositoryId: string, scope?: ChatScope): Promise<AnalyzeResult> {
+    scope = this.mergeCodigoMuertoExcludeGlobs(scope);
     const repo = await this.repos.findOne(repositoryId);
     const projectId = await this.resolveProjectIdForRepo(repo.id);
     const MAX_FILES = 120;
@@ -904,12 +1556,18 @@ Repositorio ${repo.projectKey}/${repo.repoSlug} — hallazgos automáticos (rege
       `MATCH (f:File) WHERE f.projectId = $projectId AND f.repoId = $repoId RETURN f.path as path ORDER BY f.path`,
       { repoId: rid },
     )) as Array<{ path: string }>;
+    const allIndexedFilePaths = files.map((r) => r.path);
     const isPm2Config = (path: string) =>
       /^ecosystem[.-].*\.config\.(js|mjs|cjs)$/i.test(path.split('/').pop() ?? path);
-    const filePaths = files
+    const filePathsAll = files
       .map((r) => r.path)
       .filter((p) => !isPm2Config(p))
       .slice(0, MAX_FILES);
+    const scopeActive = isAnalyzeScopeActive(scope);
+    let filePaths = filePathsAll;
+    if (scopeActive) {
+      filePaths = filePathsAll.filter((p) => pathInAnalyzeFocus(p, scope, rid));
+    }
 
     const imports = (await this.cypher.executeCypher(
       projectId,
@@ -1024,7 +1682,7 @@ Repositorio ${repo.projectKey}/${repo.repoSlug} — hallazgos automáticos (rege
       deadFiles.push({ path, shortName, components, functions, models });
     }
 
-    const verified = await this.verifyDeadCandidates(repositoryId, deadFiles, filePaths);
+    const verified = await this.verifyDeadCandidates(repositoryId, deadFiles, filePathsAll);
 
     const lines: string[] = [
       '# ANÁLISIS DE CÓDIGO MUERTO',
@@ -1096,6 +1754,13 @@ Repositorio ${repo.projectKey}/${repo.repoSlug} — hallazgos automáticos (rege
         falsosPositivos: falsosPositivos.length,
         verified,
       },
+      reportMeta: buildAnalyzeReportMeta({
+        scope,
+        repositoryId: rid,
+        allIndexedFilePaths,
+        truncatedFiles: files.length > MAX_FILES,
+        analyzedFileCount: filePaths.length,
+      }),
     };
   }
 
@@ -1322,26 +1987,39 @@ PROHIBIDO: instrucciones genéricas tipo "revisa los controladores", "asegúrate
   /**
    * Prep para orchestrator: resultados completos sin LLM o prompts + detalles para síntesis en orchestrator.
    */
-  async prepareAnalyzeOrchestrator(repositoryId: string, mode: AnalyzeMode): Promise<AnalyzeOrchestratorPrepDto> {
+  async prepareAnalyzeOrchestrator(
+    repositoryId: string,
+    mode: AnalyzeMode,
+    options?: AnalyzeRequestOptions,
+  ): Promise<AnalyzeOrchestratorPrepDto> {
     if (mode === 'codigo_muerto') {
-      return { kind: 'complete', result: await this.analyzeCodigoMuerto(repositoryId) };
+      return { kind: 'complete', result: await this.analyzeCodigoMuerto(repositoryId, options?.scope) };
     }
     if (mode === 'duplicados') {
-      return { kind: 'complete', result: await this.analyzeDuplicados(repositoryId) };
+      return {
+        kind: 'complete',
+        result: await this.analyzeDuplicados(
+          repositoryId,
+          0.78,
+          0,
+          options?.scope,
+          options?.crossPackageDuplicates === true,
+        ),
+      };
     }
     if (mode === 'diagnostico') {
-      const p = await this.buildDiagnosticoLlmPayload(repositoryId);
+      const p = await this.runDiagnosticoDataAndPrompts(repositoryId, options?.scope);
       return {
         kind: 'llm',
         mode: 'diagnostico',
         systemPrompt: p.systemPrompt,
         userPrompt: p.userPrompt,
         maxTokens: 8192,
-        details: p.details,
+        details: p.detailsPayload,
       };
     }
     if (mode === 'reingenieria') {
-      const p = await this.buildReingenieriaLlmPayload(repositoryId);
+      const p = await this.buildReingenieriaLlmPayload(repositoryId, options);
       return {
         kind: 'llm',
         mode: 'reingenieria',
@@ -1431,18 +2109,29 @@ PROHIBIDO: instrucciones genéricas tipo "revisa los controladores", "asegúrate
     };
   }
 
-  private async analyzeLocally(repositoryId: string, mode: AnalyzeMode): Promise<AnalyzeResult> {
-    if (mode === 'diagnostico') return this.analyzeDiagnostico(repositoryId);
-    if (mode === 'duplicados') return this.analyzeDuplicados(repositoryId);
-    if (mode === 'codigo_muerto') return this.analyzeCodigoMuerto(repositoryId);
-    if (mode === 'reingenieria') return this.analyzeReingenieria(repositoryId);
+  private async analyzeLocally(
+    repositoryId: string,
+    mode: AnalyzeMode,
+    options?: AnalyzeRequestOptions,
+  ): Promise<AnalyzeResult> {
+    if (mode === 'diagnostico') return this.analyzeDiagnostico(repositoryId, options?.scope);
+    if (mode === 'duplicados')
+      return this.analyzeDuplicados(
+        repositoryId,
+        0.78,
+        0,
+        options?.scope,
+        options?.crossPackageDuplicates === true,
+      );
+    if (mode === 'codigo_muerto') return this.analyzeCodigoMuerto(repositoryId, options?.scope);
+    if (mode === 'reingenieria') return this.analyzeReingenieria(repositoryId, options);
     if (mode === 'seguridad') return this.analyzeSeguridad(repositoryId);
     const repo = await this.repos.findOne(repositoryId);
     const projectId = await this.resolveProjectIdForRepo(repo.id);
     const displayName = `${repo.projectKey}/${repo.repoSlug}`;
     if (mode === 'agents') return this.analyzeAgents(projectId, displayName);
     if (mode === 'skill') return this.analyzeSkill(projectId, displayName);
-    return this.analyzeReingenieria(repositoryId);
+    return this.analyzeReingenieria(repositoryId, options);
   }
 
   /**
@@ -1450,7 +2139,13 @@ PROHIBIDO: instrucciones genéricas tipo "revisa los controladores", "asegúrate
    * @param repositoryId - UUID del repositorio
    * @param mode - diagnóstico | duplicados | reingeniería | código muerto | agents | skill
    */
-  async analyze(repositoryId: string, mode: AnalyzeMode): Promise<AnalyzeResult> {
+  async analyze(
+    repositoryId: string,
+    mode: AnalyzeMode,
+    options?: AnalyzeRequestOptions,
+  ): Promise<AnalyzeResult> {
+    validateAnalyzeScope(options?.scope, repositoryId);
+
     const orch = process.env.ORCHESTRATOR_URL?.trim();
     if (orch) {
       try {
@@ -1458,7 +2153,11 @@ PROHIBIDO: instrucciones genéricas tipo "revisa los controladores", "asegúrate
         const res = await fetch(url, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ mode }),
+          body: JSON.stringify({
+            mode,
+            ...(options?.scope ? { scope: options.scope } : {}),
+            ...(options?.crossPackageDuplicates ? { crossPackageDuplicates: true } : {}),
+          }),
         });
         if (!res.ok) throw new Error(await res.text());
         return (await res.json()) as AnalyzeResult;
@@ -1466,7 +2165,90 @@ PROHIBIDO: instrucciones genéricas tipo "revisa los controladores", "asegúrate
         /* fallback local */
       }
     }
-    return this.analyzeLocally(repositoryId, mode);
+
+    const cacheable =
+      mode === 'diagnostico' ||
+      mode === 'duplicados' ||
+      mode === 'codigo_muerto' ||
+      mode === 'reingenieria';
+
+    if (!cacheable) {
+      return this.analyzeLocally(repositoryId, mode, options);
+    }
+
+    const repoMeta = await this.repos.findOne(repositoryId);
+    const lastSha = repoMeta.lastCommitSha ?? null;
+    const crossPkg = options?.crossPackageDuplicates === true;
+    const scopeKey = stableScopeKeyForCache(options?.scope);
+    const { fingerprint: indexFp, mode: fpMode, scopePartitioned } = await this.getIndexFingerprintForAnalyzeCache(
+      repositoryId,
+      lastSha,
+      options?.scope,
+    );
+    const cacheKey = buildAnalyzeCacheKey({
+      repositoryId,
+      mode,
+      scopeKey,
+      crossPackageDuplicates: crossPkg,
+      lastCommitSha: lastSha,
+      indexFingerprint: indexFp,
+    });
+
+    if (!analyzeCacheDisabledFromEnv()) {
+      const memHit = this.getAnalyzeCache(cacheKey);
+      if (memHit) {
+        return this.mergeAnalyzeReportMeta(memHit, {
+          fromCache: true,
+          cacheFingerprintMode: fpMode,
+          cacheScopePartitioned: scopePartitioned,
+        });
+      }
+      if (this.analyzeDistributedCache.isEnabled()) {
+        const raw = await this.analyzeDistributedCache.getJson(cacheKey);
+        if (raw) {
+          try {
+            const redisHit = JSON.parse(raw) as AnalyzeResult;
+            this.setAnalyzeCache(cacheKey, redisHit);
+            return this.mergeAnalyzeReportMeta(redisHit, {
+              fromCache: true,
+              cacheFingerprintMode: fpMode,
+              cacheScopePartitioned: scopePartitioned,
+            });
+          } catch {
+            /* ignore */
+          }
+        }
+      }
+    }
+
+    let result: AnalyzeResult;
+    if (mode === 'diagnostico') {
+      result = await this.analyzeDiagnostico(repositoryId, options?.scope);
+    } else if (mode === 'duplicados') {
+      result = await this.analyzeDuplicados(
+        repositoryId,
+        0.78,
+        0,
+        options?.scope,
+        crossPkg,
+      );
+    } else if (mode === 'codigo_muerto') {
+      result = await this.analyzeCodigoMuerto(repositoryId, options?.scope);
+    } else {
+      result = await this.analyzeReingenieria(repositoryId, options);
+    }
+
+    result = this.mergeAnalyzeReportMeta(result, {
+      cacheFingerprintMode: fpMode,
+      cacheScopePartitioned: scopePartitioned,
+    });
+    if (!analyzeCacheDisabledFromEnv()) {
+      this.setAnalyzeCache(cacheKey, result);
+      if (this.analyzeDistributedCache.isEnabled()) {
+        await this.analyzeDistributedCache.setJson(cacheKey, JSON.stringify(result), analyzeCacheRedisTtlSec());
+      }
+    }
+    return result;
   }
 
   /**
@@ -1967,6 +2749,152 @@ PROHIBIDO: instrucciones genéricas tipo "revisa los controladores", "asegúrate
     return this.handlers.answerProjectOverview(repositoryId, message);
   }
 
+  private graphInventorySectionMax(): number {
+    const raw =
+      process.env.CHAT_GRAPH_INVENTORY_FULL_MAX?.trim() ||
+      process.env.CHAT_COMPONENT_FULL_MAX?.trim() ||
+      '100000';
+    return Math.min(Math.max(parseInt(raw, 10) || 100000, 1), 250_000);
+  }
+
+  /**
+   * Volcado de Component sin sintetizador (`CHAT_COMPONENT_FULL_MAX`).
+   */
+  private async buildFullComponentListingResponse(projectId: string, scope?: ChatScope): Promise<ChatResponse> {
+    const maxRows = Math.min(
+      Math.max(parseInt(process.env.CHAT_COMPONENT_FULL_MAX ?? '100000', 10) || 100000, 1),
+      250_000,
+    );
+    const sc = modificationPlanScopeCypher(scope);
+    const cypher = `MATCH (f:File)-[:CONTAINS]->(c:Component) WHERE f.projectId = $projectId AND c.projectId = $projectId${sc.fileClause} RETURN c.name as name, coalesce(c.repoId, f.repoId, f.projectId) as repoId, f.path as path, coalesce(c.type, '') as type, c.isLegacy as isLegacy ORDER BY name, path LIMIT ${maxRows}`;
+    const rawRows = (await this.cypher.executeCypher(projectId, cypher, sc.params)) as Record<
+      string,
+      unknown
+    >[];
+    const rows = filterCypherRowsByScope(rawRows, scope);
+    if (rows.length === 0) {
+      const emptyMsg =
+        rawRows.length === 0
+          ? 'No hay nodos `Component` enlazados a archivos en el índice para este alcance. Haz sync/resync o comprueba el `projectId`.'
+          : `0 filas tras aplicar el alcance (scope): ${rawRows.length} filas en crudo omitidas por repoIds/prefijos/exclusiones.`;
+      return { answer: emptyMsg, cypher, result: [] };
+    }
+    const table = this.cypher.formatComponentsMarkdownTable(rows);
+    const capped = rawRows.length >= maxRows;
+    const answer = `## Componentes indexados (${rows.length}${capped ? `, consulta limitada a ${maxRows} filas (CHAT_COMPONENT_FULL_MAX)` : ''})\n\n${table}\n\n_Datos: grafo FalkorDB. Una fila por relación \`(File)-[:CONTAINS]->(Component)\`._`;
+    return { answer, cypher, result: rows };
+  }
+
+  /**
+   * Inventario multi-etiqueta (Component, Hook, Function, DomainConcept) sin sintetizador.
+   */
+  private async buildFullIndexedInventoryResponse(projectId: string, scope?: ChatScope): Promise<ChatResponse> {
+    const maxRows = this.graphInventorySectionMax();
+    const sc = modificationPlanScopeCypher(scope);
+    const params = sc.params;
+
+    const cypherComp = `MATCH (f:File)-[:CONTAINS]->(c:Component) WHERE f.projectId = $projectId AND c.projectId = $projectId${sc.fileClause} RETURN c.name as name, coalesce(c.repoId, f.repoId, f.projectId) as repoId, f.path as path, coalesce(c.type, '') as type, c.isLegacy as isLegacy ORDER BY name, path LIMIT ${maxRows}`;
+    const cypherHook = `MATCH (f:File)-[:CONTAINS]->(h:Hook) WHERE f.projectId = $projectId AND h.projectId = $projectId${sc.fileClause} RETURN h.name as name, coalesce(h.repoId, f.repoId, f.projectId) as repoId, f.path as path ORDER BY name, path LIMIT ${maxRows}`;
+    const cypherFn = `MATCH (f:File)-[:CONTAINS]->(fn:Function) WHERE f.projectId = $projectId AND fn.projectId = $projectId${sc.fileClause} RETURN fn.name as name, coalesce(fn.repoId, f.repoId, f.projectId) as repoId, f.path as path, fn.complexity as complexity, fn.loc as loc ORDER BY path, name LIMIT ${maxRows}`;
+
+    let dcExtra = '';
+    if (Array.isArray(params.scopeRepoIds) && (params.scopeRepoIds as unknown[]).length > 0) {
+      dcExtra = ' AND coalesce(dc.repoId, dc.projectId) IN $scopeRepoIds';
+    }
+    const cypherDc = `MATCH (dc:DomainConcept) WHERE dc.projectId = $projectId${dcExtra} RETURN dc.name as name, coalesce(dc.repoId, dc.projectId) as repoId, dc.sourcePath as path, coalesce(dc.category, '') as category ORDER BY category, name, path LIMIT ${maxRows}`;
+
+    const [rawComp, rawHook, rawFn, rawDc] = await Promise.all([
+      this.cypher.executeCypher(projectId, cypherComp, params),
+      this.cypher.executeCypher(projectId, cypherHook, params),
+      this.cypher.executeCypher(projectId, cypherFn, params),
+      this.cypher.executeCypher(projectId, cypherDc, params),
+    ]);
+
+    const comp = filterCypherRowsByScope(rawComp as Record<string, unknown>[], scope);
+    const hooks = filterCypherRowsByScope(rawHook as Record<string, unknown>[], scope);
+    const fns = filterCypherRowsByScope(rawFn as Record<string, unknown>[], scope);
+    const dcs = filterCypherRowsByScope(rawDc as Record<string, unknown>[], scope);
+
+    const sections: string[] = [
+      '# Inventario del índice (grafo)',
+      '',
+      '_Volcado por etiquetas indexadas. Rutas HTTP u otros nodos no incluidos aquí salvo que existan en el grafo con estas etiquetas._',
+      `_Cada sección limitada a ${maxRows} filas (\`CHAT_GRAPH_INVENTORY_FULL_MAX\` o \`CHAT_COMPONENT_FULL_MAX\`)._`,
+      '',
+      `## Componentes (${comp.length})`,
+      '',
+      this.cypher.formatComponentsMarkdownTable(comp),
+      '',
+      `## Hooks (${hooks.length})`,
+      '',
+      this.cypher.formatNameRepoPathMarkdownTable(hooks, 'Hook'),
+      '',
+      `## Funciones (${fns.length})`,
+      '',
+      this.cypher.formatFunctionsMarkdownTable(fns),
+      '',
+      `## Conceptos de dominio (${dcs.length})`,
+      '',
+      this.cypher.formatDomainConceptsMarkdownTable(dcs),
+      '',
+    ];
+
+    const answer = sections.join('\n');
+    const cypherJoined = [cypherComp, '// ---', cypherHook, '// ---', cypherFn, '// ---', cypherDc].join('\n');
+    const result = [
+      ...comp.map((r) => ({ ...r, _section: 'Component' })),
+      ...hooks.map((r) => ({ ...r, _section: 'Hook' })),
+      ...fns.map((r) => ({ ...r, _section: 'Function' })),
+      ...dcs.map((r) => ({ ...r, _section: 'DomainConcept' })),
+    ];
+    return { answer, cypher: cypherJoined, result };
+  }
+
+  /**
+   * Si el retrieval mezcla `repoId` en chat por proyecto y el mensaje incluye una ruta que resuelve a un único repo,
+   * recorta filas y bloques de contexto antes del sintetizador. Desactivar: `CHAT_PREFLIGHT_PATH_REPO=0|false|off`.
+   */
+  private async tryPreflightNarrowByMessagePath(
+    projectId: string,
+    userFullText: string,
+    collectedResults: unknown[],
+    gatheredContext: string,
+    projectScope: boolean | undefined,
+    scope: ChatScope | undefined,
+  ): Promise<{ results: unknown[]; gatheredContext: string } | null> {
+    const off = process.env.CHAT_PREFLIGHT_PATH_REPO?.trim().toLowerCase();
+    if (off === '0' || off === 'false' || off === 'off') {
+      return null;
+    }
+    if (!projectScope) return null;
+    if (scope?.repoIds?.length) return null;
+
+    const mixed = repoIdsInCollectedResults(collectedResults);
+    if (mixed.size <= 1) return null;
+
+    const candidates = extractPathCandidatesForRepoResolve(userFullText);
+    if (candidates.length === 0) return null;
+
+    const resolved = new Set<string>();
+    for (const c of candidates) {
+      const r = await this.projects.resolveRepositoryForWorkspacePath(projectId, c);
+      if (r.kind === 'unique') {
+        resolved.add(r.repositoryId);
+      }
+    }
+    if (resolved.size !== 1) return null;
+    const targetRepoId = [...resolved][0]!;
+
+    const mixedLower = new Set([...mixed].map((x) => x.toLowerCase()));
+    if (!mixedLower.has(targetRepoId.toLowerCase())) return null;
+
+    const repos = await this.repos.findAll(projectId);
+    const projectRepoIdSet = new Set(repos.map((r) => r.id));
+    const results = filterCollectedResultsByTargetRepo(collectedResults, targetRepoId);
+    const gc = filterGatheredContextByTargetRepo(gatheredContext, targetRepoId, projectRepoIdSet);
+    return { results, gatheredContext: gc };
+  }
+
   /**
    * Pipeline unificado: Retriever (Cypher + archivos + RAG) → Synthesizer (respuesta siempre humana).
    * Todas las preguntas pasan por extracción de código con Falkor/Cypher/RAG y luego síntesis en prosa.
@@ -2047,16 +2975,89 @@ PROHIBIDO: instrucciones genéricas tipo "revisa los controladores", "asegúrate
       }
     }
 
-    let repos = await this.repos.findAll(projectId);
+    const repos = await this.repos.findAll(projectId);
     if (repos.length === 0) {
-      // Puede ser un repo standalone (id de list_known_projects cuando no hay proyectos)
       const maybeRepo = await this.repos.findOptionalById(projectId);
       if (maybeRepo) {
         return this.chat(projectId, req);
       }
       return { answer: 'Este proyecto no tiene repositorios indexados. Añade al menos un repo y haz sync.' };
     }
-    const firstRepoId = repos[0].id;
+
+    const strictChat = req.strictChatScope !== false;
+    let effectiveScope = req.scope;
+    let scopeAnchorRepoId = repos[0]!.id;
+    let roleInferenceClientMeta: ChatClientMeta | undefined;
+
+    if (repos.length > 1 && strictChat && !hasExplicitChatScopeNarrowing(req.scope)) {
+      let inferred: ProjectRepoRoleCandidate[] | null = null;
+      if (isChatRoleScopeInferenceEnabled()) {
+        const proj = await this.projects.findOne(projectId);
+        inferred = proj.repositories.map((row) => ({
+          repoId: row.id,
+          role: row.role ?? null,
+          label: `${row.projectKey}/${row.repoSlug}`.replace(/^\/|\/$/g, '') || row.id,
+        }));
+        const resolved = inferChatRepoScopeFromMessage(req.message, inferred);
+        if (resolved.kind === 'unique') {
+          effectiveScope = { ...(req.scope ?? {}), repoIds: [resolved.repoId] };
+          scopeAnchorRepoId = resolved.repoId;
+          roleInferenceClientMeta = {
+            ...req.clientMeta,
+            scopeSource: 'ingest_role_message',
+            scopeInferred: true,
+          };
+        } else if (resolved.kind === 'ambiguous') {
+          const lines = repos.map((r) => `- \`${r.projectKey}/${r.repoSlug}\` → \`repoId\`: \`${r.id}\``);
+          const hint =
+            resolved.reason === 'multi_bucket'
+              ? 'El mensaje mezcla varios ámbitos (p. ej. frontend y backend); acota con `scope.repoIds` o divide la pregunta.'
+              : resolved.reason === 'multi_repo_same_bucket'
+                ? 'Varios repositorios comparten el mismo tipo de rol para lo que pediste; elige un `repoId` explícito en `scope`.'
+                : 'Varias coincidencias por texto del rol en el mensaje; usa `scope.repoIds` con un solo uuid.';
+          return {
+            answer: [
+              '[AMBIGUOUS_SCOPE]',
+              '',
+              hint,
+              '',
+              'El proyecto tiene varios repositorios y no se indicó un alcance explícito (`scope.repoIds`, prefijos o globs).',
+              'Envía `scope: { repoIds: ["<uuid>"] }` o, para chat amplio, `strictChatScope: false`.',
+              '',
+              '**Candidatos:**',
+              ...lines,
+            ].join('\n'),
+          };
+        }
+      }
+
+      if (!hasExplicitChatScopeNarrowing(effectiveScope)) {
+        const lines = repos.map((r) => `- \`${r.projectKey}/${r.repoSlug}\` → \`repoId\`: \`${r.id}\``);
+        const roleHint =
+          isChatRoleScopeInferenceEnabled() && inferred?.some((c) => (c.role ?? '').trim().length > 0)
+            ? 'Si la pregunta cita solo un ámbito (p. ej. «frontend», «backend», «librería»), revisa que el **rol** de cada repo en el proyecto coincida con esas palabras; si no hay match, define roles en el proyecto o pasa `scope.repoIds`. '
+            : 'Define **roles** por repositorio en el proyecto o pasa `scope.repoIds`. ';
+        return {
+          answer: [
+            '[AMBIGUOUS_SCOPE]',
+            '',
+            'El proyecto tiene varios repositorios y no se indicó un alcance explícito (`scope.repoIds`, prefijos o globs).',
+            roleHint,
+            'Envía `scope: { repoIds: ["<uuid>"] }` o, para chat amplio, `strictChatScope: false`.',
+            '',
+            '**Candidatos:**',
+            ...lines,
+          ].join('\n'),
+        };
+      }
+    }
+
+    if (repos.length > 1 && hasExplicitChatScopeNarrowing(effectiveScope) && effectiveScope?.repoIds?.length === 1) {
+      scopeAnchorRepoId = effectiveScope.repoIds[0]!;
+    }
+
+    const firstRepoId = scopeAnchorRepoId;
+    const projectRepoRolesContext = await this.projects.getRepositoryRolesContext(projectId);
     const historyContent = (req.history ?? [])
       .slice(-8)
       .map((m) => `${m.role}: ${m.content}`)
@@ -2068,7 +3069,14 @@ PROHIBIDO: instrucciones genéricas tipo "revisa los controladores", "asegúrate
         projectId,
         req.message,
         historyContent,
-        { projectScope: true, scope: req.scope, twoPhase: req.twoPhase, responseMode: req.responseMode },
+        {
+          projectScope: true,
+          scope: effectiveScope,
+          twoPhase: req.twoPhase,
+          responseMode: req.responseMode,
+          projectRepoRolesContext,
+          clientMeta: roleInferenceClientMeta ?? req.clientMeta,
+        },
       );
     } catch (err) {
       recordChatPipelineError();
@@ -2095,11 +3103,19 @@ PROHIBIDO: instrucciones genéricas tipo "revisa los controladores", "asegúrate
       scope?: ChatScope;
       twoPhase?: boolean;
       responseMode?: 'default' | 'evidence_first';
+      projectRepoRolesContext?: string;
+      clientMeta?: ChatClientMeta;
     },
   ): Promise<ChatResponse> {
     const pipelineStarted = process.hrtime.bigint();
     const projectScopeForMetrics = Boolean(options?.projectScope);
     const scope = options?.scope;
+    if (wantsFullComponentListing(message)) {
+      return this.buildFullComponentListingResponse(projectId, scope);
+    }
+    if (wantsFullGenericIndexedInventory(message)) {
+      return this.buildFullIndexedInventoryResponse(projectId, scope);
+    }
     const evidenceFirst = options?.responseMode === 'evidence_first';
     const useTwoPhase = evidenceFirst ? true : (options?.twoPhase ?? defaultTwoPhaseFromEnv());
     const tools = EXPLORER_TOOLS_ALL;
@@ -2173,9 +3189,26 @@ ${SCHEMA}${EXAMPLES}
     }
 
     const gatheredContext = collectedToolOutputs.join('\n\n---\n\n');
+    let effectiveResults = collectedResults;
+    let effectiveGathered = gatheredContext;
+    let preflightPathRepoApplied = false;
+    const narrowed = await this.tryPreflightNarrowByMessagePath(
+      projectId,
+      `${historyContent ?? ''}\n${message}`,
+      collectedResults,
+      gatheredContext,
+      options?.projectScope,
+      scope,
+    );
+    if (narrowed) {
+      effectiveResults = narrowed.results;
+      effectiveGathered = narrowed.gatheredContext;
+      preflightPathRepoApplied = true;
+    }
+
     const retrievalJson =
-      collectedResults.length > 0 || gatheredContext.trim().length > 0
-        ? buildRetrievalSummaryJson(collectedResults, gatheredContext)
+      effectiveResults.length > 0 || effectiveGathered.trim().length > 0
+        ? buildRetrievalSummaryJson(effectiveResults, effectiveGathered)
         : '';
     const evidenceFirstMaxChars = (() => {
       const n = parseInt(process.env.CHAT_EVIDENCE_FIRST_MAX_CHARS ?? '18000', 10);
@@ -2183,7 +3216,9 @@ ${SCHEMA}${EXAMPLES}
     })();
     const twoPhaseContextCap = evidenceFirst ? evidenceFirstMaxChars : 12_000;
     const rawContextForSynth =
-      useTwoPhase && gatheredContext.trim() ? gatheredContext.slice(0, twoPhaseContextCap) : gatheredContext;
+      useTwoPhase && effectiveGathered.trim()
+        ? effectiveGathered.slice(0, twoPhaseContextCap)
+        : effectiveGathered;
     const evidenceFirstBlock = evidenceFirst
       ? `## Modo evidence_first (SDD / documentación)
 - **Primera sección obligatoria:** \`## Evidencia\` — tabla o viñetas: \`path\` | hecho o símbolo **literal** del contexto siguiente.
@@ -2193,8 +3228,18 @@ ${SCHEMA}${EXAMPLES}
 
 `
       : '';
+    const rolesCtx = options?.projectRepoRolesContext?.trim();
+    const rolesBlock = rolesCtx
+      ? `
+
+## Repositorios y roles (multi-root)
+${rolesCtx}
+
+Si la pregunta es sobre un **ámbito concreto** (backend vs frontend vs librería), prioriza el repositorio cuyo **rol** encaje; usa \`repoId\` en evidencia cuando aparezca en el contexto.
+`
+      : '';
     const synthesizerSystem = `${evidenceFirstBlock}## Rol
-Eres un experto que explica código a colegas. Recibes **solo** datos crudos del contexto (Cypher, archivos, búsquedas) — son la única fuente de verdad para rutas y símbolos.
+Eres un experto que explica código a colegas. Recibes **solo** datos crudos del contexto (Cypher, archivos, búsquedas) — son la única fuente de verdad para rutas y símbolos.${rolesBlock}
 
 ## Instrucciones
 - Responde SIEMPRE en prosa clara, como lo haría un desarrollador senior.
@@ -2228,7 +3273,7 @@ ${rawContextForSynth || '**sin datos en índice para este alcance** (no hay sali
 Sintetiza una respuesta clara. Si no hay datos útiles, di explícitamente **sin datos en índice para este alcance**.`;
 
     let answer: string;
-    if (gatheredContext.trim()) {
+    if (effectiveGathered.trim()) {
       answer = await this.llm.callLlm(
         [
           { role: 'system', content: synthesizerSystem },
@@ -2246,12 +3291,31 @@ Sintetiza una respuesta clara. Si no hay datos útiles, di explícitamente **sin
       const pathLike = /\b[\w.-]+\/[\w./-]+\.(tsx?|jsx?|mjs|cjs)\b/g;
       const pathsInAnswer = answer.match(pathLike) ?? [];
       const uniquePaths = new Set(pathsInAnswer);
-      const grounding = sampleHallucinationPathMetrics(answer, gatheredContext, collectedResults);
+      const grounding = sampleHallucinationPathMetrics(answer, effectiveGathered, effectiveResults);
       this.logger.log(
         JSON.stringify({
           event: 'chat_unified_pipeline',
           repositoryId,
           projectId,
+          chat_scope_effective: {
+            repositoryId,
+            projectId,
+            repoIdsFromScope: scope?.repoIds ?? [],
+            repoIdsEffective:
+              scope?.repoIds?.length && scope.repoIds.length > 0
+                ? scope.repoIds
+                : options?.projectScope
+                  ? []
+                  : [repositoryId],
+            clientScopeSource: options?.clientMeta?.scopeSource ?? null,
+            inferred: options?.clientMeta?.scopeInferred ?? false,
+            ambiguous: options?.clientMeta?.scopePotentiallyAmbiguous ?? false,
+            preflightPathRepoApplied,
+            projectScope: options?.projectScope ?? false,
+            scopeFilterActive: Boolean(
+              scope?.repoIds?.length || scope?.includePathPrefixes?.length || scope?.excludePathGlobs?.length,
+            ),
+          },
           projectScope: options?.projectScope ?? false,
           scopeActive: Boolean(
             scope?.repoIds?.length || scope?.includePathPrefixes?.length || scope?.excludePathGlobs?.length,
@@ -2259,9 +3323,9 @@ Sintetiza una respuesta clara. Si no hay datos útiles, di explícitamente **sin
           twoPhase: useTwoPhase,
           responseMode: evidenceFirst ? 'evidence_first' : 'default',
           messageChars: message.length,
-          contextChars: gatheredContext.length,
+          contextChars: effectiveGathered.length,
           toolOutputChunks: collectedToolOutputs.length,
-          collectedRowGroups: collectedResults.length,
+          collectedRowGroups: effectiveResults.length,
           answerChars: answer.length,
           answerPathCitations: uniquePaths.size,
           pathGroundingHits: grounding.pathGroundingHits,
@@ -2276,15 +3340,15 @@ Sintetiza una respuesta clara. Si no hay datos útiles, di explícitamente **sin
       durationSeconds: durationSec,
       projectScope: projectScopeForMetrics,
       useTwoPhase,
-      gatheredContext,
+      gatheredContext: effectiveGathered,
       answer,
-      collectedResults,
+      collectedResults: effectiveResults,
     });
 
     return {
       answer: answer.trim(),
       cypher: lastCypher || undefined,
-      result: collectedResults.length > 0 ? collectedResults : undefined,
+      result: effectiveResults.length > 0 ? effectiveResults : undefined,
     };
   }
 }

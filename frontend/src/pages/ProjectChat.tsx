@@ -1,18 +1,28 @@
 /**
  * @fileoverview Chat a nivel proyecto: consulta el grafo de todos los repos del proyecto.
- * Botones AGENTS y SKILL generan AGENTS.md y SKILL.md según el conocimiento del proyecto.
+ * Multi-root: opción chat amplio (`strictChatScope: false`). Análisis por repo con alcance opcional; AGENTS/SKILL a nivel proyecto.
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { MarkdownBlock } from '@/components/MarkdownBlock';
+import { AnalyzeReportMetaBadges } from '@/components/analyze/AnalyzeReportMetaBadges';
+import { AnalyzeScopeFields } from '@/components/analyze/AnalyzeScopeFields';
 import { api } from '../api';
-import type { Project } from '../types';
+import type { AnalyzeCodeMode, AnalyzeReportMeta, Project } from '../types';
+import { scopeFromAnalyzeForm } from '../utils/analyze-scope-form';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Skeleton } from '@/components/ui/skeleton';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 
 interface ChatMessage {
   role: 'user' | 'assistant';
@@ -20,6 +30,26 @@ interface ChatMessage {
   cypher?: string;
   result?: unknown[];
 }
+
+const ANALYSIS_MODE_LABELS: Record<string, string> = {
+  diagnostico: 'Diagnóstico',
+  duplicados: 'Duplicados',
+  reingenieria: 'Reingeniería',
+  codigo_muerto: 'Código muerto',
+  seguridad: 'Seguridad',
+  agents: 'AGENTS',
+  skill: 'SKILL',
+};
+
+const ANALYSIS_RESULT_TITLES: Record<string, string> = {
+  diagnostico: 'Deuda técnica',
+  duplicados: 'Código duplicado',
+  codigo_muerto: 'Código muerto',
+  reingenieria: 'Reingeniería',
+  seguridad: 'Auditoría de seguridad',
+  agents: 'AGENTS.md',
+  skill: 'SKILL.md',
+};
 
 /** Chat a nivel proyecto: consulta el grafo de todos los repos del proyecto (POST /projects/:id/chat). */
 export function ProjectChat() {
@@ -29,24 +59,80 @@ export function ProjectChat() {
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [analysisResult, setAnalysisResult] = useState<{ mode: string; summary: string } | null>(null);
+  const [analysisResult, setAnalysisResult] = useState<{
+    mode: string;
+    summary: string;
+    reportMeta?: AnalyzeReportMeta;
+  } | null>(null);
   const [loadingAnalysis, setLoadingAnalysis] = useState<string | null>(null);
   const [analysisError, setAnalysisError] = useState<string | null>(null);
+  const [selectedRepoId, setSelectedRepoId] = useState<string>('');
+  const [includePrefixesText, setIncludePrefixesText] = useState('');
+  const [excludeGlobsText, setExcludeGlobsText] = useState('');
+  const [crossPackageDuplicates, setCrossPackageDuplicates] = useState(false);
+  /** Multi-root: `false` → envía `strictChatScope: false` (chat sobre todos los roots sin exigir scope). */
+  const [allowBroadProjectChat, setAllowBroadProjectChat] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
 
+  useEffect(() => {
+    if (!project?.repositories?.length) return;
+    setSelectedRepoId((prev) => {
+      if (prev && project.repositories.some((r) => r.id === prev)) return prev;
+      return project.repositories[0].id;
+    });
+  }, [project]);
+
   const runAnalysis = useCallback(
-    (mode: 'agents' | 'skill') => {
-      if (!projectId) return;
+    (mode: AnalyzeCodeMode) => {
+      if (!projectId || !project) return;
       setLoadingAnalysis(mode);
       setAnalysisError(null);
       setError(null);
+
+      if (mode === 'agents' || mode === 'skill') {
+        api
+          .analyzeProject(projectId, { mode })
+          .then((res) =>
+            setAnalysisResult({ mode: res.mode, summary: res.summary, reportMeta: res.reportMeta }),
+          )
+          .catch((e) => setAnalysisError(e.message))
+          .finally(() => setLoadingAnalysis(null));
+        return;
+      }
+
+      if (project.repositories.length > 1 && !selectedRepoId) {
+        setAnalysisError('Selecciona un repositorio para el análisis.');
+        setLoadingAnalysis(null);
+        return;
+      }
+
+      const scope = scopeFromAnalyzeForm(includePrefixesText, excludeGlobsText);
+      const payload: {
+        mode: 'diagnostico' | 'duplicados' | 'reingenieria' | 'codigo_muerto' | 'seguridad';
+        repositoryId?: string;
+        scope?: import('../types').ChatScope;
+        crossPackageDuplicates?: boolean;
+      } = { mode };
+      if (project.repositories.length > 1) payload.repositoryId = selectedRepoId;
+      if (scope) payload.scope = scope;
+      if (mode === 'duplicados' && crossPackageDuplicates) payload.crossPackageDuplicates = true;
+
       api
-        .analyzeProject(projectId, mode)
-        .then((res) => setAnalysisResult({ mode: res.mode, summary: res.summary }))
+        .analyzeProject(projectId, payload)
+        .then((res) =>
+          setAnalysisResult({ mode: res.mode, summary: res.summary, reportMeta: res.reportMeta }),
+        )
         .catch((e) => setAnalysisError(e.message))
         .finally(() => setLoadingAnalysis(null));
     },
-    [projectId],
+    [
+      projectId,
+      project,
+      selectedRepoId,
+      includePrefixesText,
+      excludeGlobsText,
+      crossPackageDuplicates,
+    ],
   );
 
   useEffect(() => {
@@ -63,7 +149,7 @@ export function ProjectChat() {
 
   /** Envía mensaje al chat del proyecto (POST /projects/:id/chat) y actualiza mensajes. */
   const send = useCallback(() => {
-    if (!projectId || !input.trim() || loading) return;
+    if (!projectId || !project || !input.trim() || loading) return;
     const msg = input.trim();
     setInput('');
     setMessages((m) => [...m, { role: 'user', content: msg }]);
@@ -77,8 +163,13 @@ export function ProjectChat() {
       result: m.result,
     }));
 
+    const chatBody: Parameters<typeof api.chatProject>[1] = { message: msg, history };
+    if (project.repositories.length > 1 && allowBroadProjectChat) {
+      chatBody.strictChatScope = false;
+    }
+
     api
-      .chatProject(projectId, { message: msg, history })
+      .chatProject(projectId, chatBody)
       .then((res) => {
         setMessages((m) => [
           ...m,
@@ -95,7 +186,7 @@ export function ProjectChat() {
         setMessages((m) => [...m, { role: 'assistant', content: `Error: ${e.message}` }]);
       })
       .finally(() => setLoading(false));
-  }, [projectId, input, loading, messages]);
+  }, [projectId, project, input, loading, messages, allowBroadProjectChat]);
 
   /** Envía mensaje con Enter (sin Shift). */
   const onKeyDown = (e: React.KeyboardEvent) => {
@@ -155,7 +246,76 @@ export function ProjectChat() {
 
       <div className="flex min-h-0 flex-1 flex-col gap-4 lg:flex-row lg:gap-4">
         <aside className="order-2 flex max-h-[38vh] w-full shrink-0 flex-col gap-4 overflow-y-auto overflow-x-hidden border-t border-[var(--border)] pt-4 lg:order-1 lg:max-h-none lg:w-[min(420px,45%)] lg:border-t-0 lg:border-r lg:pt-0 lg:pr-4">
+          {project.repositories.length > 1 ? (
+            <div className="space-y-1 text-xs">
+              <span className="text-muted-foreground">Repo para análisis de código</span>
+              <Select value={selectedRepoId} onValueChange={setSelectedRepoId}>
+                <SelectTrigger size="sm" className="w-full font-mono text-xs">
+                  <SelectValue placeholder="Elegir repositorio" />
+                </SelectTrigger>
+                <SelectContent>
+                  {project.repositories.map((r) => (
+                    <SelectItem key={r.id} value={r.id} className="font-mono text-xs">
+                      {r.projectKey}/{r.repoSlug}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          ) : null}
+
+          <AnalyzeScopeFields
+            includePrefixesText={includePrefixesText}
+            onIncludePrefixesText={setIncludePrefixesText}
+            excludeGlobsText={excludeGlobsText}
+            onExcludeGlobsText={setExcludeGlobsText}
+            crossPackageDuplicates={crossPackageDuplicates}
+            onCrossPackageDuplicates={setCrossPackageDuplicates}
+            showCrossPackage
+          />
+
           <div className="flex flex-wrap gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => runAnalysis('diagnostico')}
+              disabled={!!loadingAnalysis || project.repositories.length === 0}
+            >
+              {loadingAnalysis === 'diagnostico' ? '…' : 'Diagnóstico'}
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => runAnalysis('duplicados')}
+              disabled={!!loadingAnalysis || project.repositories.length === 0}
+            >
+              {loadingAnalysis === 'duplicados' ? '…' : 'Duplicados'}
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => runAnalysis('reingenieria')}
+              disabled={!!loadingAnalysis || project.repositories.length === 0}
+            >
+              {loadingAnalysis === 'reingenieria' ? '…' : 'Reingeniería'}
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => runAnalysis('codigo_muerto')}
+              disabled={!!loadingAnalysis || project.repositories.length === 0}
+            >
+              {loadingAnalysis === 'codigo_muerto' ? '…' : 'Código muerto'}
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => runAnalysis('seguridad')}
+              disabled={!!loadingAnalysis || project.repositories.length === 0}
+              title="Heurística: secretos en fuentes indexadas"
+            >
+              {loadingAnalysis === 'seguridad' ? '…' : 'Seguridad'}
+            </Button>
             <Button
               variant="outline"
               size="sm"
@@ -174,11 +334,18 @@ export function ProjectChat() {
             >
               {loadingAnalysis === 'skill' ? '…' : 'SKILL'}
             </Button>
+            {selectedRepoId ? (
+              <Button variant="outline" size="sm" asChild>
+                <Link to={`/repos/${selectedRepoId}/index`}>Ver índice</Link>
+              </Button>
+            ) : null}
           </div>
           {loadingAnalysis && (
             <Card>
               <CardHeader className="pb-2">
-                <CardTitle className="text-base">{loadingAnalysis === 'agents' ? 'AGENTS.md' : 'SKILL.md'}</CardTitle>
+                <CardTitle className="text-base">
+                  {ANALYSIS_MODE_LABELS[loadingAnalysis] ?? loadingAnalysis}
+                </CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="flex items-center gap-2 py-6 text-muted-foreground">
@@ -197,7 +364,15 @@ export function ProjectChat() {
           {analysisResult && !loadingAnalysis && (
             <Card>
               <CardHeader className="pb-2">
-                <CardTitle className="text-base">{analysisResult.mode === 'agents' ? 'AGENTS.md' : 'SKILL.md'}</CardTitle>
+                <CardTitle className="text-base">
+                  {ANALYSIS_RESULT_TITLES[analysisResult.mode] ?? analysisResult.mode}
+                </CardTitle>
+                <AnalyzeReportMetaBadges meta={analysisResult.reportMeta} />
+                {analysisResult.reportMeta?.graphCoverageNote ? (
+                  <p className="text-muted-foreground mt-1 text-xs leading-snug">
+                    {analysisResult.reportMeta.graphCoverageNote}
+                  </p>
+                ) : null}
               </CardHeader>
               <CardContent>
                 <div className="max-h-[50vh] overflow-auto rounded border bg-muted/50 p-3 text-sm [&_ul]:my-1 [&_ol]:my-1 [&_li]:my-0 [&_p]:my-1 [&_strong]:font-semibold [&_pre]:overflow-x-auto [&_h1]:text-lg [&_h2]:text-base [&_h3]:text-sm [&_table]:w-full [&_th]:text-left [&_th]:border [&_td]:border [&_td]:px-2 [&_td]:py-1">
@@ -208,7 +383,7 @@ export function ProjectChat() {
           )}
           {!analysisResult && !loadingAnalysis && !analysisError && (
             <p className="text-muted-foreground py-8 text-center text-sm">
-              Usa AGENTS o SKILL para generar el contenido markdown según el conocimiento del proyecto.
+              Análisis por repo (diagnóstico, duplicados, …) o AGENTS/SKILL para markdown de agentes.
             </p>
           )}
         </aside>
@@ -219,6 +394,22 @@ export function ProjectChat() {
           <p className="text-sm text-muted-foreground">
             Este chat usa el grafo de todos los repos del proyecto. Puedes preguntar por archivos, componentes o flujos en cualquier repo.
           </p>
+          {project.repositories.length > 1 ? (
+            <label className="mt-3 flex cursor-pointer items-start gap-2 rounded-md border border-dashed border-[var(--border)] p-2 text-xs">
+              <input
+                type="checkbox"
+                className="mt-0.5 rounded border-[var(--border)]"
+                checked={allowBroadProjectChat}
+                onChange={(e) => setAllowBroadProjectChat(e.target.checked)}
+              />
+              <span className="text-muted-foreground leading-snug">
+                Chat amplio: no exigir scope ni inferencia por rol (equivale a{' '}
+                <code className="rounded bg-muted px-1 font-mono">strictChatScope: false</code> en la API). Si está
+                desmarcado y el mensaje no acota un repo, el servidor puede responder{' '}
+                <code className="rounded bg-muted px-1 font-mono">[AMBIGUOUS_SCOPE]</code>.
+              </span>
+            </label>
+          ) : null}
         </CardHeader>
         <CardContent className="flex flex-1 flex-col gap-4 overflow-hidden p-4">
           {error && (

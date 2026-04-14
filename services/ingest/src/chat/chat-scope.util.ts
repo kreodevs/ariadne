@@ -11,6 +11,15 @@ export interface ChatScope {
   excludePathGlobs?: string[];
 }
 
+/** true si el cliente acotó explícitamente el alcance (repoIds, prefijos o globs no vacíos). */
+export function hasExplicitChatScopeNarrowing(scope?: ChatScope): boolean {
+  if (!scope) return false;
+  if (Array.isArray(scope.repoIds) && scope.repoIds.length > 0) return true;
+  if (Array.isArray(scope.includePathPrefixes) && scope.includePathPrefixes.length > 0) return true;
+  if (Array.isArray(scope.excludePathGlobs) && scope.excludePathGlobs.length > 0) return true;
+  return false;
+}
+
 /** Normaliza path para comparación (slashes, sin leading ./). */
 export function normalizePathKey(path: string): string {
   return path.replace(/^\.\//, '').replace(/\\/g, '/');

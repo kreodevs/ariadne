@@ -99,10 +99,10 @@ Si la herramienta no existe o falla, la aplicación puede hacer **fallback** con
 
 ---
 
-### 3.2.1 `get_project_analysis` (análisis por repo)
+### 3.2.1 `get_project_analysis` (análisis estructurado)
 
-- **Ingest:** `POST /repositories/:id/analyze`. El `id` debe ser **UUID del repositorio** (`roots[].id` de `list_known_projects`), no el `id` del proyecto Ariadne.
-- **Argumentos MCP:** `projectId` (nombre heredado; valor = **id de repo**), `mode`: `diagnostico` | `duplicados` | `reingenieria` | `codigo_muerto`.
+- **Ingest:** Si el UUID es **repositorio** → `POST /repositories/:id/analyze` con `{ mode }`. Si es **proyecto** Ariadne → `POST /projects/:id/analyze` con `{ mode, idePath?, repositoryId? }` (multi-root: hace falta `idePath` o `repositoryId` cuando hay varios roots).
+- **Argumentos MCP:** `projectId?` (proyecto o **`roots[].id`**), `currentFilePath?` (multi-root: se envía como `idePath`), `mode`: `diagnostico` | `duplicados` | `reingenieria` | `codigo_muerto` | `seguridad`.
 
 ---
 
@@ -142,7 +142,7 @@ Si la herramienta no existe o falla, la aplicación puede hacer **fallback** con
 | **get_legacy_impact** | `nodeName`, `projectId` | Impacto al modificar un componente/función; añadir al contexto Ariadne. |
 | **get_contract_specs** | `componentName`, `projectId?` | Props reales de un componente (refactor seguro). |
 | **get_component_graph** | `componentName`, `projectId`, `depth?` (default 2) | Árbol de dependencias de un componente. |
-| **get_project_analysis** | `projectId`, `mode` | Diagnóstico/duplicados/reingeniería/código muerto; **`projectId` = `roots[].id` del repo** (endpoint por repositorio). |
+| **get_project_analysis** | `projectId?`, `currentFilePath?`, `mode` | Informes por modo (incl. `seguridad`); `projectId` puede ser proyecto o `roots[].id`; multi-root → `currentFilePath` o repo explícito. |
 
 Todas usan el mismo transporte JSON-RPC y el mismo parseo de `result.content[].text`.
 

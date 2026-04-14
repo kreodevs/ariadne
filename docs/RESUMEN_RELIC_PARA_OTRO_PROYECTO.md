@@ -55,7 +55,7 @@ El grafo puede tener **varios proyectos** indexados. Cada uno tiene un `projectI
 - **Al iniciar sesión en ese repo:** Ejecutar **`list_known_projects`** (si no hay `.ariadne-project`) para tener el mapa de proyectos; si hay `.ariadne-project`, leer `projectId` y usarlo en todo.
 - **Antes de editar** un componente o función legacy: Llamar **`validate_before_edit(nodeName, projectId?)`** (o al menos `get_legacy_impact` + `get_contract_specs`). Usar las props/firmas que devuelve el grafo; **no inventar**.
 - **Diagnóstico de archivo/componente/hook:** Usar **`get_component_graph`**, **`get_legacy_impact`**, **`get_definitions`**, **`get_references`** (no limitarse a Read/Grep).
-- **Diagnóstico de proyecto** (deuda técnica, duplicados, reingeniería, código muerto): **`get_project_analysis(projectId, mode)`**.
+- **Diagnóstico de proyecto / repo** (deuda técnica, duplicados, reingeniería, código muerto, **seguridad** heurística): **`get_project_analysis(projectId?, mode, currentFilePath?)`**. El `projectId` puede ser el id del **proyecto** Ariadne o **`roots[].id`**; con varios repos bajo el mismo proyecto, **`currentFilePath`** (archivo abierto) permite que el MCP envíe `idePath` al ingest y resuelva el root correcto.
 - **Preguntas en lenguaje natural** (“¿cómo funciona X?”): **`ask_codebase(question, projectId?)`** (requiere que el Ingest esté accesible y configurado en el MCP).
 - **Búsqueda:** **`semantic_search`**, **`find_similar_implementations`**.
 - Si una herramienta devuelve **`[NOT_FOUND_IN_GRAPH]`**: no inventar; sugerir reindexar el repo en Ariadne o revisar el nombre del nodo.
@@ -74,7 +74,7 @@ El grafo puede tener **varios proyectos** indexados. Cada uno tiene un `projectI
 | `get_definitions` / `get_references` | Dónde está definido un símbolo y dónde se usa. |
 | `get_file_content` | Contenido de un archivo del repo indexado (requiere INGEST_URL en el MCP). |
 | `semantic_search` / `find_similar_implementations` | Búsqueda en el grafo. |
-| `get_project_analysis` | Diagnóstico, duplicados, reingeniería, código muerto (por proyecto). |
+| `get_project_analysis` | Informes por modo: `diagnostico`, `duplicados`, `reingenieria`, `codigo_muerto`, `seguridad`. Proyecto multi-root: usar `currentFilePath` o pasar `roots[].id` como `projectId`. |
 | `ask_codebase` | Preguntas en NL sobre el código (delega al Ingest). |
 | `get_modification_plan` | Plan quirúrgico (`filesToModify` + `questionsToRefine`). En multi-root, `projectId` puede ser UUID de proyecto o **`roots[].id` del repo** donde está el código (recomendado). |
 

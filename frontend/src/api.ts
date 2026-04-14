@@ -60,6 +60,11 @@ export const api = {
       method: 'PATCH',
       body: JSON.stringify(dto),
     }),
+  setProjectRepositoryRole: (projectId: string, repoId: string, role: string | null) =>
+    request<{ projectId: string; repoId: string; role: string | null }>(
+      `/projects/${projectId}/repositories/${repoId}`,
+      { method: 'PATCH', body: JSON.stringify({ role: role === '' ? null : role }) },
+    ),
   regenerateProjectId: (projectId: string) =>
     request<{ newProjectId: string }>(`/projects/${projectId}/regenerate-id`, {
       method: 'POST',
@@ -79,6 +84,8 @@ export const api = {
   getJobs: (repoId: string) => request<import('./types').SyncJob[]>(`/repositories/${repoId}/jobs`),
   getJobAnalysis: (repoId: string, jobId: string) =>
     request<import('./types').JobAnalysisResult>(`/repositories/${repoId}/jobs/${jobId}/analysis`),
+  getJobAnalysisByProject: (projectId: string, jobId: string) =>
+    request<import('./types').JobAnalysisResult>(`/projects/${projectId}/jobs/${jobId}/analysis`),
   deleteJob: (repoId: string, jobId: string) =>
     request<void>(`/repositories/${repoId}/jobs/${jobId}`, { method: 'DELETE' }),
   deleteAllJobs: (repoId: string) =>
@@ -110,19 +117,41 @@ export const api = {
       body: JSON.stringify({ projectId }),
     }),
 
-  analyze: (
-    repoId: string,
-    mode: 'diagnostico' | 'duplicados' | 'reingenieria' | 'codigo_muerto' | 'seguridad' | 'agents' | 'skill',
-  ) =>
-    request<{ mode: string; summary: string; details?: unknown }>(`/repositories/${repoId}/analyze`, {
+  /** Vectores Falkor (Function, Component, Document, StorybookDoc, MarkdownDoc). Requiere EMBEDDING_* en ingest. */
+  runEmbedIndex: (repoId: string) =>
+    request<{ indexed: number; errors: number }>(`/repositories/${repoId}/embed-index`, {
       method: 'POST',
-      body: JSON.stringify({ mode }),
     }),
 
-  analyzeProject: (projectId: string, mode: 'agents' | 'skill') =>
-    request<{ mode: string; summary: string; details?: unknown }>(`/projects/${projectId}/analyze`, {
+  analyze: (
+    repoId: string,
+    mode: import('./types').AnalyzeCodeMode,
+    opts?: { scope?: import('./types').ChatScope; crossPackageDuplicates?: boolean },
+  ) => {
+    const body: Record<string, unknown> = { mode };
+    if (opts?.scope && Object.keys(opts.scope).length > 0) body.scope = opts.scope;
+    if (opts?.crossPackageDuplicates) body.crossPackageDuplicates = true;
+    return request<import('./types').AnalyzeApiResult>(`/repositories/${repoId}/analyze`, {
       method: 'POST',
-      body: JSON.stringify({ mode }),
+      body: JSON.stringify(body),
+    });
+  },
+
+  analyzeProject: (
+    projectId: string,
+    payload:
+      | { mode: 'agents' | 'skill' }
+      | {
+          mode: 'diagnostico' | 'duplicados' | 'reingenieria' | 'codigo_muerto' | 'seguridad';
+          repositoryId?: string;
+          idePath?: string;
+          scope?: import('./types').ChatScope;
+          crossPackageDuplicates?: boolean;
+        },
+  ) =>
+    request<import('./types').AnalyzeApiResult>(`/projects/${projectId}/analyze`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
     }),
 
   getFullAudit: (repoId: string) =>
@@ -152,7 +181,16 @@ export const api = {
       body: JSON.stringify(body),
     }),
 
-  chatProject: (projectId: string, body: { message: string; history?: Array<{ role: 'user' | 'assistant'; content: string; cypher?: string; result?: unknown[] }> }) =>
+  chatProject: (
+    projectId: string,
+    body: {
+      message: string;
+      history?: Array<{ role: 'user' | 'assistant'; content: string; cypher?: string; result?: unknown[] }>;
+      scope?: import('./types').ChatScope;
+      twoPhase?: boolean;
+      strictChatScope?: boolean;
+    },
+  ) =>
     request<{ answer: string; cypher?: string; result?: unknown[] }>(`/projects/${projectId}/chat`, {
       method: 'POST',
       body: JSON.stringify(body),

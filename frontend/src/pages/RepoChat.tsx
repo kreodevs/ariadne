@@ -6,8 +6,11 @@ import { Link, useParams } from 'react-router-dom';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { MarkdownBlock } from '@/components/MarkdownBlock';
+import { AnalyzeReportMetaBadges } from '@/components/analyze/AnalyzeReportMetaBadges';
+import { AnalyzeScopeFields } from '@/components/analyze/AnalyzeScopeFields';
 import { api } from '../api';
-import type { Repository } from '../types';
+import type { AnalyzeCodeMode, AnalyzeReportMeta, Repository } from '../types';
+import { scopeFromAnalyzeForm } from '../utils/analyze-scope-form';
 import { Button } from '@/components/ui/button';
 import { FullAuditModal } from './RepoChat/FullAuditModal';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -52,9 +55,16 @@ export function RepoChat() {
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [analysisResult, setAnalysisResult] = useState<{ mode: string; summary: string } | null>(null);
+  const [analysisResult, setAnalysisResult] = useState<{
+    mode: string;
+    summary: string;
+    reportMeta?: AnalyzeReportMeta;
+  } | null>(null);
   const [loadingAnalysis, setLoadingAnalysis] = useState<string | null>(null);
   const [analysisError, setAnalysisError] = useState<string | null>(null);
+  const [includePrefixesText, setIncludePrefixesText] = useState('');
+  const [excludeGlobsText, setExcludeGlobsText] = useState('');
+  const [crossPackageDuplicates, setCrossPackageDuplicates] = useState(false);
   const [fullAuditOpen, setFullAuditOpen] = useState(false);
   const [fullAuditData, setFullAuditData] = useState<import('../types').FullAuditResult | null>(null);
   const [fullAuditLoading, setFullAuditLoading] = useState(false);
@@ -70,22 +80,27 @@ export function RepoChat() {
   }, [id]);
 
   const runAnalysis = useCallback(
-    (
-      mode: 'diagnostico' | 'duplicados' | 'reingenieria' | 'codigo_muerto' | 'seguridad' | 'agents' | 'skill',
-    ) => {
+    (mode: AnalyzeCodeMode) => {
       if (!id) return;
       setLoadingAnalysis(mode);
       setAnalysisError(null);
       setError(null);
+      const scope = scopeFromAnalyzeForm(includePrefixesText, excludeGlobsText);
+      const opts: { scope?: import('../types').ChatScope; crossPackageDuplicates?: boolean } = {};
+      if (scope) opts.scope = scope;
+      if (mode === 'duplicados' && crossPackageDuplicates) opts.crossPackageDuplicates = true;
+      const reqOpts = Object.keys(opts).length > 0 ? opts : undefined;
       api
-        .analyze(id, mode)
-        .then((res) => setAnalysisResult({ mode: res.mode, summary: res.summary }))
+        .analyze(id, mode, reqOpts)
+        .then((res) =>
+          setAnalysisResult({ mode: res.mode, summary: res.summary, reportMeta: res.reportMeta }),
+        )
         .catch((e) => {
           setAnalysisError(e.message);
         })
         .finally(() => setLoadingAnalysis(null));
     },
-    [id],
+    [id, includePrefixesText, excludeGlobsText, crossPackageDuplicates],
   );
 
   const runFullAudit = useCallback(() => {
@@ -197,6 +212,15 @@ export function RepoChat() {
       <div className="flex min-h-0 flex-1 flex-col gap-4 lg:flex-row lg:gap-4">
         {/* Herramientas / análisis: debajo del chat en móvil */}
         <aside className="order-2 flex max-h-[38vh] w-full min-h-0 shrink-0 flex-col gap-4 overflow-y-auto overflow-x-hidden border-t border-[var(--border)] pt-4 lg:order-1 lg:max-h-none lg:w-[min(420px,45%)] lg:overflow-hidden lg:border-t-0 lg:border-r lg:pt-0 lg:pr-4">
+          <AnalyzeScopeFields
+            includePrefixesText={includePrefixesText}
+            onIncludePrefixesText={setIncludePrefixesText}
+            excludeGlobsText={excludeGlobsText}
+            onExcludeGlobsText={setExcludeGlobsText}
+            crossPackageDuplicates={crossPackageDuplicates}
+            onCrossPackageDuplicates={setCrossPackageDuplicates}
+            showCrossPackage
+          />
           <div className="flex flex-wrap gap-2">
             <Button
               variant="outline"
@@ -307,6 +331,12 @@ export function RepoChat() {
                 <CardTitle className="text-base">
                   {ANALYSIS_RESULT_TITLES[analysisResult.mode] ?? analysisResult.mode}
                 </CardTitle>
+                <AnalyzeReportMetaBadges meta={analysisResult.reportMeta} />
+                {analysisResult.reportMeta?.graphCoverageNote ? (
+                  <p className="text-muted-foreground mt-1 text-xs leading-snug">
+                    {analysisResult.reportMeta.graphCoverageNote}
+                  </p>
+                ) : null}
               </CardHeader>
               <CardContent className="flex min-h-0 flex-1 flex-col p-0 px-6 pb-6">
                 <div

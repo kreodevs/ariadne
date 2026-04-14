@@ -22,8 +22,8 @@ npm publish
 - **validate_before_edit** — OBLIGATORIO antes de editar: impacto + contrato en un llamado.
 - **semantic_search** — Búsqueda por palabra clave en componentes, funciones y archivos.
 - **ask_codebase** — Preguntas en NL sobre el código; delega al ingest. Argumentos opcionales: **`scope`** (`repoIds`, `includePathPrefixes`, `excludePathGlobs`), **`twoPhase`**. Requiere INGEST_URL y OPENAI_API_KEY.
-- **get_project_analysis** — Diagnóstico, duplicados, reingeniería o código muerto (requiere INGEST_URL). `projectId` puede ser id de **proyecto** o **`roots[].id`** (repo); si es proyecto multi-root, usa **`currentFilePath`** o pasa el id del repo. El MCP llama a `POST /projects/.../analyze` o `POST /repositories/.../analyze` según exista el proyecto en ingest.
-- **get_modification_plan** — Plan quirúrgico vía `POST /projects/:id/modification-plan` (`userDescription`, opcional **`scope`**). `projectId` = proyecto Ariadne o `roots[].id`; en multi-root, preferir el repo objetivo.
+- **get_project_analysis** — Deuda técnica, duplicados, reingeniería, código muerto o **seguridad** (heurística; requiere INGEST_URL). `projectId` puede ser id de **proyecto** o **`roots[].id`** (repo); si es proyecto multi-root, usa **`currentFilePath`** o pasa el id del repo. Opcional: **`scope`** (mismo shape que `ask_codebase`), **`crossPackageDuplicates`** (modo duplicados). El MCP llama a `POST /projects/.../analyze` o `POST /repositories/.../analyze`. Si la respuesta trae **`reportMeta`**, se añade un bloque JSON al final del markdown.
+- **get_modification_plan** — Plan vía `POST /projects/:id/modification-plan` (`userDescription`, opcional **`scope`**, **`currentFilePath`**, **`questionsMode`**: `business` | `technical` | `both`). Respuesta puede incluir **`warnings`** y **`diagnostic`**. `projectId` = proyecto o `roots[].id`.
 
 ### Refactorización segura (árbol de llamadas)
 - **get_definitions** — Origen exacto de clase/función (archivo, líneas). Evita alucinaciones al refactorizar.
@@ -59,6 +59,13 @@ Variables: `FALKORDB_HOST`, `FALKORDB_PORT`, `FALKOR_SHARD_BY_PROJECT`, `FALKOR_
 - **Auth:** Si `MCP_AUTH_TOKEN` está definido, las peticiones deben incluir `Authorization: Bearer <token>`.
 
 Variables: `PORT` (8080), `FALKORDB_HOST`, `FALKORDB_PORT`, `INGEST_URL`, `MCP_AUTH_TOKEN` (opcional).
+
+### Caché de herramientas MCP (no es la caché de `analyze`)
+
+Las herramientas **get_component_graph**, **get_legacy_impact** y **get_sync_status** pueden cachear respuestas cortas:
+
+- **Por defecto** (sin `MCP_REDIS_URL` ni `REDIS_URL`, o con `MCP_REDIS_DISABLED=1`): caché **en memoria** del proceso (TTL 30–120 s según herramienta).
+- **Redis:** define `MCP_REDIS_URL` o `REDIS_URL` para compartir caché entre instancias. La caché de informes **`get_project_analysis`** vive en **ingest** (ver `docs/plan-analyze-layer-cache.md`); el MCP no la duplica.
 
 ## Scripts
 

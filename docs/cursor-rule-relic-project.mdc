@@ -11,6 +11,7 @@ Al usar herramientas del MCP AriadneSpecs (`validate_before_edit`, `get_legacy_i
 1. **Si existe `.ariadne-project` en la raíz del workspace:** léelo y usa su `projectId` en **todas** las llamadas. No infieras ni uses IDs de conversaciones anteriores.
 2. **Si no existe:** usa `currentFilePath` (ruta del archivo abierto) para que el MCP infiera el proyecto.
 3. **Nunca inventes ni asumas** un projectId. Si no lo conoces, ejecuta `list_known_projects` y luego crea `.ariadne-project` con el ID correcto.
+4. Para **`get_project_analysis`** con proyecto **multi-root**, pasa **`roots[].id`** del repo objetivo o deja que el MCP use **`currentFilePath`** (archivo abierto) para que el ingest resuelva el root vía `idePath`.
 
 Formato de `.ariadne-project`:
 ```json

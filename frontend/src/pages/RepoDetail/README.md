@@ -1,6 +1,6 @@
 # RepoDetail — Página de detalle de repositorio
 
-Detalle de repo: info, Sync, Resync, jobs, acciones (Editar, Chat, Índice, Eliminar).
+Detalle de repo: info, Sync, Resync, **Indexar embeddings** (`POST /repositories/:id/embed-index` vía API), jobs, acciones (Editar, Chat, Índice, Eliminar). Útil tras Fase 4 (StorybookDoc/MarkdownDoc) o cambio de proveedor de embeddings sin re-sync completo.
 
 ## IDs: Repository ID vs Project ID
 
@@ -22,7 +22,7 @@ RepoDetail/
 ├── index.tsx          # Orquestador: usa useRepoDetail, compone compound children
 ├── useRepoDetail.ts   # Hook: estado, side-effects, handlers; compone useRepoDetailJobs y useRepoDetailSync
 ├── utils.ts           # formatJobPayload
-├── JobAnalysisModal.tsx    # Modal de análisis (impacto, seguridad, resumen) para jobs incrementales
+├── JobAnalysisModal.tsx    # Análisis de job incremental; si hay `projectId` Ariadne, usa `GET /projects/.../jobs/.../analysis`
 ├── SkippedFilesModal.tsx   # Modal de archivos omitidos (fetch, parse, index) por job
 ├── RepoDetailLoading.tsx
 ├── RepoDetailError.tsx

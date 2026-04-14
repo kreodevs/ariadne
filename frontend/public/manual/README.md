@@ -97,7 +97,7 @@ Levantar FalkorDB, PostgreSQL y Redis por tu cuenta (binarios o contenedores sue
 
 Tras cada sync (normal o resync), se ejecuta automáticamente el indexado de embeddings si EMBEDDING_PROVIDER está configurado; si no, se omite sin error.
 
-**Chat y análisis:** `POST /repositories/:id/chat` con `{ message, history? }` — preguntas NL por repo. `POST /projects/:projectId/chat` — chat sobre todos los repos del proyecto. `POST /repositories/:id/analyze` con `{ mode: 'diagnostico'|'duplicados'|'reingenieria'|'codigo_muerto' }` — diagnóstico (top riesgo, antipatrones), duplicados (embeddings), plan de reingeniería, código muerto. Requiere `OPENAI_API_KEY`.
+**Chat y análisis:** `POST /repositories/:id/chat` con `{ message, history?, scope?, twoPhase?, responseMode? }` — preguntas NL por repo. `POST /projects/:projectId/chat` — chat sobre todos los repos del proyecto. **`POST /repositories/:id/analyze`** (`:id` = repo): modos `diagnostico`, `duplicados`, `reingenieria`, `codigo_muerto`, `seguridad`. **`POST /projects/:id/analyze`:** mismos modos; en proyecto **multi-root**, `idePath` / `repositoryId` opcionales; o `mode: 'agents'|'skill'`. Requiere `OPENAI_API_KEY`.
 **Métricas y anti-patrones:** El parser calcula complejidad ciclomática (McCabe), LOC, anidamiento (nestingDepth) y acoplamiento. El diagnóstico detecta: código spaguetti (nesting>4), God functions (acoplamiento>8), alto fan-in (shotgun surgery), imports circulares, componentes sobrecargados.
 - **Webhook Bitbucket:** `POST /webhooks/bitbucket`. Evento esperado: `repo:push`. Secret desde credencial en BD (kind=webhook_secret) o `BITBUCKET_WEBHOOK_SECRET`. Ver [bitbucket_webhook.md](../bitbucket_webhook.md).
 - **Shadow (índice en grafo shadow):** `POST /shadow` con body `{ "files": [ { "path": "ruta/archivo.ts", "content": "código..." } ] }`.
@@ -133,7 +133,7 @@ Servidor por **Streamable HTTP** (puerto 8080, path /mcp). Para usarlo en Cursor
 - **get_file_content** — Contenido de un archivo del repo o proyecto (`path`, `projectId`, `currentFilePath`, `ref`). Requiere INGEST_URL.
 - **ask_codebase** — Preguntas NL; usa `POST /projects/:id/chat` o `POST /repositories/:id/chat` según el ID.
 - **get_modification_plan** — Plan quirúrgico: `filesToModify` (path + repoId) y `questionsToRefine`. `POST /projects/:projectId/modification-plan`; en multi-root preferir `projectId` = `roots[].id` del repo donde está el código. UUID de proyecto o de repositorio.
-- **get_project_analysis** — Diagnóstico/duplicados/reingeniería/código muerto; llama a `POST /repositories/:id/analyze` (id = repo).
+- **get_project_analysis** — Informes por modo (incl. `seguridad`); MCP usa `POST /projects/.../analyze` o `POST /repositories/.../analyze` según proyecto vs `roots[].id`; multi-root: `currentFilePath` → `idePath`.
 - **validate_before_edit** — OBLIGATORIO antes de editar: devuelve impacto + contrato en un solo llamado.
 - **semantic_search** — Búsqueda por palabra clave en componentes, funciones y archivos (`query`, `projectId`, `limit`).
 - **analyze_local_changes** — Pre-flight check: revisa `git diff --cached` contra el grafo; devuelve tabla de impacto (tipo, elemento, impacto, riesgo ALTO/MEDIO/BAJO). Requiere `workspaceRoot` o `stagedDiff`.

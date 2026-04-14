@@ -4,12 +4,14 @@
 import { Body, Controller, Delete, Get, Param, Patch, Post, Query } from '@nestjs/common';
 import { ProjectsService } from './projects.service';
 import { FileContentService } from '../repositories/file-content.service';
+import { JobAnalysisService } from '../repositories/job-analysis.service';
 
 @Controller('projects')
 export class ProjectsController {
   constructor(
     private readonly service: ProjectsService,
     private readonly fileContent: FileContentService,
+    private readonly jobAnalysis: JobAnalysisService,
   ) {}
 
   @Get()
@@ -41,6 +43,15 @@ export class ProjectsController {
     return this.service.resolveRepoForPath(projectId, path?.trim() ?? '');
   }
 
+  /**
+   * Análisis de job incremental por **proyecto** + `jobId` (el job ya ancla `repositoryId`; se valida enlace `project_repositories`).
+   * Alternativa: `GET /repositories/:repositoryId/jobs/:jobId/analysis`.
+   */
+  @Get(':id/jobs/:jobId/analysis')
+  getJobAnalysis(@Param('id') projectId: string, @Param('jobId') jobId: string) {
+    return this.jobAnalysis.analyzeJobForProject(projectId, jobId);
+  }
+
   @Get(':id')
   findOne(@Param('id') id: string) {
     return this.service.findOne(id);
@@ -54,6 +65,16 @@ export class ProjectsController {
   @Patch(':id')
   update(@Param('id') id: string, @Body() body: { name?: string | null; description?: string | null }) {
     return this.service.update(id, body);
+  }
+
+  /** Rol opcional del repo en el proyecto (chat multi-root: inferencia de alcance). */
+  @Patch(':id/repositories/:repoId')
+  setRepoRole(
+    @Param('id') projectId: string,
+    @Param('repoId') repoId: string,
+    @Body() body: { role?: string | null },
+  ) {
+    return this.service.setRepositoryRole(projectId, repoId, body.role);
   }
 
   @Delete(':id')

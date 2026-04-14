@@ -169,6 +169,15 @@ export const MAX_DUPLICATES = 50;
 export const MAX_ANTIPATTERN_ITEMS = 40;
 export const MAX_SUMMARY_CHARS = 4000;
 
+/** Límite por defecto de aristas CALL para métricas extrínsecas con scope. Override: `MAX_ANALYZE_CALL_EDGES`. */
+export const MAX_ANALYZE_CALL_EDGES = 80_000;
+
+export function getMaxAnalyzeCallEdges(): number {
+  const raw = process.env.MAX_ANALYZE_CALL_EDGES?.trim();
+  const n = raw ? parseInt(raw, 10) : NaN;
+  return Number.isFinite(n) && n >= 1000 ? Math.min(n, 500_000) : MAX_ANALYZE_CALL_EDGES;
+}
+
 export const SEARCH_SYNONYMS: Record<string, string[]> = {
   login: ['auth', 'signin', 'sign-in', 'signin', 'autenticacion', 'authentication'],
   auth: ['login', 'signin', 'autenticacion'],
@@ -249,6 +258,84 @@ export function getExplorerToolsKnowledge(): typeof EXPLORER_TOOLS_ALL {
   return EXPLORER_TOOLS_ALL.filter(
     (t) => (t as { function?: { name?: string } }).function?.name !== 'get_graph_summary',
   );
+}
+
+/** Intención de volcado íntegro (sin síntesis), reutilizable en detectores por dominio. */
+function wantsFullDumpIntent(message: string, lower: string): boolean {
+  return (
+    /lista\s+(completa|total|entera)|listado\s+completo|listados?\s+completos?/i.test(lower) ||
+    /inventario\s+completo/i.test(lower) ||
+    /no\s+(quiero|sólo|solo)\s+(algunos|unos?\s+pocos|ejemplos?)/i.test(message) ||
+    /enumer(ar|a)\s+todos/i.test(lower) ||
+    /sin\s+resumir|sin\s+sintetizar|sin\s+omitir|exhaustiv|íntegro|integro|exactos?|completos?\s+exactos?/i.test(message) ||
+    /(all|every|full|complete)\s+(the\s+)?(list|inventory)\s+of/i.test(lower)
+  );
+}
+
+/**
+ * Listado completo de nodos `Component` sin pasar por el sintetizador (tabla markdown desde Cypher).
+ */
+export function wantsFullComponentListing(message: string): boolean {
+  const t = message.trim();
+  const lower = t.toLowerCase();
+  const hasComponentKeyword =
+    /\bcomponente?s?\b/i.test(t) ||
+    /\bcomponents?\b/i.test(lower) ||
+    /\b(ui|react)\s+components?\b/i.test(lower);
+  if (!hasComponentKeyword) return false;
+
+  if (
+    /\b(endpoints?|api\s*routes?|rutas?\s+api)\b/i.test(t) &&
+    !/\bcomponente?s?\b/i.test(t) &&
+    !/\bcomponents?\b/i.test(lower)
+  ) {
+    return false;
+  }
+
+  return (
+    /todos?\s+los\s+componente/i.test(t) ||
+    /todas?\s+las\s+componente/i.test(t) ||
+    wantsFullDumpIntent(t, lower) ||
+    /(all|every|full|complete)\s+(the\s+)?(list|inventory)\s+of\s+components?\b/i.test(lower) ||
+    /enumer(ar|a)\s+todos\s+los\s+componente/i.test(lower) ||
+    (/sin\s+resumir|sin\s+sintetizar|sin\s+omitir|exactos?|íntegro|integro|completos?\s+exactos?/i.test(t) &&
+      /\bcomponente/i.test(t))
+  );
+}
+
+/**
+ * Inventario íntegro del índice (varias etiquetas del grafo), sin vocabulario fijo «componente».
+ */
+export function wantsFullGenericIndexedInventory(message: string): boolean {
+  if (wantsFullComponentListing(message)) return false;
+
+  const t = message.trim();
+  const lower = t.toLowerCase();
+
+  const indexedEntityLanguage =
+    /\b(elementos?|entidades)\b/i.test(t) ||
+    /\belementos?\s+involucrados?\b/i.test(t) ||
+    /\bnodos?\s+((del|en)\s+)?(el\s+)?(grafo|índice|indice)\b/i.test(lower) ||
+    /\b(artefactos?|piezas?)\s+(indexados?|involucradas?|del\s+índice|del\s+indice)\b/i.test(lower) ||
+    /\b(inventario|índice|indice)\s+((del|de)\s+)?(grafo|proyecto|repo|monorepo)\b/i.test(lower) ||
+    /\b(inventario|índice|indice)\s+(completo|íntegro|integro|total)\b/i.test(lower) ||
+    /\btodo\s+lo\s+indexado\b/i.test(lower) ||
+    /\b(grafo|índice|indice)\s+(completo|íntegro|integro)\b/i.test(lower) ||
+    /\b(símbolos?|unidades?)\s+indexados?\b/i.test(lower) ||
+    (/\brecursos?\b/i.test(t) &&
+      /\b((del|de)\s+)?(repo|repositorio|proyecto|monorepo|código|codigo)\b/i.test(lower) &&
+      /\b(lista|listado|todos|todas|completo|inventario|enumer|sin\s+resumir)\b/i.test(lower)) ||
+    /\b(entities|indexed\s+items?|graph\s+nodes?|everything\s+in\s+the\s+index)\b/i.test(lower);
+
+  if (!indexedEntityLanguage) return false;
+
+  const fullIntent =
+    wantsFullDumpIntent(t, lower) ||
+    /todos?\s+los\s+(elementos|entidades|nodos)\b/i.test(t) ||
+    /todas?\s+las\s+(entidades|elementos|piezas)\b/i.test(t) ||
+    /\ball\s+(the\s+)?(elements|entities|nodes)\b/i.test(lower);
+
+  return fullIntent;
 }
 
 /** Trunca antipatterns para caber en contexto. */

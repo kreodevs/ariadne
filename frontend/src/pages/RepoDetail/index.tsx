@@ -45,16 +45,22 @@ function getRepoCardProps(state: ReturnType<typeof useRepoDetail>) {
     syncing: state.syncing,
     deleting: state.deleting,
     syncFeedback: state.syncFeedback,
+    embedding: state.embedding,
+    embedFeedback: state.embedFeedback,
     onDelete: state.onDelete,
     onSync: state.onSync,
     onResync: state.onResync,
+    onEmbedIndex: state.onEmbedIndex,
   };
 }
 
 /** Deriva props para RepoDetail.JobsCard desde el estado de useRepoDetail. */
 function getJobsCardProps(state: ReturnType<typeof useRepoDetail>) {
+  const raw =
+    state.repo?.projectIds?.[0] ?? state.repo?.projectId?.trim() ?? null;
   return {
     repoId: state.id,
+    projectId: raw && raw !== '' ? raw : null,
     jobs: state.jobs,
     selectedJobIds: state.selectedJobIds,
     deletingJobs: state.deletingJobs,

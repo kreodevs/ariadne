@@ -4,33 +4,7 @@
 
 import { Injectable } from '@nestjs/common';
 import { CredentialsService } from '../credentials/credentials.service';
-
-const EXT = ['.js', '.jsx', '.ts', '.tsx', '.mjs', '.cjs', '.prisma', '.md'];
-const IGNORE_DIRS = new Set([
-  'node_modules',
-  '.git',
-  'dist',
-  'build',
-  'coverage',
-  'venv',
-  '.venv',
-  '__pycache__',
-]);
-const IGNORE_FILE = /\.(test|spec)\.(js|jsx|ts|tsx|mjs|cjs)$|\.log$|\/\.env$|^\.env$/;
-const IGNORE_FILE_WITH_TESTS = /\.log$|\/\.env$|^\.env$/;
-
-function shouldIndexTests(): boolean {
-  const v = process.env.INDEX_TESTS;
-  return v === 'true' || v === '1';
-}
-
-function matchesFilter(path: string): boolean {
-  const base = path.split('/').pop() ?? '';
-  if (IGNORE_DIRS.has(base)) return false;
-  const ext = path.slice(path.lastIndexOf('.'));
-  const ignoreRe = shouldIndexTests() ? IGNORE_FILE_WITH_TESTS : IGNORE_FILE;
-  return EXT.includes(ext) && !ignoreRe.test(path);
-}
+import { shouldSyncIndexPath } from './sync-path-filter';
 
 interface GhContent {
   name: string;
@@ -190,7 +164,7 @@ export class GitHubService {
     );
     const paths: string[] = [];
     for (const item of tree.tree ?? []) {
-      if (item.type === 'blob' && item.path && matchesFilter(item.path)) {
+      if (item.type === 'blob' && item.path && shouldSyncIndexPath(item.path)) {
         paths.push(item.path);
       }
     }
@@ -262,7 +236,7 @@ export class GitHubService {
     );
     const paths: string[] = [];
     for (const f of commit.files ?? []) {
-      if (f.filename && matchesFilter(f.filename)) {
+      if (f.filename && shouldSyncIndexPath(f.filename)) {
         paths.push(f.filename);
       }
     }

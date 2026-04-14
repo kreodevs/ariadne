@@ -25,7 +25,7 @@
 
 | Doc | Descripción |
 |-----|-------------|
-| **CHAT_Y_ANALISIS.md** | Chat NL→Cypher, diagnósticos, antipatrones, métricas, duplicados, reingeniería. |
+| **CHAT_Y_ANALISIS.md** | Chat NL→Cypher, diagnósticos, antipatrones, métricas, duplicados, reingeniería, código muerto, seguridad; rutas por repo y por proyecto (`AnalyticsService`, multi-root). |
 | **bitbucket_webhook.md** | Configuración del webhook Bitbucket para ingest. |
 
 ## Deployment y negocio

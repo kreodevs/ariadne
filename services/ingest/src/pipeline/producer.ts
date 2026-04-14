@@ -15,6 +15,9 @@ import {
 import type { ParsedFile } from './parser';
 import type { TsconfigPaths } from './tsconfig-resolve';
 import { resolveWithTsconfig } from './tsconfig-resolve';
+import type { StorybookDocumentationExtract } from './storybook-documentation';
+import { STORYBOOK_MAX_EMBED_CHARS } from './storybook-documentation';
+import { importInfosToStorybookBindings, isStorybookStoriesPath } from './storybook-csf-ast';
 
 export type { GraphClient } from 'ariadne-common';
 
@@ -107,6 +110,34 @@ export function resolveImportPath(
   return null;
 }
 
+/**
+ * Resuelve imports PascalCase del MDX a paths de archivo del repo (misma lógica que IMPORTS).
+ * Si hay `storyMetaTargets` (component/of), solo enlaza esos nombres; si no, todos los PascalCase resolubles.
+ */
+export function collectResolvedStorybookTargets(
+  docPath: string,
+  sb: StorybookDocumentationExtract,
+  existingPaths: Set<string>,
+  opts?: ResolveImportPathOptions | null,
+): Array<{ localName: string; targetPath: string }> {
+  const out: Array<{ localName: string; targetPath: string }> = [];
+  const seen = new Set<string>();
+  const primary = new Set(sb.storyMetaTargets);
+  const expandAllPascal = primary.size === 0;
+
+  for (const b of sb.importBindings) {
+    if (!/^[A-Z]/.test(b.localName)) continue;
+    if (!expandAllPascal && !primary.has(b.localName)) continue;
+    const resolved = resolveImportPath(docPath, b.specifier, existingPaths, opts);
+    if (!resolved) continue;
+    const key = `${b.localName}\0${resolved}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push({ localName: b.localName, targetPath: resolved });
+  }
+  return out;
+}
+
 /** Re-export para callers que importan desde producer. */
 export { buildExportsMap, resolveCrossFileCalls } from 'ariadne-common';
 
@@ -135,6 +166,7 @@ export function buildCypherForFile(
   projectId: string,
   repoId: string,
   context?: ChunkingContext,
+  importResolveOpts?: ResolveImportPathOptions | null,
 ): string[] {
   const path = parsed.path;
   const ext = path.slice(path.lastIndexOf('.')) || '.js';
@@ -345,6 +377,94 @@ export function buildCypherForFile(
     );
   }
 
+  const sb = parsed.storybookDocumentation;
+  if (sb) {
+    const resolvedTargets = collectResolvedStorybookTargets(path, sb, allFilePaths, importResolveOpts ?? null);
+    const appendix =
+      resolvedTargets.length > 0
+        ? `\n\nResolved import → module path:\n${resolvedTargets.map((r) => `- ${r.localName} → ${r.targetPath}`).join('\n')}`
+        : '';
+    const enrichedDoc = (sb.bodyForEmbedding + appendix).slice(0, STORYBOOK_MAX_EMBED_CHARS);
+    const docText = cypherSafe(enrichedDoc);
+    const titleS = cypherSafe(sb.titleHint);
+    statements.push(
+      `MERGE (sd:StorybookDoc {sourcePath: ${cypherSafe(path)}, projectId: ${pid}, repoId: ${rid}}) ON CREATE SET sd.title = ${titleS}, sd.documentationText = ${docText} ON MATCH SET sd.title = ${titleS}, sd.documentationText = ${docText}`,
+    );
+    statements.push(
+      `MATCH (f:File {path: ${cypherSafe(path)}, projectId: ${pid}, repoId: ${rid}}) MATCH (sd:StorybookDoc {sourcePath: ${cypherSafe(path)}, projectId: ${pid}, repoId: ${rid}}) MERGE (f)-[:HAS_STORYBOOK_DOC]->(sd)`,
+    );
+    for (const compName of sb.linkedComponentNames) {
+      statements.push(
+        `MATCH (sd:StorybookDoc {sourcePath: ${cypherSafe(path)}, projectId: ${pid}, repoId: ${rid}}) MATCH (c:Component {name: ${cypherSafe(compName)}, projectId: ${pid}, repoId: ${rid}}) MERGE (sd)-[:STORYBOOK_DESCRIBES]->(c)`,
+      );
+    }
+    for (const { localName, targetPath } of resolvedTargets) {
+      statements.push(
+        `MERGE (tf:File {path: ${cypherSafe(targetPath)}, projectId: ${pid}, repoId: ${rid}})`,
+      );
+      statements.push(
+        `MATCH (sd:StorybookDoc {sourcePath: ${cypherSafe(path)}, projectId: ${pid}, repoId: ${rid}}) MATCH (tf:File {path: ${cypherSafe(targetPath)}, projectId: ${pid}, repoId: ${rid}}) MERGE (sd)-[:STORYBOOK_TARGETS_FILE {binding: ${cypherSafe(localName)}}]->(tf)`,
+      );
+    }
+  }
+
+  if (isStorybookStoriesPath(path)) {
+    const bindings = importInfosToStorybookBindings(parsed.imports);
+    const csfPayload: StorybookDocumentationExtract = {
+      bodyForEmbedding: '',
+      titleHint: '',
+      linkedComponentNames: [],
+      importBindings: bindings,
+      storyMetaTargets: parsed.storybookCsf?.storyMetaTargets ?? [],
+    };
+    const csfResolved = collectResolvedStorybookTargets(
+      path,
+      csfPayload,
+      allFilePaths,
+      importResolveOpts ?? null,
+    );
+    for (const { localName, targetPath } of csfResolved) {
+      if (targetPath === path) continue;
+      statements.push(
+        `MERGE (tf:File {path: ${cypherSafe(targetPath)}, projectId: ${pid}, repoId: ${rid}})`,
+      );
+      statements.push(
+        `MATCH (sf:File {path: ${cypherSafe(path)}, projectId: ${pid}, repoId: ${rid}}) MATCH (tf:File {path: ${cypherSafe(targetPath)}, projectId: ${pid}, repoId: ${rid}}) MERGE (sf)-[:STORYBOOK_TARGETS_FILE {binding: ${cypherSafe(localName)}}]->(tf)`,
+      );
+    }
+  }
+
+  const pmd = parsed.projectMarkdown;
+  if (pmd) {
+    const resolvedTargets = collectResolvedStorybookTargets(path, pmd, allFilePaths, importResolveOpts ?? null);
+    const appendix =
+      resolvedTargets.length > 0
+        ? `\n\nResolved import → module path:\n${resolvedTargets.map((r) => `- ${r.localName} → ${r.targetPath}`).join('\n')}`
+        : '';
+    const enrichedDoc = (pmd.bodyForEmbedding + appendix).slice(0, STORYBOOK_MAX_EMBED_CHARS);
+    const docText = cypherSafe(enrichedDoc);
+    const titleS = cypherSafe(pmd.titleHint);
+    statements.push(
+      `MERGE (md:MarkdownDoc {sourcePath: ${cypherSafe(path)}, projectId: ${pid}, repoId: ${rid}}) ON CREATE SET md.title = ${titleS}, md.documentationText = ${docText} ON MATCH SET md.title = ${titleS}, md.documentationText = ${docText}`,
+    );
+    statements.push(
+      `MATCH (f:File {path: ${cypherSafe(path)}, projectId: ${pid}, repoId: ${rid}}) MATCH (md:MarkdownDoc {sourcePath: ${cypherSafe(path)}, projectId: ${pid}, repoId: ${rid}}) MERGE (f)-[:HAS_MARKDOWN_DOC]->(md)`,
+    );
+    for (const compName of pmd.linkedComponentNames) {
+      statements.push(
+        `MATCH (md:MarkdownDoc {sourcePath: ${cypherSafe(path)}, projectId: ${pid}, repoId: ${rid}}) MATCH (c:Component {name: ${cypherSafe(compName)}, projectId: ${pid}, repoId: ${rid}}) MERGE (md)-[:MARKDOWN_DESCRIBES]->(c)`,
+      );
+    }
+    for (const { localName, targetPath } of resolvedTargets) {
+      statements.push(
+        `MERGE (tf:File {path: ${cypherSafe(targetPath)}, projectId: ${pid}, repoId: ${rid}})`,
+      );
+      statements.push(
+        `MATCH (md:MarkdownDoc {sourcePath: ${cypherSafe(path)}, projectId: ${pid}, repoId: ${rid}}) MATCH (tf:File {path: ${cypherSafe(targetPath)}, projectId: ${pid}, repoId: ${rid}}) MERGE (md)-[:MARKDOWN_TARGETS_FILE {binding: ${cypherSafe(localName)}}]->(tf)`,
+      );
+    }
+  }
+
   for (const dc of parsed.domainConcepts ?? []) {
     const descProp = dc.description?.trim() ? `, dc.description = ${cypherSafe(dc.description.trim())}` : '';
     const optionsProp =
@@ -383,6 +503,12 @@ const FALKOR_INDEXES = [
   'CREATE INDEX FOR (ctx:Context) ON (ctx.name)',
   'CREATE INDEX FOR (d:Document) ON (d.projectId)',
   'CREATE INDEX FOR (d:Document) ON (d.path)',
+  'CREATE INDEX FOR (sb:StorybookDoc) ON (sb.projectId)',
+  'CREATE INDEX FOR (sb:StorybookDoc) ON (sb.projectId, sb.repoId)',
+  'CREATE INDEX FOR (sb:StorybookDoc) ON (sb.sourcePath)',
+  'CREATE INDEX FOR (md:MarkdownDoc) ON (md.projectId)',
+  'CREATE INDEX FOR (md:MarkdownDoc) ON (md.projectId, md.repoId)',
+  'CREATE INDEX FOR (md:MarkdownDoc) ON (md.sourcePath)',
 ];
 
 /**
@@ -421,6 +547,8 @@ const REPOID_BACKFILL_LABELS = [
   'Hook',
   'Context',
   'Document',
+  'StorybookDoc',
+  'MarkdownDoc',
 ];
 
 /**
@@ -454,6 +582,8 @@ export function buildCypherDeleteFile(relativePath: string, projectId: string, r
   return [
     `MATCH (dc:DomainConcept {sourcePath: ${path}, projectId: ${pid}, repoId: ${rid}})-[:DEFINED_IN]->(:File {path: ${path}, projectId: ${pid}, repoId: ${rid}}) DETACH DELETE dc`,
     `MATCH (d:Document {path: ${path}, projectId: ${pid}, repoId: ${rid}}) DETACH DELETE d`,
+    `MATCH (f:File {path: ${path}, projectId: ${pid}, repoId: ${rid}}) OPTIONAL MATCH (f)-[:HAS_STORYBOOK_DOC]->(sd:StorybookDoc) DETACH DELETE sd`,
+    `MATCH (f:File {path: ${path}, projectId: ${pid}, repoId: ${rid}}) OPTIONAL MATCH (f)-[:HAS_MARKDOWN_DOC]->(md:MarkdownDoc) DETACH DELETE md`,
     `MATCH (f:File {path: ${path}, projectId: ${pid}, repoId: ${rid}}) OPTIONAL MATCH (f)-[:CONTAINS]->(child) DETACH DELETE child, f`,
   ];
 }

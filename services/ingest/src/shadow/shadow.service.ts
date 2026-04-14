@@ -15,8 +15,6 @@ import {
 import { buildProjectMergeCypher } from '../pipeline/project';
 import { buildCypherForPrismaSchema } from '../pipeline/prisma-extract';
 import { loadTsconfigPathsFromShadowFiles } from '../pipeline/tsconfig-resolve';
-import { chunkMarkdown } from '../pipeline/markdown-chunk';
-import { buildCypherForMarkdownFile } from '../pipeline/markdown-graph';
 import type { ParsedFile } from '../pipeline/parser';
 
 const SHADOW_PROJECT_ID = '00000000-0000-0000-0000-000000000000';
@@ -53,15 +51,10 @@ export class ShadowService {
     const pathSet = new Set(files.map((f) => norm(f.path)));
     const parsedByPath = new Map<string, ParsedFile>();
     const prismaFiles: { path: string; content: string }[] = [];
-    const markdownFiles: { path: string; content: string }[] = [];
     for (const { path, content } of files) {
       const p = norm(path);
       if (p.toLowerCase().endsWith('.prisma')) {
         prismaFiles.push({ path: p, content });
-        continue;
-      }
-      if (p.toLowerCase().endsWith('.md')) {
-        markdownFiles.push({ path: p, content });
         continue;
       }
       const out = parseSource(p, content);
@@ -90,6 +83,8 @@ export class ShadowService {
         callsForFile,
         SHADOW_PROJECT_ID,
         SHADOW_PROJECT_ID,
+        undefined,
+        resolveOpts,
       );
       allStatements.push(...statements);
     }
@@ -97,12 +92,6 @@ export class ShadowService {
       const st = await buildCypherForPrismaSchema(pf.path, pf.content, SHADOW_PROJECT_ID, SHADOW_PROJECT_ID);
       allStatements.push(...st);
     }
-    for (const mf of markdownFiles) {
-      const chunks = chunkMarkdown(mf.content);
-      const st = buildCypherForMarkdownFile(mf.path, chunks, SHADOW_PROJECT_ID, SHADOW_PROJECT_ID);
-      allStatements.push(...st);
-    }
-
     const rawSession = opts?.shadowSessionId?.trim();
     const shadowSessionId = rawSession && rawSession.length > 0 ? rawSession : randomUUID();
     let shadowGraphName: string;

@@ -8,6 +8,7 @@ Tipos y utilidades compartidas para FalkorDB/Cypher entre servicios Ariadne (ing
 - **falkor**: `GRAPH_NAME`, `getFalkorConfig()`, `FalkorConfig` — configuración de conexión (FALKORDB_HOST, FALKORDB_PORT).
 - **graph-types**: `ResolvedCallInfo`, `ParsedFileMinimal`, etc. — contratos mínimos para utilidades de grafo.
 - **graph-utils**: `buildExportsMap`, `resolveCrossFileCalls`, `runCypherBatch`, `GraphClient` — lógica compartida de producer.
+- **graph-labels**: `FALKOR_EMBEDDABLE_NODE_LABELS`, `FALKOR_DOCUMENTATION_DOC_LABELS` — etiquetas Falkor para embed-index y docs (Fase 4); mantener alineado con `producer` en ingest.
 
 ## Consumidores
 

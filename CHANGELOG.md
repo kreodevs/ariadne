@@ -3,6 +3,79 @@
 Todas las notas de versión de **Ariadne / FalkorSpecs** (monorepo).  
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.0.0/).
 
+## [Unreleased]
+
+### Added
+
+- **Ingest — chat multi-root (Fase 3, primera entrega)**  
+  - Inferencia de `repoId` desde mensaje + `project_repositories.role` (`resolve-chat-scope-from-message.util.ts`, `CHAT_INFER_SCOPE_FROM_ROLES`).  
+  - Preflight: recorte de filas/contexto cuando el mensaje incluye una ruta que resuelve a un único repo (`chat-preflight-scope.util.ts`, `CHAT_PREFLIGHT_PATH_REPO`).  
+  - `ChatRequest`: `clientMeta`, `strictChatScope`; respuesta `[AMBIGUOUS_SCOPE]` cuando hay varios repos sin acotar.  
+  - `ProjectsService.getRepositoryRolesContext` para el prompt del sintetizador.  
+  - Telemetría `CHAT_TELEMETRY_LOG`: objeto `chat_scope_effective` (preflight, inferencia, alcance).  
+  - Documentación: `docs/metricas-alcance-chat.md`; README chat/projects actualizados.
+  - Listados íntegros en chat (tablas Markdown, respuesta temprana; topes `CHAT_COMPONENT_FULL_MAX`, `CHAT_GRAPH_INVENTORY_FULL_MAX`).
+  - `PATCH /projects/:id/repositories/:repoId` con `{ role }`; UI de rol en detalle de proyecto.
+  - Script raíz `pnpm metrics:chat-telemetry` (`scripts/aggregate-chat-telemetry.mjs`).
+  - Frontend **ProjectChat**: opción chat amplio (`strictChatScope: false`) con varios repos.
+  - Frontend **RepoDetail**: botón **Indexar embeddings** → `POST /repositories/:id/embed-index` (reindexar vectores tras Fase 4 o cambio de modelo).
+
+- **Ingest — Fase 4 (Storybook / markdown en grafo)**  
+  - `storybook-documentation.ts`, `storybook-csf-ast.ts`; `parser` + `producer`: `StorybookDoc`, `MarkdownDoc`, enlaces a `Component`/`File`, CSF `STORYBOOK_TARGETS_FILE`.  
+  - `sync-path-filter.ts`; listados GitHub/Bitbucket y walk de clone alineados (incl. MDX Storybook, JSON Strapi acotado).  
+  - Sync/webhook/shadow: markdown vía parser/producer (sin chunk `Document` por defecto).  
+  - `embed-index`: vectores para `StorybookDoc` y `MarkdownDoc`.  
+  - Chat `semanticSearchFallback` y MCP `semantic_search`: consultas vectoriales + keyword para docs.
+
+- **Fase 5 (pulido)**  
+  - `ariadne-common`: `graph-labels.ts` (`FALKOR_EMBEDDABLE_NODE_LABELS`, `FALKOR_DOCUMENTATION_DOC_LABELS`); ingest `embed-index` crea índices vectoriales iterando esa lista.  
+  - `services/cartographer/README.md`: alcance vs ingest canónico.  
+  - Raíz `pnpm dev:setup`: añade `pnpm -C frontend install`.
+  - Documentación: README raíz (versionado semver); API (autenticación / sin SSO); manuales y `CHAT_Y_ANALISIS` — embed-index y `semantic_search` incluyen Storybook/Markdown.
+
+- **Fase 6 — Analytics multi-root**  
+  - Vitest: `services/ingest/src/chat/analytics.service.spec.ts` (`resolveRepositoryIdForAnalysis`, `analyzeByProjectId`).  
+  - `services/ingest/README.md`: sección decisiones / contratos Fase 6.  
+  - Planes: `PLAN_INCORPORACION_MEJORAS_RELIC_EN_ARIADNE.md` (Fase 6), `Plan_Implementacion_Fase6_AnalyticsService.md`, `Plan_Autonomia_Ariadne.md` actualizados.
+  - `GET /projects/:projectId/jobs/:jobId/analysis` — `JobAnalysisService.analyzeJobForProject`; export de `JobAnalysisService` en `RepositoriesModule`; Vitest `job-analysis.service.spec.ts`.
+
+- **Backlog §2 (producto / docs / CI / MCP)**  
+  - MCP: caché de herramientas (`get_component_graph`, `get_legacy_impact`, `get_sync_status`) con **memoria por defecto**; Redis solo si `MCP_REDIS_URL` o `REDIS_URL` (o `MCP_REDIS_DISABLED=1` fuerza memoria). Documentado en `services/mcp-ariadne/README.md`.  
+  - Docs: `docs/plan-analyze-layer-cache.md`, `docs/diagnostico-layer-dependencies.md` (caché analyze / capas diagnóstico en ingest).  
+  - CI: `.github/workflows/ci-ingest-mcp.yml` (Vitest ingest + build MCP).  
+  - Frontend **RepoDetail**: `JobAnalysisModal` usa `api.getJobAnalysisByProject` cuando el repo tiene `projectId` / `projectIds`.
+
+## [1.2.0] — 2026-04-14
+
+### Added
+
+- **Ingest — Fase 0 migraciones**  
+  - `1743200000000-ProjectRepositoryRole`: columna `project_repositories.role` (nullable).  
+  - `1743300000000-IndexedFileContentHash`: columna `indexed_files.content_hash` (nullable).  
+  - Entidades alineadas; `ProjectsService` expone `role` en repos; plan de modificación usa roles en etiquetas de diagnóstico.  
+  - Documentación: `docs/comparativa/MIGRACIONES_CADENA_ARIADNE.md`.
+
+- **Ingest — plan de modificación (multi-root y retrieval)**  
+  - Utilidades `modification-plan-resolve`, `modification-plan-scope-cypher`, `modification-plan-terms`, `modification-plan-path-hints`, `modification-plan-path-exclusions`, `markdown-fence`.  
+  - `POST /projects/:id/modification-plan`: `currentFilePath`, `questionsMode` (`business` | `technical` | `both`), respuesta con `warnings` y `diagnostic`.  
+  - `ProjectsService.resolveRepositoryForWorkspacePath` y resolución `unique` | `ambiguous` en `path-repo-resolution.util.ts`.  
+  - Vitest en ingest (`npm test`) y exclusión de `*.spec.ts` del build Nest.
+
+- **MCP** — `get_modification_plan` reenvía `currentFilePath`, `questionsMode` y serializa `warnings` / `diagnostic`.
+
+- **Ingest — Fase 2: análisis con caché, scope y capas de diagnóstico**  
+  - Caché LRU y Redis opcional para modos cacheables (`ANALYZE_CACHE_*`, `ANALYZE_CACHE_REDIS_URL` / `REDIS_URL`); respuesta con `reportMeta` (`fromCache`, foco, cobertura, capa extrínseca CALL).  
+  - `POST /repositories/:id/analyze` y `POST /projects/:projectId/analyze`: cuerpo con `scope` (alineado con chat) y `crossPackageDuplicates` (modo duplicados); validación de scope (`includePathPrefixes` vacío → 400).  
+  - Utilidades y servicios: `analyze-cache.util`, `analyze-distributed-cache.service`, `analyze-focus.util`, `diagnostico-intrinsic-layer`, `diagnostico-validate.util`; límites vía `MAX_ANALYZE_CALL_EDGES` / env relacionados.  
+  - `AnalyticsService.analyzeByProjectId` reenvía `analyzeOptions` a `ChatService.analyze`; `POST .../analyze-prep` interno acepta las mismas opciones.  
+  - Documentación de API en `services/ingest/src/chat/README.md`; plan de paridad actualizado en `docs/comparativa/PLAN_INCORPORACION_MEJORAS_RELIC_EN_ARIADNE.md`.
+
+- **MCP (`mcp-ariadne`) — `get_project_analysis`**  
+  - Argumentos `scope` y `crossPackageDuplicates`; si el ingest devuelve `reportMeta`, la salida incluye el markdown del informe y un bloque JSON con los metadatos.
+
+- **Frontend — panel de analyze**  
+  - `api.analyze` / `api.analyzeProject` con body extendido; **RepoChat** y **ProjectChat**: alcance opcional (prefijos / globs), duplicados cross-boundary, badges de caché y foco; en proyecto multi-root, selector de repo para análisis de código.
+
 ## [1.1.0] — 2026-03-27
 
 ### Added

@@ -33,8 +33,6 @@ import {
 } from '../pipeline/producer';
 import { buildCypherForPrismaSchema } from '../pipeline/prisma-extract';
 import { loadRepoTsconfigPaths } from '../pipeline/tsconfig-resolve';
-import { chunkMarkdown } from '../pipeline/markdown-chunk';
-import { buildCypherForMarkdownFile } from '../pipeline/markdown-graph';
 import { buildProjectMergeCypher } from '../pipeline/project';
 import type { ParsedFile } from '../pipeline/parser';
 import { recordSyncJobFailed } from '../metrics/ingest-metrics';
@@ -388,7 +386,6 @@ export class SyncService {
       await this.updateJobProgress(job.id, { phase: 'indexing', total: paths.length });
       const parsedByPath = new Map<string, ParsedFile>();
       const prismaFiles: { path: string; content: string }[] = [];
-      const markdownFiles: { path: string; content: string }[] = [];
       const isFirstSync = repo.domainConfig == null;
       let fetchedCount = 0;
       const withAst: Array<{ parsed: ParsedFile; root: import('tree-sitter').SyntaxNode; source: string }> = [];
@@ -412,10 +409,6 @@ export class SyncService {
           }
           if (relPath.toLowerCase().endsWith('.prisma')) {
             prismaFiles.push({ path: relPath, content });
-            continue;
-          }
-          if (relPath.toLowerCase().endsWith('.md')) {
-            markdownFiles.push({ path: relPath, content });
             continue;
           }
           if (isFirstSync) {
@@ -540,6 +533,7 @@ export class SyncService {
               projectId,
               repoId,
               chunkingContext,
+              resolveOpts,
             );
             const graphClient = await prepareGraph(parsed.path);
             await runCypherBatch(graphClient, statements);
@@ -558,18 +552,6 @@ export class SyncService {
           } catch (err) {
             console.error(`Sync: error indexing Prisma ${pf.path}:`, err);
             if (projectId === projectIds[0]) skippedIndex.push(pf.path);
-          }
-        }
-        for (const mf of markdownFiles) {
-          try {
-            const chunks = chunkMarkdown(mf.content);
-            const statements = buildCypherForMarkdownFile(mf.path, chunks, projectId, repoId);
-            const graphClient = await prepareGraph(mf.path);
-            await runCypherBatch(graphClient, statements);
-            if (projectId === projectIds[0]) indexedPaths.push(mf.path);
-          } catch (err) {
-            console.error(`Sync: error indexing Markdown ${mf.path}:`, err);
-            if (projectId === projectIds[0]) skippedIndex.push(mf.path);
           }
         }
         const currentSet = new Set(indexedPaths);

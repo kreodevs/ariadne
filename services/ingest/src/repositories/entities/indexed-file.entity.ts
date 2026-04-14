@@ -31,4 +31,8 @@ export class IndexedFile {
 
   @Column({ name: 'indexed_at', type: 'timestamptz' })
   indexedAt!: Date;
+
+  /** Hash del contenido indexado (p. ej. SHA-256 hex corto); opcional hasta que el sync lo rellene. */
+  @Column({ name: 'content_hash', type: 'varchar', length: 64, nullable: true })
+  contentHash!: string | null;
 }

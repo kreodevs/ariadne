@@ -22,9 +22,7 @@ import {
   runCypherBatch,
 } from '../pipeline/producer';
 import { buildCypherForPrismaSchema } from '../pipeline/prisma-extract';
-import { chunkMarkdown } from '../pipeline/markdown-chunk';
 import { recordSyncJobFailed } from '../metrics/ingest-metrics';
-import { buildCypherForMarkdownFile } from '../pipeline/markdown-graph';
 import { loadRepoTsconfigPaths } from '../pipeline/tsconfig-resolve';
 import { buildProjectMergeCypher } from '../pipeline/project';
 import type { ParsedFile } from '../pipeline/parser';
@@ -212,37 +210,6 @@ export class WebhooksService {
           indexed++;
           continue;
         }
-        if (relPath.toLowerCase().endsWith('.md')) {
-          const chunks = chunkMarkdown(content);
-          for (const projectId of allProjectIds) {
-            const st = buildCypherForMarkdownFile(relPath, chunks, projectId, repoId);
-            const g = client.selectGraph(
-              graphNameForProject(isProjectShardingEnabled() ? projectId : undefined),
-            );
-            const graphClient = { query: (cypher: string) => g.query(cypher) };
-            await runCypherBatch(graphClient, st);
-          }
-          const existingMd = await this.indexedFileRepo.findOne({
-            where: { repositoryId: repo.id, path: relPath },
-          });
-          if (existingMd) {
-            await this.indexedFileRepo.update(existingMd.id, {
-              indexedAt: new Date(),
-              revision: commitSha,
-            });
-          } else {
-            await this.indexedFileRepo.save(
-              this.indexedFileRepo.create({
-                repositoryId: repo.id,
-                path: relPath,
-                revision: commitSha,
-                indexedAt: new Date(),
-              }),
-            );
-          }
-          indexed++;
-          continue;
-        }
         const out = parseSource(relPath, content, { extractDomainConcepts });
         const parsed = out && 'root' in out ? out.parsed : out;
         if (!parsed) continue;
@@ -263,8 +230,9 @@ export class WebhooksService {
         }
       });
 
+      const resolveOpts = { prefix: '', tsconfig: tsconfigPaths };
       const resolvePath = (from: string, spec: string) =>
-        resolveImportPath(from, spec, pathSet, { prefix: '', tsconfig: tsconfigPaths });
+        resolveImportPath(from, spec, pathSet, resolveOpts);
       const resolvedCalls = resolveCrossFileCalls(
         parsedFiles,
         pathSet,
@@ -290,6 +258,7 @@ export class WebhooksService {
               projectId,
               repoId,
               chunkingContext,
+              resolveOpts,
             );
             const g = client.selectGraph(
               graphNameForProject(isProjectShardingEnabled() ? projectId : undefined),

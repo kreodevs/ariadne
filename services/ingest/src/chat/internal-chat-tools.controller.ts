@@ -13,6 +13,7 @@ import {
   ChatService,
   type AnalyzeMode,
   type AnalyzeOrchestratorPrepDto,
+  type AnalyzeRequestOptions,
   type ChatScope,
 } from './chat.service';
 
@@ -55,10 +56,17 @@ export class InternalChatToolsController {
   @Post(':repoId/analyze-prep')
   async analyzePrep(
     @Param('repoId') repoId: string,
-    @Body() body: { mode: AnalyzeMode },
+    @Body() body: { mode: AnalyzeMode; scope?: ChatScope; crossPackageDuplicates?: boolean },
   ): Promise<AnalyzeOrchestratorPrepDto> {
     await this.repos.findOne(repoId);
-    return this.chat.prepareAnalyzeOrchestrator(repoId, body.mode);
+    const opts: AnalyzeRequestOptions | undefined =
+      body.scope || body.crossPackageDuplicates
+        ? {
+            ...(body.scope ? { scope: body.scope } : {}),
+            ...(body.crossPackageDuplicates ? { crossPackageDuplicates: true } : {}),
+          }
+        : undefined;
+    return this.chat.prepareAnalyzeOrchestrator(repoId, body.mode, opts);
   }
 
   @Post(':repoId/modification-plan-files')

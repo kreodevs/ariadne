@@ -137,7 +137,7 @@ flowchart LR
 | **Proyectos multi-root** | Un proyecto Ariadne = varios repos | `projects/*`, `project-repository.entity` | `projectId` en nodos Falkor; resync por proyecto |
 | **Webhook Bitbucket** | Incremental en push | `webhooks/*` | Dispara sync/diff según commit |
 | **Chat con repo** | Preguntas NL sin escribir Cypher | `ingest/src/chat/*` | Retriever (Cypher, archivos, `semantic_search` interno) + sintetizador LLM |
-| **Análisis de proyecto** | Deuda, duplicados, código muerto, seguridad heurística | `repositories.controller` `analyze`, handlers en ingest | Modos: `diagnostico`, `duplicados`, etc.; duplicados usa embeddings |
+| **Análisis de proyecto** | Deuda, duplicados, código muerto, seguridad heurística | `ChatController` / `ProjectChatController` `analyze`, `analytics.service.ts`, `chat.service.ts` | `POST /repositories/:id/analyze` (repo) y `POST /projects/:id/analyze` (resolución multi-root `AnalyticsService`); modos incl. `seguridad`; duplicados usa embeddings |
 | **Embed index** | Búsqueda semántica y duplicados | `embedding/*`, `embed-index.service.ts` | Vector index Falkor; proveedor OpenAI/Google |
 | **Shadow graph** | Comparar main vs borrador (SDD) | `shadow/*`, API compare | Grafo sombra + diff de props |
 | **API grafo** | Impacto y contexto para herramientas no-MCP | `services/api/src/graph/*` | `getComponent`, `getImpact`, contrato, compare |

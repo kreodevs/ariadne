@@ -38,6 +38,8 @@ export interface Project {
     defaultBranch: string;
     status: string;
     lastSyncAt: string | null;
+    /** Etiqueta multi-root para inferencia de alcance en chat (ingest). */
+    role?: string | null;
   }>;
 }
 
@@ -144,6 +146,45 @@ export interface CriticalFinding {
   line?: number;
   /** Nombre de función/clase cuando aplica */
   name?: string;
+}
+
+/** Alcance opcional para chat y analyze (alineado con ingest). */
+export interface ChatScope {
+  repoIds?: string[];
+  includePathPrefixes?: string[];
+  excludePathGlobs?: string[];
+}
+
+/** Metadatos de `POST .../analyze` (caché, foco, cobertura). */
+export interface AnalyzeReportMeta {
+  scopeApplied: boolean;
+  focusPrefixes: string[];
+  filesAnalyzedInFocus: number;
+  filesTotalInFocus: number;
+  graphCoverageNote?: string;
+  fromCache?: boolean;
+  cacheFingerprintMode?: 'full' | 'degraded';
+  cacheScopePartitioned?: boolean;
+  extrinsicCallsLayerCacheHit?: boolean;
+  extrinsicCallsLayerRedisHit?: boolean;
+}
+
+/** Modos de análisis de código expuestos en la UI de chat. */
+export type AnalyzeCodeMode =
+  | 'diagnostico'
+  | 'duplicados'
+  | 'reingenieria'
+  | 'codigo_muerto'
+  | 'seguridad'
+  | 'agents'
+  | 'skill';
+
+/** Respuesta JSON de analyze en ingest. */
+export interface AnalyzeApiResult {
+  mode: string;
+  summary: string;
+  details?: unknown;
+  reportMeta?: AnalyzeReportMeta;
 }
 
 /** Resultado de Full Repo Audit. */

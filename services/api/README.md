@@ -12,6 +12,10 @@ Módulo 3 de la constitución: API REST para consultar el grafo de impacto. Migr
 - **GET /openapi.json** — Especificación OpenAPI 3.1.
 - **GET /health** — Health check.
 
+## Autenticación
+
+Este servicio **no implementa SSO ni OIDC**. Las rutas HTTP van sin login propio; en producción suele colocarse detrás de un reverse proxy o API gateway (Traefik, Cloudflare Access, etc.) si hace falta auth para usuarios. Las credenciales de Bitbucket/GitHub viven en **ingest** (cifrado en Postgres) para el worker de sync, no sustituyen auth en esta API REST.
+
 ## Variables de entorno
 
 - `FALKORDB_HOST`, `FALKORDB_PORT` — Conexión a FalkorDB.

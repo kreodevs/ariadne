@@ -24,7 +24,7 @@ import { SyncModule } from '../sync/sync.module';
   ],
   controllers: [RepositoriesController],
   providers: [RepositoriesService, FileContentService, JobAnalysisService, EmbedIndexService],
-  exports: [RepositoriesService, FileContentService, EmbedIndexService],
+  exports: [RepositoriesService, FileContentService, EmbedIndexService, JobAnalysisService],
 })
 /** Módulo de repositorios indexados (Postgres + FalkorDB). */
 export class RepositoriesModule {}

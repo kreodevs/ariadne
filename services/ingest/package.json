@@ -1,12 +1,14 @@
 {
   "name": "ariadnespec-ingest",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Microservicio de ingesta: repositorios remotos (Bitbucket) + full sync + webhook",
   "scripts": {
     "build": "nest build",
     "start": "nest start",
     "dev": "nest start --watch",
     "start:prod": "node dist/main.js",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "typeorm": "typeorm-ts-node-esm -d src/data-source.ts",
     "migration:run": "npm run build && node ./node_modules/typeorm/cli.js migration:run -d dist/data-source.js"
   },
@@ -34,7 +36,8 @@
   "devDependencies": {
     "@nestjs/cli": "^10.4.0",
     "@types/express": "^5.0.6",
-    "@types/node": "^22.10.0"
+    "@types/node": "^22.10.0",
+    "vitest": "^3.0.0"
   },
   "engines": {
     "node": ">=20"

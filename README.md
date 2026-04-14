@@ -40,6 +40,13 @@ Ver [docs/DEPLOYMENT_DOKPLOY.md](docs/DEPLOYMENT_DOKPLOY.md).
 - [Especificación MCP](docs/mcp_server_specs.md)
 - [Esquema DB y Cypher](docs/db_schema.md)
 - [Manual de uso](docs/manual/README.md) — Puesta en marcha, endpoints, troubleshooting
+- [Caché de análisis en ingest](docs/plan-analyze-layer-cache.md) — LRU, Redis, capa extrínseca CALL
+- [Capas del diagnóstico](docs/diagnostico-layer-dependencies.md) — intrínseca vs extrínseca
+
+## Versionado (semver)
+
+- Historial de producto: [CHANGELOG.md](CHANGELOG.md).
+- En un **release**, alinear el campo `version` de `package.json` en la raíz, `packages/ariadne-common`, `services/ingest`, `services/api`, `services/mcp-ariadne` y `frontend` cuando el cambio forme parte del mismo entregable. Cada servicio sigue teniendo su propia imagen Docker; el número semver y el CHANGELOG documentan compatibilidad y notas de migración.
 
 ## Flujo para desarrollo local
 

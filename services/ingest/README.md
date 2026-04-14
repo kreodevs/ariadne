@@ -16,6 +16,14 @@ Microservicio NestJS que reemplaza la ingesta basada en directorio local (chokid
 - Entidades: `repositories`, `sync_jobs`, `indexed_files`
 - **Multi-proyecto:** Cada repositorio se indexa como un nodo `:Project` en FalkorDB (`projectId` = `repo.id`). Todos los nodos (File, Component, etc.) incluyen `projectId`. Relación `(Project)-[:CONTAINS]->(File)`.
 
+## Análisis por proyecto (Fase 6 — `AnalyticsService`)
+
+- **Un solo `repositoryId` por request:** mono-repo → único repo asociado; varios repos → el cliente envía **`repositoryId`** (`roots[].id`) o **`idePath`** (ruta absoluta/local) para `GET /projects/:id/resolve-repo-for-path` / `resolveRepoForPath`. Sin eso en multi-root → **400** con mensaje explícito (no se analizan todos los repos en serie salvo futuro modo dedicado).
+- **Fuente de verdad:** la resolución vive en ingest (`analytics.service.ts`); MCP y otros clientes delegan enviando `idePath` / `repo` según contrato.
+- **Contratos:** `POST /repositories/:id/analyze` — **`:id` siempre es UUID de repositorio**. `POST /projects/:projectId/analyze` — modos `diagnostico` | `duplicados` | … resuelven repo y reutilizan el mismo pipeline; modos `agents` | `skill` siguen el flujo multi-root previo en `ChatService`.
+
+Ver [src/chat/README.md](src/chat/README.md) y [docs/comparativa/Plan_Implementacion_Fase6_AnalyticsService.md](../../docs/comparativa/Plan_Implementacion_Fase6_AnalyticsService.md).
+
 ## Endpoints
 
 - `POST /repositories` — Registrar repositorio (provider, projectKey, repoSlug, defaultBranch, credentialsRef opcional)
@@ -23,8 +31,9 @@ Microservicio NestJS que reemplaza la ingesta basada en directorio local (chokid
 - `DELETE /repositories/:id` — Borra el repo en Postgres (jobs, `indexed_files`, vínculos a proyectos vía CASCADE) y **antes** elimina en FalkorDB todos los nodos con ese `repoId` en cada `projectId` donde estuvo indexado (`clearProjectRepo`), para no dejar basura consultable vía MCP/RAG.
 - `GET /repositories/:id` — Detalle de un repositorio
 - `GET /repositories/:id/file?path=&ref=` — Contenido de un archivo (Bitbucket/GitHub). `path` relativo o del grafo (repo-slug/src/foo.ts)
-- `POST /repositories/:id/embed-index` — Embeddings en Function, Component y **Document** (chunks `.md`) para RAG; EMBEDDING_PROVIDER + API key, FalkorDB 4.0+
+- `POST /repositories/:id/embed-index` — Embeddings en **Function**, **Component**, **Document** (chunks legado), **StorybookDoc** y **MarkdownDoc** para RAG; EMBEDDING_PROVIDER + API key, FalkorDB 4.0+
 - `GET /repositories/:id/jobs` — Listar sync_jobs del repositorio
+- `GET /repositories/:id/jobs/:jobId/analysis` — Análisis de un job **incremental** (impacto en grafo, heurística de secretos, resumen); el job debe pertenecer a ese repositorio
 - `GET /embed?text=` — Vector de embedding para RAG (requiere EMBEDDING_PROVIDER + OPENAI_API_KEY o GOOGLE_API_KEY)
 - `POST /repositories/:id/sync` — Encola job de full sync; retorna `{ jobId, queued: true }`
 - `POST /repositories/:id/resync` — Borra el grafo e índice del proyecto y encola sync completo. Retorna `{ jobId, queued, deletedNodes? }`
@@ -33,6 +42,7 @@ Microservicio NestJS que reemplaza la ingesta basada en directorio local (chokid
 - `GET /repositories/:id/graph-summary` — Conteos y muestras de nodos indexados.
 - `GET /projects/:id/graph-routing` — Metadatos Falkor para MCP/API: `shardMode` (`project` \| `domain`), `domainSegments` (último sync), `graphNodeSoftLimit`. Usado para abrir el subgrafo correcto (`AriadneSpecs:<uuid>:<segmento>`).
 - `GET /projects/:id/resolve-repo-for-path?path=` — Heurística multi-root: devuelve `repoId` candidato desde `projectKey`/`repoSlug` en la ruta.
+- `GET /projects/:id/jobs/:jobId/analysis` — Mismo cuerpo que la ruta por repositorio; valida en `project_repositories` que el `repositoryId` del job esté en el proyecto (útil en multi-root cuando se conoce solo `projectId` + `jobId`)
 - `POST /projects/:id/analyze` — Además de `agents`/`skill`, acepta modos `diagnostico`, `duplicados`, etc. con `idePath` o `repositoryId` opcionales cuando hay varios repos en el proyecto (ver [src/chat/README.md](src/chat/README.md)).
 
 Tras cada sync (normal o resync), se ejecuta automáticamente `embed-index` si hay EMBEDDING_PROVIDER configurado; si no, se ignora sin fallar.
@@ -93,3 +103,5 @@ npm run migration:run
 ```
 
 Esto compila y ejecuta `typeorm migration:run -d dist/data-source.js`. Asegura que las variables de PostgreSQL (`PGHOST`, `PGPORT`, etc.) estén definidas.
+
+**Cadena y decisiones (colisiones de timestamp, columnas `role` / `content_hash`):** [docs/comparativa/MIGRACIONES_CADENA_ARIADNE.md](../../docs/comparativa/MIGRACIONES_CADENA_ARIADNE.md).

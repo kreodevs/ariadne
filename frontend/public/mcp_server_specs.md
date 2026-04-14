@@ -64,7 +64,7 @@ RETURN c, dependency
   MATCH (c:Component {name: $componentName})-[:HAS_PROP]->(p:Prop) RETURN p.name, p.required
   ```
 - **Propósito:** Forzar a la IA a usar los nombres de variables y tipos reales del grafo. La respuesta se formatea en Markdown (lista de props y si son requeridas).
-- **Implementación:** El servidor MCP usa transporte **Streamable HTTP** (puerto 8080, path /mcp); las herramientas se registran en `ListToolsRequestSchema` y se ejecutan en `CallToolRequestSchema` conectando a FalkorDB y/o al servicio ingest. Cuando se proporciona `projectId` o `currentFilePath`, las consultas Cypher filtran por `n.projectId` para evitar ambigüedad. Herramientas que llaman al ingest: `get_file_content` (repositories/file o projects/file), `ask_codebase` (projects/chat o repositories/chat), `get_file_context`, `get_project_standards`, `get_modification_plan` (projects/modification-plan), `get_project_analysis` (repositories/analyze; aquí el ID debe ser de repo).
+- **Implementación:** El servidor MCP usa transporte **Streamable HTTP** (puerto 8080, path /mcp); las herramientas se registran en `ListToolsRequestSchema` y se ejecutan en `CallToolRequestSchema` conectando a FalkorDB y/o al servicio ingest. Cuando se proporciona `projectId` o `currentFilePath`, las consultas Cypher filtran por `n.projectId` para evitar ambigüedad. Herramientas que llaman al ingest: `get_file_content` (repositories/file o projects/file), `ask_codebase` (projects/chat o repositories/chat), `get_file_context`, `get_project_standards`, `get_modification_plan` (projects/modification-plan), `get_project_analysis` (`POST /projects/:id/analyze` o `POST /repositories/:id/analyze` según proyecto vs repo; ver § Tool `get_project_analysis`).
 
 ### Tool: `get_file_content`
 
@@ -89,6 +89,12 @@ RETURN c, dependency
 - **Garantías:** filesToModify solo contiene rutas que existen en el grafo (projectId + repoId). questionsToRefine solo preguntas de negocio/funcionalidad.
 - **Implementación:** Llama a `POST /projects/:projectId/modification-plan` en el ingest (`userDescription`, `scope?`).
 
+### Tool: `get_project_analysis`
+
+- **Descripción:** Informes estructurados de deuda técnica (`diagnostico`), duplicados (`duplicados`; requiere embed-index), plan integrado (`reingenieria`), alcance de código muerto (`codigo_muerto`) y auditoría heurística de secretos/higiene (`seguridad`). Requiere **INGEST_URL** y **OPENAI_API_KEY** en el servidor de ingest.
+- **Argumentos:** `projectId?` (id de **proyecto** Ariadne o **`roots[].id`** de repo), `currentFilePath?` (multi-root: el MCP envía `idePath` al ingest cuando el `projectId` es el del proyecto y hay varios roots), `mode?` ∈ `diagnostico` \| `duplicados` \| `reingenieria` \| `codigo_muerto` \| `seguridad` (default `diagnostico`).
+- **Implementación ingest:** Si el UUID corresponde a un **proyecto** en BD → `POST /projects/:projectId/analyze` con `{ mode, idePath?, repositoryId? }`. Si corresponde a un **repositorio** → `POST /repositories/:id/analyze` con `{ mode }`. La resolución de repo en multi-root la hace el ingest (`AnalyticsService`).
+
 ---
 
 ## 2.1 Herramientas de Refactorización Segura (SDD)
@@ -108,9 +114,9 @@ Para que la IA no rompa código al refactorizar, el MCP implementa operaciones s
 | `get_project_standards` | Recupera Prettier, ESLint, tsconfig para que el código sea indistinguible del existente. |
 | `get_file_context` | Combina contenido + imports + exports. Paso 2 del flujo: search → get_file_context → validate → apply. |
 
-**Contexto de proyecto:** Casi todas aceptan `projectId` y `currentFilePath` (si falta, inferencia por ruta). Para **file/chat**, proyecto o `roots[].id` con fallback en ingest. **`get_project_analysis`** es excepción: solo **`roots[].id`** (repo), porque el endpoint es `POST /repositories/:id/analyze`.
+**Contexto de proyecto:** Casi todas aceptan `projectId` y `currentFilePath` (si falta, inferencia por ruta). Para **file/chat**, proyecto o `roots[].id` con fallback en ingest. **`get_project_analysis`** usa proyecto o repo: ver Tool `get_project_analysis` arriba.
 
-**Resumen ingest:** `get_file_content` / `get_file_context` / `get_project_standards`: intentan `GET /repositories/:id/file` y si 404 `GET /projects/:id/file`. `ask_codebase`: intenta `POST /projects/:id/chat` y si 404 `POST /repositories/:id/chat` (`scope`, `twoPhase`, `responseMode` opcionales). `get_modification_plan`: `POST /projects/:projectId/modification-plan` (`scope` opcional). `get_project_analysis`: `POST /repositories/:id/analyze` (id = repo).
+**Resumen ingest:** `get_file_content` / `get_file_context` / `get_project_standards`: intentan `GET /repositories/:id/file` y si 404 `GET /projects/:id/file`. `ask_codebase`: intenta `POST /projects/:id/chat` y si 404 `POST /repositories/:id/chat` (`scope`, `twoPhase`, `responseMode` opcionales). `get_modification_plan`: `POST /projects/:projectId/modification-plan` (`scope` opcional). `get_project_analysis`: `POST /projects/:id/analyze` (proyecto; body `mode` + opcional `idePath` / `repositoryId` en multi-root) o `POST /repositories/:id/analyze` (repo = `roots[].id`).
 
 ### Tool: `analyze_local_changes` (Pre-flight check)
 

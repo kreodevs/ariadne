@@ -1,0 +1,41 @@
+# Tests ingest (Vitest) y build del MCP. Dispara en cambios bajo services/ingest o services/mcp-ariadne.
+name: Ingest & MCP
+
+on:
+  push:
+    paths:
+      - "services/ingest/**"
+      - "services/mcp-ariadne/**"
+      - ".github/workflows/ci-ingest-mcp.yml"
+  pull_request:
+    paths:
+      - "services/ingest/**"
+      - "services/mcp-ariadne/**"
+      - ".github/workflows/ci-ingest-mcp.yml"
+
+jobs:
+  ingest-test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: services/ingest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - run: npm install
+      - run: npm test -- --run
+
+  mcp-build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: services/mcp-ariadne
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - run: npm install
+      - run: npm run build

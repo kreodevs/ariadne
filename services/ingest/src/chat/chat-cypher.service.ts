@@ -269,4 +269,121 @@ export class ChatCypherService {
 
     return arr.map((r) => JSON.stringify(norm(r))).join('\n') + (rows.length > max ? `\n\n_… y ${rows.length - max} más_` : '');
   }
+
+  /** Tabla markdown de Component (listados completos; una fila por componente indexado). */
+  formatComponentsMarkdownTable(rows: Record<string, unknown>[]): string {
+    if (rows.length === 0) return '_Sin filas._';
+    const esc = (v: unknown, max = 220): string => {
+      const s = v === null || v === undefined ? '—' : String(v);
+      const t = s.replace(/\|/g, '\\|').replace(/\n/g, ' ').trim();
+      return t.length > max ? `${t.slice(0, Math.max(0, max - 1))}…` : t;
+    };
+    const legacy = (v: unknown): string => {
+      if (v === null || v === undefined) return '—';
+      if (typeof v === 'boolean') return v ? 'sí' : 'no';
+      return esc(v, 32);
+    };
+    const hasType = rows.some((r) => {
+      const x = r.type;
+      return x != null && String(x).trim() !== '';
+    });
+    if (!hasType) {
+      const lines = [
+        '| Componente | repoId | Archivo | legacy |',
+        '|------------|--------|---------|--------|',
+        ...rows.map((r) => {
+          const n = esc(r.name, 80);
+          const rid = esc(r.repoId, 40);
+          const p = esc(r.path, 220);
+          const leg = legacy(r.isLegacy);
+          return `| \`${n}\` | \`${rid}\` | \`${p}\` | ${leg} |`;
+        }),
+      ];
+      return lines.join('\n');
+    }
+    const lines = [
+      '| Componente | repoId | Archivo | tipo | legacy |',
+      '|------------|--------|---------|------|--------|',
+      ...rows.map((r) => {
+        const n = esc(r.name, 80);
+        const rid = esc(r.repoId, 40);
+        const p = esc(r.path, 200);
+        const ty = esc(r.type, 48);
+        const leg = legacy(r.isLegacy);
+        return `| \`${n}\` | \`${rid}\` | \`${p}\` | ${ty} | ${leg} |`;
+      }),
+    ];
+    return lines.join('\n');
+  }
+
+  /** Tabla markdown: nombre + repo + path (Hooks u otros símbolos en archivo). */
+  formatNameRepoPathMarkdownTable(rows: Record<string, unknown>[], nameHeader: string): string {
+    if (rows.length === 0) return '_Sin filas._';
+    const esc = (v: unknown, max = 220): string => {
+      const s = v === null || v === undefined ? '—' : String(v);
+      const t = s.replace(/\|/g, '\\|').replace(/\n/g, ' ').trim();
+      return t.length > max ? `${t.slice(0, Math.max(0, max - 1))}…` : t;
+    };
+    const lines = [
+      `| ${nameHeader} | repoId | Archivo |`,
+      '|--------------|--------|---------|',
+      ...rows.map((r) => {
+        const n = esc(r.name, 80);
+        const rid = esc(r.repoId, 40);
+        const p = esc(r.path, 220);
+        return `| \`${n}\` | \`${rid}\` | \`${p}\` |`;
+      }),
+    ];
+    return lines.join('\n');
+  }
+
+  /** Tabla markdown: Function (nombre, archivo, métricas opcionales). */
+  formatFunctionsMarkdownTable(rows: Record<string, unknown>[]): string {
+    if (rows.length === 0) return '_Sin filas._';
+    const esc = (v: unknown, max = 200): string => {
+      const s = v === null || v === undefined ? '—' : String(v);
+      const t = s.replace(/\|/g, '\\|').replace(/\n/g, ' ').trim();
+      return t.length > max ? `${t.slice(0, Math.max(0, max - 1))}…` : t;
+    };
+    const hasCx = rows.some((r) => r.complexity != null && String(r.complexity).trim() !== '');
+    const hasLoc = rows.some((r) => r.loc != null && String(r.loc).trim() !== '');
+    if (!hasCx && !hasLoc) {
+      return this.formatNameRepoPathMarkdownTable(rows, 'Función');
+    }
+    const lines = [
+      '| Función | repoId | Archivo | complejidad | loc |',
+      '|---------|--------|---------|-------------|-----|',
+      ...rows.map((r) => {
+        const n = esc(r.name, 64);
+        const rid = esc(r.repoId, 36);
+        const p = esc(r.path, 160);
+        const cx = esc(r.complexity, 8);
+        const loc = esc(r.loc, 8);
+        return `| \`${n}\` | \`${rid}\` | \`${p}\` | ${cx} | ${loc} |`;
+      }),
+    ];
+    return lines.join('\n');
+  }
+
+  /** DomainConcept indexados (concepto de dominio + categoría + archivo fuente). */
+  formatDomainConceptsMarkdownTable(rows: Record<string, unknown>[]): string {
+    if (rows.length === 0) return '_Sin filas._';
+    const esc = (v: unknown, max = 200): string => {
+      const s = v === null || v === undefined ? '—' : String(v);
+      const t = s.replace(/\|/g, '\\|').replace(/\n/g, ' ').trim();
+      return t.length > max ? `${t.slice(0, Math.max(0, max - 1))}…` : t;
+    };
+    const lines = [
+      '| Concepto | categoría | repoId | Archivo |',
+      '|----------|-----------|--------|---------|',
+      ...rows.map((r) => {
+        const n = esc(r.name, 64);
+        const cat = esc(r.category, 48);
+        const rid = esc(r.repoId, 36);
+        const p = esc(r.path, 160);
+        return `| \`${n}\` | ${cat} | \`${rid}\` | \`${p}\` |`;
+      }),
+    ];
+    return lines.join('\n');
+  }
 }

@@ -26,6 +26,7 @@ import {
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Skeleton } from '@/components/ui/skeleton';
 import { StatusBadge } from '@/components/StatusBadge';
+import { Input } from '@/components/ui/input';
 import { Pencil, RefreshCw } from 'lucide-react';
 
 /** Modal para asociar un repo existente al proyecto. Extraído para reducir anidamiento en ProjectDetail. */
@@ -183,6 +184,7 @@ export function ProjectDetail() {
   const [deletingProject, setDeletingProject] = useState(false);
   const [regeneratingProjectId, setRegeneratingProjectId] = useState(false);
   const [resyncForProjectRepoId, setResyncForProjectRepoId] = useState<string | null>(null);
+  const [roleSavingRepoId, setRoleSavingRepoId] = useState<string | null>(null);
 
   const fetchProject = useCallback(() => {
     if (!id) return;
@@ -227,6 +229,29 @@ export function ProjectDetail() {
       setError(e instanceof Error ? e.message : 'Error al encolar resync');
     } finally {
       setResyncForProjectRepoId(null);
+    }
+  };
+
+  /** Persiste `project_repositories.role` (inferencia de alcance en chat multi-root). */
+  const saveRepoRole = async (repoId: string, value: string) => {
+    if (!id) return;
+    const role = value.trim() || null;
+    setRoleSavingRepoId(repoId);
+    setError(null);
+    try {
+      await api.setProjectRepositoryRole(id, repoId, role);
+      setProject((prev) =>
+        prev
+          ? {
+              ...prev,
+              repositories: prev.repositories.map((r) => (r.id === repoId ? { ...r, role } : r)),
+            }
+          : null,
+      );
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Error al guardar rol');
+    } finally {
+      setRoleSavingRepoId(null);
     }
   };
 
@@ -483,7 +508,10 @@ export function ProjectDetail() {
       <Card>
         <CardHeader>
           <CardTitle>Repositorios</CardTitle>
-          <CardDescription>Chat, índice y análisis disponibles por repo; el grafo es común al proyecto.</CardDescription>
+          <CardDescription>
+            Chat, índice y análisis por repo; grafo común al proyecto. Rol (p. ej. frontend, backend): inferencia
+            de alcance en chat multi-root.
+          </CardDescription>
         </CardHeader>
         <CardContent>
           {project.repositories.length === 0 ? (
@@ -503,6 +531,7 @@ export function ProjectDetail() {
               <TableHeader>
                 <TableRow>
                   <TableHead>Repo</TableHead>
+                  <TableHead className="min-w-[8rem]">Rol (chat)</TableHead>
                   <TableHead>Rama</TableHead>
                   <TableHead>Estado</TableHead>
                   <TableHead>Último sync</TableHead>
@@ -516,6 +545,20 @@ export function ProjectDetail() {
                       <Link to={`/repos/${r.id}`} className="font-medium hover:underline">
                         {r.projectKey}/{r.repoSlug}
                       </Link>
+                    </TableCell>
+                    <TableCell>
+                      <Input
+                        key={`${r.id}-${r.role ?? ''}`}
+                        className="h-8 max-w-[10rem] text-xs font-mono"
+                        placeholder="p. ej. frontend"
+                        defaultValue={r.role ?? ''}
+                        disabled={roleSavingRepoId === r.id}
+                        onBlur={(e) => {
+                          const v = e.target.value;
+                          if ((v.trim() || '') === (r.role ?? '')) return;
+                          void saveRepoRole(r.id, v);
+                        }}
+                      />
                     </TableCell>
                     <TableCell className="font-mono text-sm text-muted-foreground">
                       {r.defaultBranch || '—'}

@@ -7,6 +7,12 @@ Página de chat con el repositorio: preguntas en lenguaje natural → Cypher →
 - **RepoChat.tsx** — Página principal con layout split: panel de análisis a la izquierda, chat a la derecha.
 - **FullAuditModal.tsx** — Modal de Full Repo Audit (auditoría de estado cero).
 
+## Alcance opcional
+
+Panel **Alcance opcional**: prefijos de ruta y globs de exclusión (una línea por entrada) se envían como `scope` en `POST /repositories/:id/analyze`. Checkbox **Duplicados cross-boundary** añade `crossPackageDuplicates` en modo duplicados.
+
+Tras la respuesta, **badges** bajo el título del informe muestran `reportMeta` (p. ej. **Caché**, **Alcance activo**, huella degradada, capa CALL cache) y la nota de cobertura del grafo si viene en el payload.
+
 ## Botones de análisis
 
 - **Diagnóstico** — Deuda técnica, antipatrones, riesgo.

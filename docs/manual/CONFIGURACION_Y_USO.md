@@ -302,11 +302,13 @@ curl -X POST http://localhost:3002/repositories \
 
 ### 2.3 Chat y análisis (ingest)
 
-| Recurso       | Método                                | Descripción                                                          |
-| ------------- | ------------------------------------- | -------------------------------------------------------------------- | ------------ | ----------------- |
-| Chat          | `POST /repositories/:id/chat`         | Preguntas NL → Cypher → FalkorDB. Body: `{ message, history? }`      |
-| Análisis      | `POST /repositories/:id/analyze`      | Diagnóstico, duplicados o reingeniería. Body: `{ mode: 'diagnostico' | 'duplicados' | 'reingenieria' }` |
-| Resumen grafo | `GET /repositories/:id/graph-summary` | Conteos y muestras de nodos indexados                                |
+| Recurso        | Método | Descripción |
+| -------------- | ---------------------------------------- | ----------- |
+| Chat           | `POST /repositories/:id/chat`            | NL → Cypher → FalkorDB. Body: `{ message, history?, scope?, twoPhase?, responseMode? }` |
+| Chat proyecto  | `POST /projects/:projectId/chat`         | Igual; agrega todos los repos del proyecto en el contexto. |
+| Análisis repo  | `POST /repositories/:id/analyze`         | `id` = repo. Body: `{ mode: 'diagnostico' \| 'duplicados' \| 'reingenieria' \| 'codigo_muerto' \| 'seguridad' }` |
+| Análisis proyecto | `POST /projects/:projectId/analyze`   | Modos de código como arriba + opcional `idePath` / `repositoryId` si hay multi-root; o `mode: 'agents' \| 'skill'`. |
+| Resumen grafo  | `GET /repositories/:id/graph-summary`    | Conteos y muestras de nodos indexados |
 
 Requieren `OPENAI_API_KEY`. Ver [CHAT_Y_ANALISIS.md](../CHAT_Y_ANALISIS.md) para detalles.
 

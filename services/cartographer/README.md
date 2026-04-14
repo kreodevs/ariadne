@@ -2,6 +2,8 @@
 
 > **Deprecado (2026):** No usar en despliegues nuevos. La ingesta principal y el **shadow indexing** (`POST /shadow`) viven en **`services/ingest`**, con grafos FalkorDB por sesión (`FalkorSpecsShadow:<shadowSessionId>`). Este paquete existía por **chokidar** + directorio local; ese flujo quedó obsoleto frente a sync remoto + ingest.
 
+**Paridad con ingest:** el índice canónico multi-repo (sync Git, `repoId`, Storybook/Markdown, `StorybookDoc` / `MarkdownDoc`, `sync-path-filter`, embed-index) es solo **ingest**. Cartographer sigue siendo análisis estático local con grafo simplificado (`projectId` en nodos, sin las ramas de documentación de Fase 4 salvo que se porte explícitamente).
+
 Servicio de análisis estático que indexa código JS/TS/JSX/TSX con Tree-sitter y persiste la topología en FalkorDB.
 
 ## Funciones

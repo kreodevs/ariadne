@@ -288,7 +288,7 @@ La IA debería poder invocar las herramientas del MCP. Si aparecen errores de co
 | `get_import_graph`     | Imports y contenido estructural de un archivo         |
 | `get_file_content`     | Contenido crudo de un archivo (requiere INGEST_URL)   |
 | `semantic_search`      | Búsqueda en componentes, funciones y archivos         |
-| `get_project_analysis` | Diagnóstico, duplicados o reingeniería                 |
+| `get_project_analysis` | Diagnóstico, duplicados, reingeniería, código muerto, seguridad (ingest); multi-root: conviene `currentFilePath` |
 
 ---
 

@@ -31,8 +31,8 @@ Nuestra meta es tomar estos heurísticos avanzados de Relic y portarlos a Ariadn
   1. Local-first (Fuerte): Lee `.ariadne-project`. Si esto funciona, excelente (cero latencia). *(`loadAriadneProjectConfigNearFile` desde la ruta del fichero del IDE.)*
   2. Fallback Heurístico (Inteligente): Si no hay local-config, hace ping a su backend `ingest` pidiendo resolución heurística de los slugs. *(Más inferencia Falkor previa si aplica.)*
 
-### Fase 6: Paridad y Limpieza Final — **hecha** (código base; tests opcionales)
-- `[x]` `AnalyticsService` en ingest + `POST /projects/:id/analyze` para modos de código con resolución multi-root (`idePath` / `repositoryId`). MCP `get_project_analysis` distingue proyecto vs repo y envía `idePath` cuando hay proyecto multi-root.
+### Fase 6: Paridad y Limpieza Final — **hecha**
+- `[x]` `AnalyticsService` en ingest + `POST /projects/:id/analyze` para modos de código con resolución multi-root (`idePath` / `repositoryId`). MCP `get_project_analysis` distingue proyecto vs repo y envía `idePath` cuando hay proyecto multi-root. Tests: `services/ingest/src/chat/analytics.service.spec.ts`.
 - **Plan de implementación:** [Plan_Implementacion_Fase6_AnalyticsService.md](./Plan_Implementacion_Fase6_AnalyticsService.md)
 
 Con este enfoque, respetamos los límites de responsabilidad: el `mcp-ariadne` se mantiene como una interfaz ligera e inteligente para el humano/bot que la consuma, pidiendo soporte al cerebro de Ingest de Ariadne pero combinándolo con la velocidad de la lectura en memoria.

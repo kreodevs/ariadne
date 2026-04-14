@@ -41,7 +41,7 @@ Cada servicio es una aplicación NestJS desplegable de forma independiente. Comu
 Servicio NestJS que realiza el análisis estático a partir de repositorios remotos. Incluye **Chat** (NL→Cypher) y **Análisis** (diagnóstico, duplicados, reingeniería).
 
 - **Chat:** `POST /repositories/:id/chat` (por repo) y `POST /projects/:projectId/chat` (por proyecto, todos los repos). Preguntas en NL → LLM genera Cypher → FalkorDB. Intent detection (project overview, diagnóstico). Retry si 0 resultados. Ver [CHAT_Y_ANALISIS.md](CHAT_Y_ANALISIS.md).
-- **Análisis:** `POST /repositories/:id/analyze` — mode=diagnostico (top riesgo, antipatrones), duplicados (embeddings), reingeniería, codigo_muerto.
+- **Análisis:** `POST /repositories/:id/analyze` (`:id` = repo) — modos `diagnostico`, `duplicados`, `reingenieria`, `codigo_muerto`, `seguridad` (auditoría heurística de secretos/higiene en índice). **`POST /projects/:projectId/analyze`** — mismos modos de código con resolución de repo vía `AnalyticsService` (`idePath` / `repositoryId` en multi-root) o `agents` / `skill` para informes AGENTS.md / SKILL.md.
 - **Proyectos (multi-root):** Tabla `project_repositories` (repo_id, project_id). Un repo puede estar en varios proyectos. Sync escribe nodos para cada proyecto del repo (standalone + proyectos). Resync: `POST /repositories/:id/resync` (desde repo) o `POST /repositories/:id/resync-for-project` con `{ projectId }` (solo ese slice).
 - **Proceso de indexación (sin filesystem local):**
   1. **Origen:** Repositorio remoto (Bitbucket/GitHub): listado y contenido vía REST API o clone. Credenciales desde `credentialsRef` (BD) o env.

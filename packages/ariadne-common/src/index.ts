@@ -34,3 +34,9 @@ export {
   runCypherBatch,
   type GraphClient,
 } from './graph-utils.js';
+export {
+  FALKOR_EMBEDDABLE_NODE_LABELS,
+  FALKOR_DOCUMENTATION_DOC_LABELS,
+  type FalkorEmbeddableLabel,
+  type FalkorDocumentationDocLabel,
+} from './graph-labels.js';

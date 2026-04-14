@@ -1,6 +1,6 @@
 {
   "name": "ariadne-mcp",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "MCP server AriadneSpecs: get_component_graph, get_legacy_impact, validate_before_edit, semantic_search",
   "type": "module",
   "main": "dist/index.js",

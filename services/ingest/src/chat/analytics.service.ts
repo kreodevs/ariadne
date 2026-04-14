@@ -4,7 +4,12 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { ProjectsService } from '../projects/projects.service';
 import { RepositoriesService } from '../repositories/repositories.service';
-import { ChatService, type AnalyzeMode, type AnalyzeResult } from './chat.service';
+import {
+  ChatService,
+  type AnalyzeMode,
+  type AnalyzeRequestOptions,
+  type AnalyzeResult,
+} from './chat.service';
 
 const CODE_ANALYSIS_MODES: AnalyzeMode[] = [
   'diagnostico',
@@ -80,13 +85,13 @@ export class AnalyticsService {
   async analyzeByProjectId(
     projectId: string,
     mode: AnalyzeMode,
-    opts: { repositoryId?: string; idePath?: string },
+    opts: { repositoryId?: string; idePath?: string; analyzeOptions?: AnalyzeRequestOptions },
   ): Promise<AnalyzeResult> {
     const repositoryId = await this.resolveRepositoryIdForAnalysis({
       projectId,
       repositoryId: opts.repositoryId,
       idePath: opts.idePath,
     });
-    return this.chat.analyze(repositoryId, mode);
+    return this.chat.analyze(repositoryId, mode, opts.analyzeOptions);
   }
 }

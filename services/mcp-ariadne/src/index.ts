@@ -10,7 +10,7 @@ import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/
 import { ListToolsRequestSchema, CallToolRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 import { isProjectShardingEnabled } from "ariadne-common";
 import { getGraph, closeFalkor, forEachProjectShardGraph } from "./falkor.js";
-import { getRedis, closeRedis } from "./redis.js";
+import { getMcpToolCache, closeRedis } from "./redis.js";
 import { loadAriadneProjectConfig, loadAriadneProjectConfigNearFile, resolveAbsolutePath } from "./utils.js";
 import {
   augmentScopeWithInferredRepo,
@@ -213,6 +213,21 @@ function createMcpServer(): Server {
             description: "diagnostico | duplicados | reingenieria | codigo_muerto | seguridad (default: diagnostico)",
             enum: ["diagnostico", "duplicados", "reingenieria", "codigo_muerto", "seguridad"],
           },
+          scope: {
+            type: "object",
+            description:
+              "Opcional: acotar análisis (repoIds = roots[].id, prefijos de path, globs de exclusión). Alineado con chat/modification-plan.",
+            properties: {
+              repoIds: { type: "array", items: { type: "string" } },
+              includePathPrefixes: { type: "array", items: { type: "string" } },
+              excludePathGlobs: { type: "array", items: { type: "string" } },
+            },
+            additionalProperties: false,
+          },
+          crossPackageDuplicates: {
+            type: "boolean",
+            description: "Modo duplicados: incluir pares con un solo extremo en el foco (cross-boundary).",
+          },
         },
         required: [],
         additionalProperties: false,
@@ -266,7 +281,17 @@ function createMcpServer(): Server {
               "ID de proyecto Ariadne o ID de repositorio (roots[].id de list_known_projects). Preferir roots[].id del repo donde vive el código en proyectos multi-root.",
           },
           userDescription: { type: "string", description: "Descripción en lenguaje natural de la modificación que el usuario quiere hacer" },
-          currentFilePath: { type: "string", description: "Ruta del archivo (opcional, para inferir projectId)" },
+          currentFilePath: {
+            type: "string",
+            description:
+              "Ruta absoluta del archivo en el IDE (opcional). Con projectId de **proyecto** multi-root, el ingest usa esta ruta para anclar el repositorio (junto con scope.repoIds).",
+          },
+          questionsMode: {
+            type: "string",
+            enum: ["business", "technical", "both"],
+            description:
+              "Preguntas de afinación: business (negocio, default), technical (implementación), both (mix acotado).",
+          },
           scope: {
             type: "object",
             description: "Opcional: filtrar filesToModify por repoIds / prefijos / globs.",
@@ -1040,12 +1065,10 @@ async function fetchFileFromIngest(
       projectId = (await applyShardingInference(undefined, currentFilePath)) ?? undefined;
     }
 
-    const redis = getRedis();
+    const cache = getMcpToolCache();
     const cacheKey = `ariadne:component_graph:${projectId ?? 'global'}:${componentName}:${depth}`;
-    try {
-      const cached = await redis.get(cacheKey);
-      if (cached) return { content: [{ type: "text", text: cached }] };
-    } catch (e) { console.error("[Redis Cache Error] get_component_graph:", e); }
+    const cached = await cache.get(cacheKey);
+    if (cached) return { content: [{ type: "text", text: cached }] };
 
     graph = await getGraph(projectId ?? undefined);
     const exists = await nodeExists(graph, componentName, projectId ?? null);
@@ -1071,9 +1094,7 @@ async function fetchFileFromIngest(
     const headers = result.headers ?? ["c", "dependency"];
     const markdown = formatComponentGraph(componentName, data, headers);
     
-    try {
-      await redis.set(cacheKey, markdown, "EX", 120); // 2 minutos de cache
-    } catch (e) { /* ignore */ }
+    await cache.set(cacheKey, markdown, 120);
 
     return { content: [{ type: "text", text: markdown }] };
   }
@@ -1086,12 +1107,10 @@ async function fetchFileFromIngest(
       projectId = (await applyShardingInference(undefined, legacyFilePath)) ?? undefined;
     }
 
-    const redis = getRedis();
+    const cache = getMcpToolCache();
     const cacheKey = `ariadne:legacy_impact:${projectId ?? 'global'}:${nodeName}`;
-    try {
-      const cached = await redis.get(cacheKey);
-      if (cached) return { content: [{ type: "text", text: cached }] };
-    } catch (e) { console.error("[Redis Cache Error] get_legacy_impact:", e); }
+    const cachedLegacy = await cache.get(cacheKey);
+    if (cachedLegacy) return { content: [{ type: "text", text: cachedLegacy }] };
 
     graph = await getGraph(projectId ?? undefined);
     const exists = await nodeExists(graph, nodeName, projectId ?? null);
@@ -1121,9 +1140,7 @@ async function fetchFileFromIngest(
     const headers = result.headers ?? ["name", "labels"];
     const markdown = formatLegacyImpact(nodeName, data, headers);
 
-    try {
-      await redis.set(cacheKey, markdown, "EX", 120);
-    } catch (e) { /* ignore */ }
+    await cache.set(cacheKey, markdown, 120);
 
     return { content: [{ type: "text", text: markdown }] };
   }
@@ -1310,15 +1327,29 @@ async function fetchFileFromIngest(
           const k = Math.min(Math.max(limit, 20), 100);
           const funcVecQ = `CALL db.idx.vector.queryNodes('Function', '${vecProp}', ${k}, vecf32(${vecStr})) YIELD node, score RETURN node.name AS name, node.path AS path, node.projectId AS projectId, score`;
           const compVecQ = `CALL db.idx.vector.queryNodes('Component', '${vecProp}', ${k}, vecf32(${vecStr})) YIELD node, score RETURN node.name AS name, node.projectId AS projectId, score`;
+          const docVecQ = `CALL db.idx.vector.queryNodes('Document', '${vecProp}', ${k}, vecf32(${vecStr})) YIELD node, score RETURN node.path AS path, node.heading AS heading, node.chunkIndex AS chunkIndex, node.projectId AS projectId, score`;
+          const sbVecQ = `CALL db.idx.vector.queryNodes('StorybookDoc', '${vecProp}', ${k}, vecf32(${vecStr})) YIELD node, score RETURN node.title AS name, node.sourcePath AS path, node.projectId AS projectId, score`;
+          const mdVecQ = `CALL db.idx.vector.queryNodes('MarkdownDoc', '${vecProp}', ${k}, vecf32(${vecStr})) YIELD node, score RETURN node.title AS name, node.sourcePath AS path, node.projectId AS projectId, score`;
           try {
             const seen = new Set<string>();
             await runOnProjectGraphs(projectId, async (g) => {
               try {
-                const [fRes, cRes] = await Promise.all([
+                const [fRes, cRes, dRes, sbRes, mdRes] = await Promise.all([
                   g.query(funcVecQ) as Promise<{ data?: Array<Record<string, unknown>> }>,
                   g.query(compVecQ) as Promise<{ data?: Array<Record<string, unknown>> }>,
+                  g.query(docVecQ) as Promise<{ data?: Array<Record<string, unknown>> }>,
+                  g.query(sbVecQ) as Promise<{ data?: Array<Record<string, unknown>> }>,
+                  g.query(mdVecQ) as Promise<{ data?: Array<Record<string, unknown>> }>,
                 ]);
-                if ((fRes.data?.length ?? 0) + (cRes.data?.length ?? 0) > 0) usedVector = true;
+                if (
+                  (fRes.data?.length ?? 0) +
+                    (cRes.data?.length ?? 0) +
+                    (dRes.data?.length ?? 0) +
+                    (sbRes.data?.length ?? 0) +
+                    (mdRes.data?.length ?? 0) >
+                  0
+                )
+                  usedVector = true;
                 for (const row of asObjRows(fRes.data)) {
                   if (results.length >= limit) return;
                   const name = _rv<string>(row, "name") ?? "";
@@ -1344,6 +1375,49 @@ async function fetchFileFromIngest(
                   seen.add(key);
                   results.push({ type: "Component", name: name ?? "", projectId: pid });
                 }
+                for (const row of dRes.data ?? []) {
+                  if (results.length >= limit) return;
+                  const path = _rv<string>(row, "path") ?? "";
+                  const heading = _rv<string>(row, "heading") ?? "";
+                  const ci = _rv<string>(row, "chunkIndex");
+                  const pid = _rv<string>(row, "projectId");
+                  if (projectId && pid !== projectId) continue;
+                  const key = `Document:${path}:${ci ?? ""}`;
+                  if (seen.has(key)) continue;
+                  seen.add(key);
+                  const label = heading ? `${heading} — ${path}` : path;
+                  results.push({ type: "Document", name: label, projectId: pid });
+                }
+                for (const row of sbRes.data ?? []) {
+                  if (results.length >= limit) return;
+                  const name = _rv<string>(row, "name") ?? "";
+                  const path = _rv<string>(row, "path") ?? "";
+                  const pid = _rv<string>(row, "projectId");
+                  if (projectId && pid !== projectId) continue;
+                  const key = `StorybookDoc:${path}`;
+                  if (seen.has(key)) continue;
+                  seen.add(key);
+                  results.push({
+                    type: "StorybookDoc",
+                    name: path ? `${name || "Storybook"} — ${path}` : name || path,
+                    projectId: pid,
+                  });
+                }
+                for (const row of mdRes.data ?? []) {
+                  if (results.length >= limit) return;
+                  const name = _rv<string>(row, "name") ?? "";
+                  const path = _rv<string>(row, "path") ?? "";
+                  const pid = _rv<string>(row, "projectId");
+                  if (projectId && pid !== projectId) continue;
+                  const key = `MarkdownDoc:${path}`;
+                  if (seen.has(key)) continue;
+                  seen.add(key);
+                  results.push({
+                    type: "MarkdownDoc",
+                    name: path ? `${name || "Doc"} — ${path}` : name || path,
+                    projectId: pid,
+                  });
+                }
               } catch {
                 /* vector index may not exist on this shard */
               }
@@ -1368,6 +1442,8 @@ async function fetchFileFromIngest(
       const nestQ = `MATCH (n) WHERE n:NestController OR n:NestService OR n:NestModule${projectId ? " AND n.projectId = $projectId" : ""} RETURN labels(n)[0] AS typ, n.name AS name, n.path AS path, n.route AS route LIMIT 100`;
       const routeQ = `MATCH (n:Route)${projFilter} RETURN n.path AS path, n.componentName AS componentName LIMIT 100`;
       const domainQ = `MATCH (n:DomainConcept)${projFilter} RETURN n.name AS name, n.category AS category LIMIT 100`;
+      const sbQ = `MATCH (n:StorybookDoc)${projFilter} RETURN n.title AS title, n.sourcePath AS path LIMIT 100`;
+      const mdQ = `MATCH (n:MarkdownDoc)${projFilter} RETURN n.title AS title, n.sourcePath AS path LIMIT 100`;
       const mergeRows = async (q: string) => {
         const rows: unknown[] = [];
         await runOnProjectGraphs(projectId, async (g) => {
@@ -1376,7 +1452,7 @@ async function fetchFileFromIngest(
         });
         return { data: rows as unknown[][] };
       };
-      const [compRes, funcRes, fileRes, modelRes, nestRes, routeRes, domainRes] = await Promise.all([
+      const [compRes, funcRes, fileRes, modelRes, nestRes, routeRes, domainRes, sbRes, mdRes] = await Promise.all([
         mergeRows(compQ),
         mergeRows(funcQ),
         mergeRows(fileQ),
@@ -1384,6 +1460,8 @@ async function fetchFileFromIngest(
         mergeRows(nestQ),
         mergeRows(routeQ),
         mergeRows(domainQ),
+        mergeRows(sbQ),
+        mergeRows(mdQ),
       ]);
       const seenKeys = new Set(results.map((r) => `${r.type}:${r.name}`));
       const pushUnique = (type: string, name: string, pid?: string) => {
@@ -1444,6 +1522,22 @@ async function fetchFileFromIngest(
           pushUnique("DomainConcept", cat ? `${name ?? ""} (${cat})` : (name ?? ""));
         }
       }
+      for (const row of asObjRows(sbRes.data)) {
+        const title = _rv<string>(row, "title") ?? "";
+        const path = _rv<string>(row, "path") ?? "";
+        const searchable = [title, path].filter(Boolean).join(" ");
+        if (searchable && textMatchesQuery(searchable, query)) {
+          pushUnique("StorybookDoc", path ? `${title || "Storybook"} — ${path}` : title || path);
+        }
+      }
+      for (const row of asObjRows(mdRes.data)) {
+        const title = _rv<string>(row, "title") ?? "";
+        const path = _rv<string>(row, "path") ?? "";
+        const searchable = [title, path].filter(Boolean).join(" ");
+        if (searchable && textMatchesQuery(searchable, query)) {
+          pushUnique("MarkdownDoc", path ? `${title || "Doc"} — ${path}` : title || path);
+        }
+      }
     }
     const modeLabel =
       usedVector && countAfterVector > 0
@@ -1477,15 +1571,15 @@ async function fetchFileFromIngest(
       };
     }
     const ingestUrl = (process.env.INGEST_URL ?? process.env.ARIADNESPEC_INGEST_URL ?? "http://localhost:3002").replace(/\/$/, "");
-    const redis = getRedis();
+    const cache = getMcpToolCache();
     const cacheKey = `ariadne:sync_status:${projectId}`;
 
-    try {
-      const cached = await redis.get(cacheKey);
-      if (cached) {
-        return { content: [{ type: "text", text: `### Estado de Sincronización (Cached)\n\n${cached}` }] };
-      }
+    const cachedSync = await cache.get(cacheKey);
+    if (cachedSync) {
+      return { content: [{ type: "text", text: `### Estado de Sincronización (Cached)\n\n${cachedSync}` }] };
+    }
 
+    try {
       const res = await fetch(`${ingestUrl}/projects/${projectId}/sync-status`);
       if (!res.ok) {
         return { content: [{ type: "text", text: `**Error ${res.status}:** No se pudo obtener el estado del proyecto.` }], isError: true };
@@ -1494,7 +1588,7 @@ async function fetchFileFromIngest(
       const statusIcon = data.status === "up_to_date" ? "✅" : data.status === "syncing" ? "⏳" : "⚠️";
       const text = `${statusIcon} **Estatus:** \`${data.status}\`\n- **Última Sincronización:** ${data.lastSync ? new Date(data.lastSync).toLocaleString() : "Nunca"}\n\n**Jobs Recientes:**\n${(data.details || []).slice(0, 5).map((j: any) => `- [${j.type}] ${j.status === "completed" ? "✅" : "❌"} (${new Date(j.createdAt).toLocaleDateString()})`).join("\n")}`;
       
-      await redis.set(cacheKey, text, "EX", 30);
+      await cache.set(cacheKey, text, 30);
       return { content: [{ type: "text", text: `### Estado de Sincronización\n\n${text}` }] };
     } catch (err: any) {
       return { content: [{ type: "text", text: `**Error de red (Ingest):** ${err.message}` }], isError: true };
@@ -1574,6 +1668,10 @@ async function fetchFileFromIngest(
       | "reingenieria"
       | "codigo_muerto"
       | "seguridad";
+    const scope = args?.scope as
+      | { repoIds?: string[]; includePathPrefixes?: string[]; excludePathGlobs?: string[] }
+      | undefined;
+    const crossPackageDuplicates = args?.crossPackageDuplicates === true;
     if (!projectOrRepoId && currentFilePath) {
       projectOrRepoId = (await applyShardingInference(undefined, currentFilePath)) ?? "";
     }
@@ -1595,9 +1693,14 @@ async function fetchFileFromIngest(
     const url = isProject
       ? `${base}/projects/${encodeURIComponent(projectOrRepoId)}/analyze`
       : `${base}/repositories/${encodeURIComponent(projectOrRepoId)}/analyze`;
+    const scopeBody =
+      scope && (scope.repoIds?.length || scope.includePathPrefixes?.length || scope.excludePathGlobs?.length)
+        ? { scope }
+        : {};
+    const dupFlag = crossPackageDuplicates ? { crossPackageDuplicates: true } : {};
     const body = isProject
-      ? { mode, ...(idePath ? { idePath } : {}) }
-      : { mode };
+      ? { mode, ...(idePath ? { idePath } : {}), ...scopeBody, ...dupFlag }
+      : { mode, ...scopeBody, ...dupFlag };
     try {
       const res = await fetch(url, {
         method: "POST",
@@ -1608,7 +1711,7 @@ async function fetchFileFromIngest(
         const msg = await res.text();
         return { content: [{ type: "text", text: `**Error ${res.status}:** ${msg || res.statusText}` }], isError: true };
       }
-      const data = (await res.json()) as { mode: string; summary: string };
+      const data = (await res.json()) as { mode: string; summary: string; reportMeta?: Record<string, unknown> };
       const title =
         data.mode === "diagnostico" ? "Deuda técnica" :
         data.mode === "duplicados" ? "Código duplicado" :
@@ -1639,7 +1742,11 @@ async function fetchFileFromIngest(
         });
       }
 
-      return { content: [{ type: "text", text: `## ${title}\n\n${passthrough}${summary}` }] };
+      const metaBlock =
+        data.reportMeta && Object.keys(data.reportMeta).length > 0
+          ? `\n\n\`\`\`json\n${JSON.stringify({ reportMeta: data.reportMeta }, null, 2)}\n\`\`\`\n`
+          : "";
+      return { content: [{ type: "text", text: `## ${title}\n\n${passthrough}${summary}${metaBlock}` }] };
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       return { content: [{ type: "text", text: `**Error:** No se pudo obtener el análisis. ¿INGEST_URL configurado? ${msg}` }], isError: true };
@@ -1724,6 +1831,7 @@ async function fetchFileFromIngest(
     if (projectId && currentFilePath) {
       scope = await augmentScopeWithInferredRepo(projectId, currentFilePath, scope);
     }
+    const questionsMode = args?.questionsMode as "business" | "technical" | "both" | undefined;
     try {
       const res = await fetch(url, {
         method: "POST",
@@ -1731,6 +1839,8 @@ async function fetchFileFromIngest(
         body: JSON.stringify({
           userDescription,
           ...(scope && Object.keys(scope).length > 0 ? { scope } : {}),
+          ...(currentFilePath?.trim() ? { currentFilePath: currentFilePath.trim() } : {}),
+          ...(questionsMode === "technical" || questionsMode === "both" ? { questionsMode } : {}),
         }),
       });
       if (!res.ok) {
@@ -1740,10 +1850,21 @@ async function fetchFileFromIngest(
       const data = (await res.json()) as {
         filesToModify: Array<{ path: string; repoId: string }>;
         questionsToRefine: string[];
+        warnings?: string[];
+        diagnostic?: { code: string; message: string; candidates?: unknown[] };
       };
       const filesToModify = data.filesToModify ?? [];
       const questionsToRefine = data.questionsToRefine ?? [];
-      const text = JSON.stringify({ filesToModify, questionsToRefine }, null, 2);
+      const text = JSON.stringify(
+        {
+          filesToModify,
+          questionsToRefine,
+          ...(data.warnings?.length ? { warnings: data.warnings } : {}),
+          ...(data.diagnostic ? { diagnostic: data.diagnostic } : {}),
+        },
+        null,
+        2,
+      );
       const hint = filesToModify.length > 0
         ? "\n\nCada archivo en `filesToModify` incluye `path` y `repoId` (root). Si hay varios repoId distintos, el cambio afecta a más de un repo (multi-root)."
         : "";

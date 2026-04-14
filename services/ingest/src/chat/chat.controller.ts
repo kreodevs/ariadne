@@ -5,12 +5,14 @@ import { Body, Controller, Get, InternalServerErrorException, Param, Post, Query
 import {
   ChatService,
   type AnalyzeMode,
+  type AnalyzeRequestOptions,
   type AnalyzeResult,
   type ChatRequest,
   type ChatResponse,
   type ChatScope,
   type FullAuditResult,
   type ModificationPlanResult,
+  type ModificationPlanQuestionsMode,
 } from './chat.service';
 
 /** Controlador de chat y análisis (GET graph-summary, POST chat, POST analyze). */
@@ -51,12 +53,19 @@ export class ChatController {
   @Post(':id/analyze')
   async analyze(
     @Param('id') id: string,
-    @Body() body: { mode?: AnalyzeMode },
+    @Body() body: { mode?: AnalyzeMode; scope?: ChatScope; crossPackageDuplicates?: boolean },
     @Query('mode') modeQuery?: string,
   ): Promise<AnalyzeResult> {
     const mode = (body?.mode ?? modeQuery ?? 'diagnostico') as AnalyzeMode;
+    const opts: AnalyzeRequestOptions | undefined =
+      body?.scope || body?.crossPackageDuplicates
+        ? {
+            ...(body.scope ? { scope: body.scope } : {}),
+            ...(body.crossPackageDuplicates ? { crossPackageDuplicates: true } : {}),
+          }
+        : undefined;
     try {
-      return await this.chatService.analyze(id, mode);
+      return await this.chatService.analyze(id, mode, opts);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       const hint =
@@ -79,12 +88,12 @@ export class ChatController {
   @Post(':id/modification-plan')
   async getModificationPlan(
     @Param('id') id: string,
-    @Body() body: { userDescription: string; scope?: ChatScope },
+    @Body() body: { userDescription: string; scope?: ChatScope; questionsMode?: ModificationPlanQuestionsMode },
   ): Promise<ModificationPlanResult> {
     const userDescription = body?.userDescription?.trim() ?? '';
     if (!userDescription) {
       return { filesToModify: [], questionsToRefine: [] };
     }
-    return this.chatService.getModificationPlan(id, userDescription, body?.scope);
+    return this.chatService.getModificationPlan(id, userDescription, body?.scope, body?.questionsMode);
   }
 }

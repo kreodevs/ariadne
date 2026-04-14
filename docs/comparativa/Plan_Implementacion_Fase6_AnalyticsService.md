@@ -2,11 +2,13 @@
 
 Objetivo: una **única capa de entrada** para análisis estructurado (deuda, duplicados, reingeniería, código muerto, seguridad) que **resuelva el `repositoryId` correcto** cuando el cliente envía `projectId` Ariadne y/o una ruta de IDE, sin duplicar reglas entre MCP e ingest.
 
-**Estado actual (referencia):**
+**Implementación (referencia en código):**
 
-- La lógica vive en `ChatService` (`analyze`, `analyzeDiagnostico`, …) expuesta como `POST /repositories/:id/analyze` (`ChatController`). El `:id` debe ser **ID de repositorio** para que embeddings y Falkor cuadren.
-- Ya existe `GET /projects/:id/resolve-repo-for-path` y `ProjectsService.resolveRepoForPath`.
-- `JobAnalysisService` es independiente (jobs incrementales); **fuera de alcance** salvo que más adelante quieras el mismo resolvedor para métricas.
+- `ChatService.analyze` sigue siendo el motor; `POST /repositories/:id/analyze` (`ChatController`) exige `:id` = **repositorio**.
+- **`AnalyticsService`** (`services/ingest/src/chat/analytics.service.ts`): `resolveRepositoryIdForAnalysis` + `analyzeByProjectId` → `chat.analyze`.
+- `ProjectChatController` `POST /projects/:projectId/analyze` enruta `agents`/`skill` a `analyzeByProject` y modos de código a `AnalyticsService`.
+- `GET /projects/:id/resolve-repo-for-path` y `ProjectsService.resolveRepoForPath` siguen siendo la heurística de path.
+- `JobAnalysisService` (jobs incrementales) sigue **fuera de alcance** salvo que se reutilice el mismo resolvedor.
 
 ---
 
@@ -22,7 +24,7 @@ Documentar estas reglas en `services/ingest/README.md` o `chat/README.md` al imp
 
 ## 1. Fachada `AnalyticsService` (ingest)
 
-**Ubicación sugerida:** `services/ingest/src/analytics/analytics.service.ts` + `analytics.module.ts` (o registrar el provider en `ChatModule` si quieres menos archivos).
+**Ubicación:** `services/ingest/src/chat/analytics.service.ts` (provider en `ChatModule`).
 
 **Responsabilidades:**
 
@@ -88,11 +90,11 @@ Documentar estas reglas en `services/ingest/README.md` o `chat/README.md` al imp
 | Orden | Hito | Entregable |
 |-------|------|------------|
 | 1 | Decisiones §0 | Nota en README |
-| 2 | `AnalyticsService` + tests de resolución | Servicio *(specs pendientes)* |
+| 2 | `AnalyticsService` + tests de resolución | Servicio en `chat/analytics.service.ts` (tests automatizados de resolución opcionales / pendientes) |
 | 3 | `POST /projects/:projectId/analyze` (modos de código) | Hecho (`ProjectChatController`) |
 | 4 | MCP `get_project_analysis` | Hecho (`ingestProjectExists` + `idePath`) |
 | 5 | QA manual | Script + guía: [QA_Fase6_Resultado.md](./QA_Fase6_Resultado.md), `scripts/qa-fase6-analytics.sh` |
-| 6 | (Opcional) `JobAnalysisService` | Solo si quieres misma resolución para jobs |
+| 6 | `JobAnalysisService` + ruta por proyecto | `analyzeJobForProject` + `GET /projects/:projectId/jobs/:jobId/analysis` (validación `project_repositories`); tests `job-analysis.service.spec.ts` |
 
 ---
 
@@ -109,4 +111,5 @@ Documentar estas reglas en `services/ingest/README.md` o `chat/README.md` al imp
 - [x] Existe `AnalyticsService` con resolución centralizada de `repositoryId` (`services/ingest/src/chat/analytics.service.ts`).
 - [x] Ruta documentada **análisis por `projectId` + `idePath` / `repositoryId` opcional** (`POST /projects/:projectId/analyze` para modos de código).
 - [x] `get_project_analysis` en MCP usa proyecto vs repo (`ingestProjectExists`) y envía `idePath` cuando aplica.
-- [ ] Tests automatizados de resolución (opcional / pendiente).
+- [x] Tests Vitest: `services/ingest/src/chat/analytics.service.spec.ts` (resolución mono/multi-root, `repositoryId`, delegación a `chat.analyze`).
+- [x] Análisis de job incremental por proyecto: `GET /projects/:projectId/jobs/:jobId/analysis` (`JobAnalysisService.analyzeJobForProject`); Vitest `services/ingest/src/repositories/job-analysis.service.spec.ts`.

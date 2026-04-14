@@ -25,12 +25,17 @@ export class InternalProjectToolsController {
   @Post(':projectId/modification-plan-files')
   async modificationPlanFiles(
     @Param('projectId') projectId: string,
-    @Body() body: { userDescription: string; scope?: ChatScope },
+    @Body() body: { userDescription: string; scope?: ChatScope; currentFilePath?: string },
   ): Promise<{ filesToModify: Array<{ path: string; repoId: string }> }> {
     const desc = body.userDescription?.trim() ?? '';
     if (!desc) return { filesToModify: [] };
     return {
-      filesToModify: await this.chat.getModificationPlanFilesOnlyByProject(projectId, desc, body.scope),
+      filesToModify: await this.chat.getModificationPlanFilesOnlyByProject(
+        projectId,
+        desc,
+        body.scope,
+        body.currentFilePath?.trim() || null,
+      ),
     };
   }
 }

@@ -18,7 +18,12 @@ import {
   listGraphNamesForProjectRouting,
   type FalkorShardMode,
 } from '../pipeline/falkor';
-import { resolveRepoIdForAbsolutePath } from './path-repo-resolution.util';
+import {
+  resolveRepoIdForAbsolutePath,
+  resolveRepositoryIdForWorkspacePath,
+  type RepoPathMatchInput,
+  type WorkspacePathRepoResolution,
+} from './path-repo-resolution.util';
 
 export interface ProjectWithRepos {
   id: string;
@@ -34,6 +39,7 @@ export interface ProjectWithRepos {
     defaultBranch: string;
     status: string;
     lastSyncAt: string | null;
+    role?: string | null;
   }>;
 }
 
@@ -57,13 +63,15 @@ export class ProjectsService {
       projectIds.length > 0
         ? await this.projectRepoRepo.find({
             where: { projectId: In(projectIds) },
-            select: ['projectId', 'repoId'],
+            select: ['projectId', 'repoId', 'role'],
           })
         : [];
     const repoIdsByProject = new Map<string, string[]>();
+    const roleByProjectRepo = new Map<string, string | null>();
     for (const pr of prs) {
       if (!repoIdsByProject.has(pr.projectId)) repoIdsByProject.set(pr.projectId, []);
       repoIdsByProject.get(pr.projectId)!.push(pr.repoId);
+      roleByProjectRepo.set(`${pr.projectId}:${pr.repoId}`, pr.role ?? null);
     }
     const allRepoIds = [...new Set(prs.map((pr) => pr.repoId))];
     const repos =
@@ -91,6 +99,7 @@ export class ProjectsService {
           defaultBranch: r!.defaultBranch,
           status: r!.status,
           lastSyncAt: r!.lastSyncAt?.toISOString() ?? null,
+          role: roleByProjectRepo.get(`${p.id}:${r!.id}`) ?? null,
         })),
     }));
   }
@@ -124,6 +133,72 @@ export class ProjectsService {
     };
   }
 
+  /**
+   * Actualiza la etiqueta `role` en `project_repositories` (inferencia de alcance en chat multi-root).
+   */
+  async setRepositoryRole(
+    projectId: string,
+    repoId: string,
+    role?: string | null,
+  ): Promise<{ projectId: string; repoId: string; role: string | null }> {
+    await this.findOne(projectId);
+    const pr = await this.projectRepoRepo.findOne({ where: { projectId, repoId } });
+    if (!pr) {
+      throw new NotFoundException(`Repositorio ${repoId} no asociado al proyecto ${projectId}`);
+    }
+    if (role !== undefined) {
+      pr.role = role?.trim() ? role.trim() : null;
+      await this.projectRepoRepo.save(pr);
+    }
+    return { projectId, repoId, role: pr.role };
+  }
+
+  /**
+   * Resolución multi-root con resultado único, ninguno o ambiguo (empates en heurística de path).
+   */
+  async resolveRepositoryForWorkspacePath(
+    projectId: string,
+    workspaceAbsolutePath: string,
+  ): Promise<WorkspacePathRepoResolution> {
+    const { repositories } = await this.findOne(projectId);
+    if (repositories.length === 0) {
+      return { kind: 'none' };
+    }
+    const inputs: RepoPathMatchInput[] = repositories.map((r) => ({
+      repositoryId: r.id,
+      projectKey: r.projectKey,
+      repoSlug: r.repoSlug,
+    }));
+    return resolveRepositoryIdForWorkspacePath(workspaceAbsolutePath, inputs);
+  }
+
+  /**
+   * Bloque markdown de roles por repo para el prompt del chat multi-root.
+   */
+  async getRepositoryRolesContext(projectId: string): Promise<string> {
+    const prs = await this.projectRepoRepo.find({
+      where: { projectId },
+      select: ['repoId', 'role'],
+    });
+    if (prs.length === 0) return '';
+    const repoIds = prs.map((p) => p.repoId);
+    const repos = await this.repoRepo.find({
+      where: { id: In(repoIds) },
+      select: ['id', 'projectKey', 'repoSlug'],
+    });
+    const label = new Map(repos.map((r) => [r.id, `${r.projectKey}/${r.repoSlug}`] as const));
+    const lines = prs.map((pr) => {
+      const slug = label.get(pr.repoId) ?? pr.repoId;
+      const roleLabel = pr.role?.trim() ? pr.role.trim() : 'sin rol definido';
+      return `- \`${slug}\` — \`repoId\`=\`${pr.repoId}\` — **rol:** ${roleLabel}`;
+    });
+    return [
+      'Cuando el usuario pregunte por el backend, frontend, API, librería de componentes, etc., usa **solo** el repositorio cuyo **rol** encaje con la pregunta. Filtra rutas y resultados Cypher por `repoId` según corresponda.',
+      '',
+      ...lines,
+    ].join('\n');
+  }
+
   /** Metadatos de enrutamiento Falkor (MCP/API): modo mono vs dominio y segmentos conocidos. */
   async getGraphRouting(id: string): Promise<{
     projectId: string;
@@ -148,9 +223,10 @@ export class ProjectsService {
     if (!project) throw new NotFoundException(`Project ${id} not found`);
     const prs = await this.projectRepoRepo.find({
       where: { projectId: id },
-      select: ['repoId'],
+      select: ['repoId', 'role'],
     });
     const repoIds = prs.map((pr) => pr.repoId);
+    const roleByRepo = new Map(prs.map((pr) => [pr.repoId, pr.role ?? null] as const));
     const repositories =
       repoIds.length > 0
         ? await this.repoRepo.find({
@@ -172,6 +248,7 @@ export class ProjectsService {
         defaultBranch: r.defaultBranch,
         status: r.status,
         lastSyncAt: r.lastSyncAt?.toISOString() ?? null,
+        role: roleByRepo.get(r.id) ?? null,
       })),
     };
   }

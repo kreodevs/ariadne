@@ -8,9 +8,10 @@ Documentación del sistema de chat con repositorios, diagnósticos, métricas de
 
 | Endpoint | Descripción |
 |----------|-------------|
-| `POST /repositories/:id/chat` | Pregunta en NL por repo. Body: `{ message, history?, scope?, twoPhase? }` — `scope`: `repoIds`, `includePathPrefixes`, `excludePathGlobs`; `twoPhase` alinea con `CHAT_TWO_PHASE`. |
+| `POST /repositories/:id/chat` | Pregunta en NL por repo. Body: `{ message, history?, scope?, twoPhase?, responseMode? }` — `scope`: `repoIds`, `includePathPrefixes`, `excludePathGlobs`; `twoPhase` / `responseMode: 'evidence_first'` alinean con el sintetizador (ver ingest). |
 | `POST /projects/:projectId/chat` | Chat por proyecto (todos los repos). Mismo body. |
-| `POST /repositories/:id/analyze` | Análisis estructurado. Body: `{ mode: 'diagnostico'|'duplicados'|'reingenieria'|'codigo_muerto' }` |
+| `POST /repositories/:id/analyze` | Análisis estructurado sobre **un repo** (`:id` = `roots[].id`). Body: `{ mode }` con `mode` ∈ `diagnostico` \| `duplicados` \| `reingenieria` \| `codigo_muerto` \| `seguridad` (mismo pipeline que por proyecto una vez resuelto el repo). |
+| `POST /projects/:projectId/analyze` | Mismo handler unificado: `mode`: `agents` \| `skill` (AGENTS.md / SKILL.md) **o** modos de código anteriores. Para modos de código en proyecto **multi-root**, body opcional: `idePath` (ruta IDE absoluta o bajo un root) y/o `repositoryId` para fijar el root; si hay varios repos y faltan ambos → **400**. Resolución en `AnalyticsService` → `ChatService.analyze`. |
 | `GET /repositories/:id/graph-summary` | Conteos y muestras de nodos indexados |
 
 **Requisitos:** `OPENAI_API_KEY` para chat y diagnósticos. Embeddings: `EMBEDDING_PROVIDER` + API key para modo duplicados.
@@ -23,7 +24,7 @@ Todas las preguntas pasan por el mismo pipeline. No hay clasificación code vs k
 
 1. **Fase Retriever** — ReAct con tools (máx 4 turnos):
    - `execute_cypher`: busca archivos, componentes, funciones, DomainConcept en FalkorDB.
-   - `semantic_search`: búsqueda vectorial (RAG) si hay embed-index.
+   - `semantic_search`: búsqueda vectorial (RAG) sobre Function, Component, Document, StorybookDoc y MarkdownDoc si hay embed-index.
    - `get_graph_summary`: conteos y muestras del grafo.
    - `get_file_content`: lee el código de los paths relevantes.
    - El Retriever NO escribe la respuesta; solo reúne contexto.
@@ -35,7 +36,7 @@ Todas las preguntas pasan por el mismo pipeline. No hay clasificación code vs k
    - Prohibido devolver listas crudas de paths/funciones; siempre síntesis narrativa.
 3. **Formato** — `formatResultsHuman()`: agrupa por path en los datos pasados al Synthesizer.
 
-**Schema en prompt:** Nodos `File`, `Component`, `Function`, `Route`, `Hook`, `Prop`, `NestController`, etc. Relaciones `CONTAINS`, `IMPORTS`, `CALLS`, `RENDERS`, `HAS_PROP`. FalkorDB NO soporta `NOT EXISTS`; usar `OPTIONAL MATCH` + `count(x)=0`.
+**Schema en prompt:** Nodos `File`, `Component`, `Function`, `StorybookDoc`, `MarkdownDoc`, `Route`, `Hook`, `Prop`, `NestController`, etc. Relaciones `CONTAINS`, `IMPORTS`, `CALLS`, `RENDERS`, `HAS_PROP`. FalkorDB NO soporta `NOT EXISTS`; usar `OPTIONAL MATCH` + `count(x)=0`.
 
 ---
 
@@ -114,6 +115,14 @@ Todas las preguntas pasan por el mismo pipeline. No hay clasificación code vs k
 - **Resumen:** Tabla final con Archivo | Ruta | Estado | Notas.
 - **Entradas:** index.tsx, main.tsx, App.tsx y componentes en Route se consideran usados.
 - **Normalización de paths:** Para reducir falsos positivos (archivos usados pero marcados como muertos), al construir y consultar IMPORTS se usa una forma canónica: barras unificadas (`/`), extensión de módulo quitada (`.ts`/`.tsx`/`.js`/`.jsx`). Así, si el grafo tiene la arista con un path y el archivo se guarda con otro (por extensión o barras), se considera que tiene importers. La verificación por contenido (import/require en otros archivos) usa además términos derivados del path (baseName, pathTail, pathSeg) para detectar referencias aunque el grafo no tenga la arista.
+
+---
+
+## 7.2 Seguridad (mode=seguridad)
+
+- **Propósito:** Auditoría **heurística** sobre fuentes indexadas (p. ej. posibles secretos / higiene); la síntesis final pasa por LLM. **No** sustituye SAST ni pentest.
+- **Requisitos:** `OPENAI_API_KEY` (mismo pipeline que otros modos con informe markdown).
+- **Multi-root:** igual que el resto de modos de código: usar `POST /projects/:projectId/analyze` con `idePath` o `repositoryId` cuando el proyecto tenga varios repos.
 
 ---
 

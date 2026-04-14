@@ -94,3 +94,86 @@ export function resolveRepoIdForAbsolutePath(
     match: `${best.repo.projectKey}/${best.repo.repoSlug}`,
   };
 }
+
+// --- Resolución discriminada (empates → ambiguous) para modification-plan / MCP ---
+
+/** Metadatos mínimos para heurística sobre ruta de workspace. */
+export interface RepoPathMatchInput {
+  readonly repositoryId: string;
+  readonly projectKey: string;
+  readonly repoSlug: string;
+}
+
+/** Resultado de {@link resolveRepositoryIdForWorkspacePath}. */
+export type WorkspacePathRepoResolution =
+  | { readonly kind: 'unique'; readonly repositoryId: string; readonly label: string }
+  | { readonly kind: 'none' }
+  | {
+      readonly kind: 'ambiguous';
+      readonly candidates: ReadonlyArray<{ readonly repositoryId: string; readonly label: string }>;
+    };
+
+export function normalizeWorkspacePath(p: string): string {
+  const s = p.trim().replace(/\\/g, '/');
+  if (s.length > 1 && s.endsWith('/')) return s.slice(0, -1);
+  return s;
+}
+
+export function scoreRepoPathMatch(normalizedPath: string, repo: RepoPathMatchInput): number {
+  const slug = repo.repoSlug.trim();
+  const key = repo.projectKey.trim();
+  if (!slug) return 0;
+
+  const slugSeg = `/${slug}/`;
+  const slugEnd = `/${slug}`;
+  const composite = key ? `${key}/${slug}` : slug;
+  const compositeSeg = `/${composite}/`;
+  const compositeEnd = `/${composite}`;
+
+  let best = 0;
+  if (normalizedPath.includes(compositeSeg) || normalizedPath.endsWith(compositeEnd)) {
+    best = Math.max(best, composite.length + 2);
+  }
+  if (normalizedPath.includes(slugSeg) || normalizedPath.endsWith(slugEnd)) {
+    best = Math.max(best, slug.length + 2);
+  }
+  return best;
+}
+
+/**
+ * Infiere un único repositoryId desde una ruta de IDE; si empatan varios repos, `ambiguous`.
+ */
+export function resolveRepositoryIdForWorkspacePath(
+  absolutePath: string,
+  repos: readonly RepoPathMatchInput[],
+): WorkspacePathRepoResolution {
+  if (!absolutePath?.trim() || repos.length === 0) {
+    return { kind: 'none' };
+  }
+  const pathNorm = normalizeWorkspacePath(absolutePath);
+
+  const scored = repos.map((r) => ({
+    repo: r,
+    score: scoreRepoPathMatch(pathNorm, r),
+    label: `${r.projectKey}/${r.repoSlug}`,
+  }));
+
+  const matched = scored.filter((s) => s.score > 0);
+  if (matched.length === 0) {
+    return { kind: 'none' };
+  }
+  const maxScore = Math.max(...matched.map((m) => m.score));
+  const top = matched.filter((m) => m.score === maxScore);
+  if (top.length === 1) {
+    const t = top[0]!;
+    return {
+      kind: 'unique',
+      repositoryId: t.repo.repositoryId,
+      label: t.label,
+    };
+  }
+  return {
+    kind: 'ambiguous',
+    candidates: top.map((t) => ({ repositoryId: t.repo.repositoryId, label: t.label })),
+  };
+}

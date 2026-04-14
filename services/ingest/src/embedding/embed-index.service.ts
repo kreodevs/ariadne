@@ -1,5 +1,5 @@
 /**
- * @fileoverview Indexa embeddings en Function, Component y Document (chunks .md) para RAG.
+ * @fileoverview Indexa embeddings en Function, Component, Document (chunks legado), StorybookDoc y MarkdownDoc para RAG.
  * Requiere EMBEDDING_PROVIDER + FalkorDB con soporte vectorial (`vecf32`, CREATE VECTOR INDEX), p. ej. FalkorDB 4.x según docs.
  * Si ves `Unknown function 'vecf32'`, actualiza FalkorDB o desactiva embed post-sync con SYNC_SKIP_EMBED_INDEX=1.
  */
@@ -7,6 +7,7 @@ import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { FalkorDB } from 'falkordb';
+import { FALKOR_EMBEDDABLE_NODE_LABELS } from 'ariadne-common';
 import {
   getFalkorConfig,
   effectiveShardMode,
@@ -204,21 +205,6 @@ export class EmbedIndexService {
       }
     }
 
-    try {
-      await graph.query(
-        `CREATE VECTOR INDEX FOR (n:Function) ON (n.${prop}) OPTIONS {dimension: ${dim}, similarityFunction: 'cosine'}`,
-      );
-    } catch {
-      /* index may already exist */
-    }
-    try {
-      await graph.query(
-        `CREATE VECTOR INDEX FOR (n:Component) ON (n.${prop}) OPTIONS {dimension: ${dim}, similarityFunction: 'cosine'}`,
-      );
-    } catch {
-      /* index may already exist */
-    }
-
     const docRes = (await graph.query(
       `MATCH (d:Document) WHERE d.projectId = $projectId AND d.chunkText IS NOT NULL AND trim(d.chunkText) <> '' RETURN d.path AS path, d.chunkIndex AS chunkIndex, d.heading AS heading, d.chunkText AS chunkText`,
       { params: { projectId: falkorProjectId } },
@@ -251,12 +237,73 @@ export class EmbedIndexService {
       }
     }
 
-    try {
-      await graph.query(
-        `CREATE VECTOR INDEX FOR (n:Document) ON (n.${prop}) OPTIONS {dimension: ${dim}, similarityFunction: 'cosine'}`,
-      );
-    } catch {
-      /* index may already exist */
+    const sbRes = (await graph.query(
+      `MATCH (n:StorybookDoc) WHERE n.projectId = $projectId AND n.repoId = $repoId AND n.documentationText IS NOT NULL AND trim(n.documentationText) <> '' RETURN n.sourcePath AS path, n.title AS title, n.documentationText AS documentationText`,
+      { params: { projectId: falkorProjectId, repoId: repositoryIdForFileContent } },
+    )) as { data?: unknown[] };
+    const sbRows = sbRes.data ?? [];
+    for (const row of sbRows) {
+      const r = rowAsRecord(row, ['path', 'title', 'documentationText']);
+      const path = String(r.path ?? '');
+      const title = r.title != null ? String(r.title) : '';
+      const docText = String(r.documentationText ?? '');
+      const text = [title, path, docText].filter(Boolean).join('\n').slice(0, 12000);
+      if (text.length < 20) continue;
+      try {
+        const vec = await embed.embed(text);
+        await graph.query(
+          `MATCH (n:StorybookDoc {sourcePath: $path, projectId: $projectId, repoId: $repoId}) SET n.${prop} = vecf32($vec)`,
+          { params: { path, projectId: falkorProjectId, repoId: repositoryIdForFileContent, vec } },
+        );
+        indexed++;
+      } catch (e) {
+        errors++;
+        if (errors <= 3) {
+          console.warn(
+            `[embed-index] StorybookDoc ${path} failed:`,
+            e instanceof Error ? e.message : e,
+          );
+        }
+      }
+    }
+
+    const mdDocRes = (await graph.query(
+      `MATCH (n:MarkdownDoc) WHERE n.projectId = $projectId AND n.repoId = $repoId AND n.documentationText IS NOT NULL AND trim(n.documentationText) <> '' RETURN n.sourcePath AS path, n.title AS title, n.documentationText AS documentationText`,
+      { params: { projectId: falkorProjectId, repoId: repositoryIdForFileContent } },
+    )) as { data?: unknown[] };
+    for (const row of mdDocRes.data ?? []) {
+      const r = rowAsRecord(row, ['path', 'title', 'documentationText']);
+      const path = String(r.path ?? '');
+      const title = r.title != null ? String(r.title) : '';
+      const docText = String(r.documentationText ?? '');
+      const text = [title, path, docText].filter(Boolean).join('\n').slice(0, 12000);
+      if (text.length < 20) continue;
+      try {
+        const vec = await embed.embed(text);
+        await graph.query(
+          `MATCH (n:MarkdownDoc {sourcePath: $path, projectId: $projectId, repoId: $repoId}) SET n.${prop} = vecf32($vec)`,
+          { params: { path, projectId: falkorProjectId, repoId: repositoryIdForFileContent, vec } },
+        );
+        indexed++;
+      } catch (e) {
+        errors++;
+        if (errors <= 3) {
+          console.warn(
+            `[embed-index] MarkdownDoc ${path} failed:`,
+            e instanceof Error ? e.message : e,
+          );
+        }
+      }
+    }
+
+    for (const label of FALKOR_EMBEDDABLE_NODE_LABELS) {
+      try {
+        await graph.query(
+          `CREATE VECTOR INDEX FOR (n:${label}) ON (n.${prop}) OPTIONS {dimension: ${dim}, similarityFunction: 'cosine'}`,
+        );
+      } catch {
+        /* index may already exist */
+      }
     }
 
     return { indexed, errors };

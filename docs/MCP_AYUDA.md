@@ -69,7 +69,7 @@ Reiniciar Cursor. Listo.
 | `get_file_content` | Contenido de un archivo (Bitbucket/GitHub, requiere INGEST_URL) |
 | `validate_before_edit` | **Obligatorio** antes de editar: impacto + contrato en un solo llamado |
 | `semantic_search` | Búsqueda por palabra clave en componentes, funciones, archivos |
-| `get_project_analysis` | Diagnóstico, duplicados, reingeniería, código muerto |
+| `get_project_analysis` | Deuda técnica, duplicados, reingeniería, código muerto, **seguridad** (heurística). Multi-root: `currentFilePath` ayuda a resolver el repo vía ingest |
 | `ask_codebase` | Preguntas en NL sobre el código. Opcional **`scope`** (`repoIds`, `includePathPrefixes`, `excludePathGlobs`) y **`twoPhase`**; ingest: JSON de retrieval + `CHAT_TWO_PHASE`. |
 | `get_definitions` | Origen exacto de clase/función (archivo, líneas) |
 | `get_references` | Todos los lugares donde se usa un símbolo |
@@ -150,7 +150,8 @@ Ejemplos de qué pedirle a la IA en el chat para que use las herramientas del MC
 | *¿Qué importa y exporta el archivo `Dashboard.tsx`?* | `get_import_graph` |
 | *Muéstrame el contenido del archivo `api/cotizaciones.ts`* | `get_file_content` |
 | *Busca en el código algo relacionado con "validación de precios"* | `semantic_search` |
-| *Haz un diagnóstico de deuda técnica del proyecto* | `get_project_analysis` (modo diagnostico) |
+| *Haz un diagnóstico de deuda técnica del proyecto* | `get_project_analysis` (modo `diagnostico`) |
+| *Auditoría de secretos / higiene en el código indexado* | `get_project_analysis` (modo `seguridad`) |
 | *Explícame cómo funciona el proceso de exportación a Excel en este repo* | `ask_codebase` |
 
 ### Refactorización segura
