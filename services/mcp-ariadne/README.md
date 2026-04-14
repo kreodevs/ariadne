@@ -22,7 +22,7 @@ npm publish
 - **validate_before_edit** — OBLIGATORIO antes de editar: impacto + contrato en un llamado.
 - **semantic_search** — Búsqueda por palabra clave en componentes, funciones y archivos.
 - **ask_codebase** — Preguntas en NL sobre el código; delega al ingest. Argumentos opcionales: **`scope`** (`repoIds`, `includePathPrefixes`, `excludePathGlobs`), **`twoPhase`**. Requiere INGEST_URL y OPENAI_API_KEY.
-- **get_project_analysis** — Diagnóstico, duplicados, reingeniería o código muerto (requiere INGEST_URL).
+- **get_project_analysis** — Diagnóstico, duplicados, reingeniería o código muerto (requiere INGEST_URL). `projectId` puede ser id de **proyecto** o **`roots[].id`** (repo); si es proyecto multi-root, usa **`currentFilePath`** o pasa el id del repo. El MCP llama a `POST /projects/.../analyze` o `POST /repositories/.../analyze` según exista el proyecto en ingest.
 - **get_modification_plan** — Plan quirúrgico vía `POST /projects/:id/modification-plan` (`userDescription`, opcional **`scope`**). `projectId` = proyecto Ariadne o `roots[].id`; en multi-root, preferir el repo objetivo.
 
 ### Refactorización segura (árbol de llamadas)
@@ -46,6 +46,11 @@ npm publish
 - **get_file_context** — Combina contenido + imports + exports. Paso 2: search → get_file_context → validate/apply.
 
 Variables: `FALKORDB_HOST`, `FALKORDB_PORT`, `FALKOR_SHARD_BY_PROJECT`, `FALKOR_SHARD_BY_DOMAIN`, `INGEST_URL` (enrutamiento vía `GET /projects/:id/graph-routing`; herramientas que leen Falkor abren el subgrafo por ruta cuando aplica).
+
+### Resolución multi-root (sin depender solo del cwd)
+
+- **`mcp-scope-enrichment.ts`** — Orden: `.ariadne-project` subiendo directorios desde `currentFilePath` → si hace falta, ingest `GET /projects/:id/resolve-repo-for-path?path=` para acotar el repo → fallback al grafo Falkor como antes.
+- **`ask_codebase`** y **`get_modification_plan`** mezclan en `scope.repoIds` el repo inferido cuando el IDE envía ruta de fichero.
 
 ## Uso (producción / Docker)
 

@@ -35,6 +35,12 @@ export class ProjectsController {
     return { content };
   }
 
+  /** Heurística multi-root: qué `repositories.id` encaja con la ruta local (IDE). */
+  @Get(':id/resolve-repo-for-path')
+  resolveRepoForPath(@Param('id') projectId: string, @Query('path') path: string) {
+    return this.service.resolveRepoForPath(projectId, path?.trim() ?? '');
+  }
+
   @Get(':id')
   findOne(@Param('id') id: string) {
     return this.service.findOne(id);

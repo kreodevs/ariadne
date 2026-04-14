@@ -32,6 +32,8 @@ Microservicio NestJS que reemplaza la ingesta basada en directorio local (chokid
 - `POST /repositories/:id/analyze` — Análisis estructurado. Body: `{ mode: 'diagnostico'|'duplicados'|'reingenieria'|'codigo_muerto'|'seguridad'|... }`. Diagnóstico: top riesgo, antipatrones; Duplicados: embeddings; Reingeniería: plan priorizado; Código muerto: detalle de uso por archivo; **seguridad:** escaneo heurístico de secretos + informe LLM (complementa Full Audit).
 - `GET /repositories/:id/graph-summary` — Conteos y muestras de nodos indexados.
 - `GET /projects/:id/graph-routing` — Metadatos Falkor para MCP/API: `shardMode` (`project` \| `domain`), `domainSegments` (último sync), `graphNodeSoftLimit`. Usado para abrir el subgrafo correcto (`AriadneSpecs:<uuid>:<segmento>`).
+- `GET /projects/:id/resolve-repo-for-path?path=` — Heurística multi-root: devuelve `repoId` candidato desde `projectKey`/`repoSlug` en la ruta.
+- `POST /projects/:id/analyze` — Además de `agents`/`skill`, acepta modos `diagnostico`, `duplicados`, etc. con `idePath` o `repositoryId` opcionales cuando hay varios repos en el proyecto (ver [src/chat/README.md](src/chat/README.md)).
 
 Tras cada sync (normal o resync), se ejecuta automáticamente `embed-index` si hay EMBEDDING_PROVIDER configurado; si no, se ignora sin fallar.
 - `POST /shadow` — Shadow SDD: indexa archivos en un **grafo FalkorDB por sesión** `FalkorSpecsShadow:<shadowSessionId>` (namespace aislado; sin chokidar ni FS). Body: `{ files: [{ path, content }], shadowSessionId?: string }`. Si omites `shadowSessionId`, el servicio genera un UUID y lo devuelve junto con `shadowGraphName`. Para comparar props: `GET /api/graph/compare/:componentName?shadowSessionId=…` (proxificado por la API).

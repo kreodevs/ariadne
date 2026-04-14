@@ -5,6 +5,7 @@ import { Module } from '@nestjs/common';
 import { ChatController } from './chat.controller';
 import { ProjectChatController } from './project-chat.controller';
 import { ChatService } from './chat.service';
+import { AnalyticsService } from './analytics.service';
 import { ChatCypherService } from './chat-cypher.service';
 import { ChatLlmService } from './chat-llm.service';
 import { ChatAntipatternsService } from './chat-antipatterns.service';
@@ -33,6 +34,7 @@ import { ProjectsModule } from '../projects/projects.module';
     ChatHandlersService,
     ChatRetrieverToolsService,
     ChatService,
+    AnalyticsService,
   ],
 })
 /** Módulo del chat con grafo FalkorDB (preguntas en NL, Cypher, análisis). */

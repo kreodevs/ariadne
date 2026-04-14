@@ -18,6 +18,7 @@ import {
   listGraphNamesForProjectRouting,
   type FalkorShardMode,
 } from '../pipeline/falkor';
+import { resolveRepoIdForAbsolutePath } from './path-repo-resolution.util';
 
 export interface ProjectWithRepos {
   id: string;
@@ -92,6 +93,35 @@ export class ProjectsService {
           lastSyncAt: r!.lastSyncAt?.toISOString() ?? null,
         })),
     }));
+  }
+
+  /**
+   * Resuelve qué repositorio del proyecto encaja con una ruta del IDE (heurística multi-root).
+   */
+  async resolveRepoForPath(
+    projectId: string,
+    filePath: string,
+  ): Promise<{ projectId: string; repoId: string | null; score: number; match?: string }> {
+    await this.findOne(projectId);
+    const prs = await this.projectRepoRepo.find({
+      where: { projectId },
+      select: ['repoId'],
+    });
+    const repoIds = prs.map((pr) => pr.repoId);
+    const repositories =
+      repoIds.length > 0
+        ? await this.repoRepo.find({
+            where: { id: In(repoIds) },
+            select: ['id', 'projectKey', 'repoSlug'],
+          })
+        : [];
+    const resolution = resolveRepoIdForAbsolutePath(filePath, repositories);
+    return {
+      projectId,
+      repoId: resolution.repoId,
+      score: resolution.score,
+      match: resolution.match,
+    };
   }
 
   /** Metadatos de enrutamiento Falkor (MCP/API): modo mono vs dominio y segmentos conocidos. */

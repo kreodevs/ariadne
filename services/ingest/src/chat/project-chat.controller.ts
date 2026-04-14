@@ -1,30 +1,63 @@
 /**
  * @fileoverview Rutas de chat/análisis por projectId (multi-root). Delega en ChatService.
  */
-import { Body, Controller, InternalServerErrorException, Post, Param } from '@nestjs/common';
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  HttpException,
+  InternalServerErrorException,
+  Post,
+  Param,
+} from '@nestjs/common';
 import {
   ChatService,
+  type AnalyzeMode,
   type ChatRequest,
   type ChatResponse,
   type ChatScope,
   type ModificationPlanResult,
   type AnalyzeResult,
 } from './chat.service';
+import { AnalyticsService } from './analytics.service';
 
 @Controller('projects')
 export class ProjectChatController {
-  constructor(private readonly chatService: ChatService) {}
+  constructor(
+    private readonly chatService: ChatService,
+    private readonly analyticsService: AnalyticsService,
+  ) {}
 
-  /** Análisis por proyecto: AGENTS.md y SKILL.md (formato markdown para el codebase). */
+  /**
+   * Análisis por proyecto:
+   * - `mode`: `agents` | `skill` → AGENTS.md / SKILL.md (comportamiento previo).
+   * - `mode`: `diagnostico` | `duplicados` | … → resuelve `repositoryId` (mono-root, o multi-root con `idePath` / `repositoryId`) y delega en el mismo pipeline que `POST /repositories/:id/analyze`.
+   */
   @Post(':projectId/analyze')
   async analyze(
     @Param('projectId') projectId: string,
-    @Body() body: { mode?: 'agents' | 'skill' },
+    @Body()
+    body: {
+      mode?: AnalyzeMode;
+      idePath?: string;
+      repositoryId?: string;
+    },
   ): Promise<AnalyzeResult> {
-    const mode = (body?.mode ?? 'agents') as 'agents' | 'skill';
+    const mode = (body?.mode ?? 'agents') as AnalyzeMode;
     try {
-      return await this.chatService.analyzeByProject(projectId, mode);
+      if (mode === 'agents' || mode === 'skill') {
+        return await this.chatService.analyzeByProject(projectId, mode);
+      }
+      if (!this.analyticsService.isCodeAnalysisMode(mode)) {
+        throw new BadRequestException(`Modo de análisis no soportado en esta ruta: ${String(mode)}`);
+      }
+      return await this.analyticsService.analyzeByProjectId(projectId, mode, {
+        idePath: body?.idePath,
+        repositoryId: body?.repositoryId,
+      });
     } catch (err) {
+      if (err instanceof BadRequestException) throw err;
+      if (err instanceof HttpException) throw err;
       const msg = err instanceof Error ? err.message : String(err);
       const hint =
         msg.includes('OPENAI_API_KEY') ? ' Configura OPENAI_API_KEY en el servidor.' :

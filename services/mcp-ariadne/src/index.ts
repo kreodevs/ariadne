@@ -11,7 +11,14 @@ import { ListToolsRequestSchema, CallToolRequestSchema } from "@modelcontextprot
 import { isProjectShardingEnabled } from "ariadne-common";
 import { getGraph, closeFalkor, forEachProjectShardGraph } from "./falkor.js";
 import { getRedis, closeRedis } from "./redis.js";
-import { loadAriadneProjectConfig, resolveAbsolutePath } from "./utils.js";
+import { loadAriadneProjectConfig, loadAriadneProjectConfigNearFile, resolveAbsolutePath } from "./utils.js";
+import {
+  augmentScopeWithInferredRepo,
+  fetchResolveRepoForPath,
+  findBestProjectRepoForPathFromIngest,
+  ingestProjectExists,
+  toAbsoluteIdePath,
+} from "./mcp-scope-enrichment.js";
 
 const MCP_PATH = "/mcp";
 
@@ -41,7 +48,7 @@ Si existe \`.ariadne-project\` en la raíz del workspace, **léelo primero** y u
 
 Formato: \`{ "projectId": "uuid" }\`
 
-Si no hay .ariadne-project: ejecuta \`list_known_projects\` y usa el \`id\` que coincida con el proyecto del usuario. Nunca inventes ni asumas IDs.`;
+Si no hay .ariadne-project: el servidor puede inferir el proyecto vía ingest (heurística \`projectKey\`/\`repoSlug\` en la ruta del IDE) o vía el grafo Falkor. Ejecuta \`list_known_projects\` cuando necesites elegir explícitamente. Nunca inventes ni asumas IDs.`;
 
 /** Crea un MCP Server configurado. Stateless: un Server+Transport por request evita "Server already initialized". */
 function createMcpServer(): Server {
@@ -187,18 +194,27 @@ function createMcpServer(): Server {
     {
       name: "get_project_analysis",
       description:
-        "Obtiene diagnóstico de deuda técnica, código duplicado, recomendaciones de reingeniería o auditoría heurística de seguridad (secretos). Requiere INGEST_URL. Duplicados requiere embed-index previo.",
+        "Obtiene diagnóstico de deuda técnica, código duplicado, recomendaciones de reingeniería o auditoría heurística de seguridad (secretos). Requiere INGEST_URL. Duplicados requiere embed-index previo. `projectId` puede ser el id del proyecto Ariadne o `roots[].id` (repo); si es proyecto multi-root, usa `currentFilePath` para resolver el repo o pasa el id del repo.",
       inputSchema: {
         type: "object" as const,
         properties: {
-          projectId: { type: "string", description: "ID del proyecto (list_known_projects)" },
+          projectId: {
+            type: "string",
+            description:
+              "ID de proyecto Ariadne o de repositorio (list_known_projects). Si solo hay currentFilePath, se infiere el proyecto.",
+          },
+          currentFilePath: {
+            type: "string",
+            description:
+              "Ruta del archivo en el IDE (opcional). Multi-root: necesaria si projectId es el proyecto y hay varios roots.",
+          },
           mode: {
             type: "string",
             description: "diagnostico | duplicados | reingenieria | codigo_muerto | seguridad (default: diagnostico)",
             enum: ["diagnostico", "duplicados", "reingenieria", "codigo_muerto", "seguridad"],
           },
         },
-        required: ["projectId"],
+        required: [],
         additionalProperties: false,
       },
     },
@@ -788,6 +804,14 @@ async function applyShardingInference(
 ): Promise<string | undefined> {
   if (explicitProjectId) return explicitProjectId;
   if (!currentFilePath) return undefined;
+
+  const cfg = loadAriadneProjectConfigNearFile(currentFilePath);
+  if (cfg?.projectId?.trim()) return cfg.projectId.trim();
+
+  const abs = toAbsoluteIdePath(currentFilePath);
+  const fromIngest = await findBestProjectRepoForPathFromIngest(abs);
+  if (fromIngest) return fromIngest.projectId;
+
   if (isProjectShardingEnabled()) {
     const fromShards = await inferProjectIdWhenSharded(currentFilePath);
     if (fromShards) return fromShards;
@@ -1542,26 +1566,43 @@ async function fetchFileFromIngest(
   }
 
   if (name === "get_project_analysis") {
-    const projectId = (args?.projectId as string) ?? "";
+    let projectOrRepoId = (args?.projectId as string | undefined)?.trim() ?? "";
+    const currentFilePath = args?.currentFilePath as string | undefined;
     const mode = ((args?.mode as string) ?? "diagnostico") as
       | "diagnostico"
       | "duplicados"
       | "reingenieria"
       | "codigo_muerto"
       | "seguridad";
-    if (!projectId) {
+    if (!projectOrRepoId && currentFilePath) {
+      projectOrRepoId = (await applyShardingInference(undefined, currentFilePath)) ?? "";
+    }
+    if (!projectOrRepoId) {
       return {
-        content: [{ type: "text", text: "**Error:** Se requiere `projectId` (list_known_projects)." }],
+        content: [
+          {
+            type: "text",
+            text: "**Error:** Se requiere `projectId` o `currentFilePath` (list_known_projects / inferencia).",
+          },
+        ],
         isError: true,
       };
     }
     const ingestUrl = process.env.INGEST_URL ?? process.env.ARIADNESPEC_INGEST_URL ?? "http://localhost:3002";
-    const url = `${ingestUrl.replace(/\/$/, "")}/repositories/${projectId}/analyze`;
+    const base = ingestUrl.replace(/\/$/, "");
+    const isProject = await ingestProjectExists(projectOrRepoId);
+    const idePath = currentFilePath?.trim() ? toAbsoluteIdePath(currentFilePath) : undefined;
+    const url = isProject
+      ? `${base}/projects/${encodeURIComponent(projectOrRepoId)}/analyze`
+      : `${base}/repositories/${encodeURIComponent(projectOrRepoId)}/analyze`;
+    const body = isProject
+      ? { mode, ...(idePath ? { idePath } : {}) }
+      : { mode };
     try {
       const res = await fetch(url, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ mode }),
+        body: JSON.stringify(body),
       });
       if (!res.ok) {
         const msg = await res.text();
@@ -1578,14 +1619,19 @@ async function fetchFileFromIngest(
         data.mode === "codigo_muerto"
           ? "[Presentar este análisis tal cual, sin reformatear ni añadir categorías. Es la clasificación oficial.]\n\n"
           : "";
-          
+
       let summary = data.summary;
-      const config = loadAriadneProjectConfig(process.cwd());
+      let idForPathPrefixes = projectOrRepoId;
+      if (isProject && idePath) {
+        const resolved = await fetchResolveRepoForPath(projectOrRepoId, idePath);
+        if (resolved?.repoId) idForPathPrefixes = resolved.repoId;
+      }
+      const config = loadAriadneProjectConfigNearFile(currentFilePath) ?? loadAriadneProjectConfig(process.cwd());
       if (config) {
         summary = summary.replace(/`([^`\n]+\.[a-zA-Z0-9]{1,4})`/g, (match, p1) => {
-          if (p1.includes('/') || p1.includes('\\')) {
-            const abs = resolveAbsolutePath(p1, projectId, config);
-            if (abs && abs.startsWith('/')) { // Solo enlazamos si resolvió absoluto
+          if (p1.includes("/") || p1.includes("\\")) {
+            const abs = resolveAbsolutePath(p1, idForPathPrefixes, config);
+            if (abs && abs.startsWith("/")) {
               return `[${match}](file://${abs})`;
             }
           }
@@ -1619,15 +1665,18 @@ async function fetchFileFromIngest(
     const ingestUrl = process.env.INGEST_URL ?? process.env.ARIADNESPEC_INGEST_URL ?? "http://localhost:3002";
     const base = ingestUrl.replace(/\/$/, "");
     const scopeRaw = args?.scope;
-    const scope =
+    let scope: Record<string, unknown> | undefined =
       scopeRaw && typeof scopeRaw === "object" && !Array.isArray(scopeRaw)
         ? (scopeRaw as Record<string, unknown>)
         : undefined;
+    if (projectId && currentFilePath) {
+      scope = await augmentScopeWithInferredRepo(projectId, currentFilePath, scope);
+    }
     const rm = args?.responseMode as string | undefined;
     const responseMode = rm === "evidence_first" ? "evidence_first" : undefined;
     const body = JSON.stringify({
       message: question,
-      ...(scope ? { scope } : {}),
+      ...(scope && Object.keys(scope).length > 0 ? { scope } : {}),
       ...(typeof args?.twoPhase === "boolean" ? { twoPhase: args.twoPhase } : {}),
       ...(responseMode ? { responseMode } : {}),
     });
@@ -1668,15 +1717,21 @@ async function fetchFileFromIngest(
     const ingestUrl = process.env.INGEST_URL ?? process.env.ARIADNESPEC_INGEST_URL ?? "http://localhost:3002";
     const url = `${ingestUrl.replace(/\/$/, "")}/projects/${projectId}/modification-plan`;
     const scopeRaw = args?.scope;
-    const scope =
+    let scope: Record<string, unknown> | undefined =
       scopeRaw && typeof scopeRaw === "object" && !Array.isArray(scopeRaw)
-        ? scopeRaw
+        ? (scopeRaw as Record<string, unknown>)
         : undefined;
+    if (projectId && currentFilePath) {
+      scope = await augmentScopeWithInferredRepo(projectId, currentFilePath, scope);
+    }
     try {
       const res = await fetch(url, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ userDescription, ...(scope ? { scope } : {}) }),
+        body: JSON.stringify({
+          userDescription,
+          ...(scope && Object.keys(scope).length > 0 ? { scope } : {}),
+        }),
       });
       if (!res.ok) {
         const msg = await res.text();

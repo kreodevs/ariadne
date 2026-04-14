@@ -13,7 +13,7 @@ export interface AriadneProjectConfig {
  */
 export function loadAriadneProjectConfig(currentDir?: string): AriadneProjectConfig | null {
   let startDir = currentDir || process.cwd();
-  
+
   while (startDir !== path.parse(startDir).root) {
     const configPath = path.join(startDir, ".ariadne-project");
     if (fs.existsSync(configPath)) {
@@ -28,6 +28,15 @@ export function loadAriadneProjectConfig(currentDir?: string): AriadneProjectCon
     startDir = path.dirname(startDir);
   }
   return null;
+}
+
+/**
+ * Carga `.ariadne-project` subiendo directorios desde el fichero abierto en el IDE (no solo cwd).
+ */
+export function loadAriadneProjectConfigNearFile(filePath: string | undefined | null): AriadneProjectConfig | null {
+  if (!filePath?.trim()) return loadAriadneProjectConfig();
+  const dir = path.dirname(path.resolve(filePath));
+  return loadAriadneProjectConfig(dir);
 }
 
 /**

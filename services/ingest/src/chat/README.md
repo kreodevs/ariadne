@@ -4,6 +4,7 @@ Arquitectura de agentes: **Coordinator** (clasificación LLM) → **CodeAnalysis
 
 ## Módulos de soporte (refactor por complejidad)
 
+- **`analytics.service.ts`** — Fachada Fase 6: `resolveRepositoryIdForAnalysis` (proyecto + `idePath` / `repositoryId`) y `analyzeByProjectId` → `ChatService.analyze`.
 - **`chat.constants.ts`** — SCHEMA, EXAMPLES, GENERIC_FUNCTION_NAMES, MAX_*, SEARCH_SYNONYMS, FULL_AUDIT_SECRET_PATTERNS, EXPLORER_TOOLS_ALL, getExplorerToolsKnowledge(), truncateAntipatterns()
 - **`chat-analysis.utils.ts`** — Funciones puras: computeRiskScore, groupDuplicates, formatDuplicatesSummary, findImportCycles, normalizeOptions, extractSearchTerms, getSearchTermsWithSynonyms
 - **`chat-cypher.service.ts`** — Ejecución Cypher y formateo: executeCypher, executeCypherRaw(cypher, shardProjectId?), formatResultsHuman, getGraphSummary (inyectado en ChatService). Con `FALKOR_SHARD_BY_PROJECT`, los shards usan `graphNameForProject(projectId)`.
@@ -39,8 +40,10 @@ Sin `ORCHESTRATOR_URL`, el pipeline unificado legacy sigue en este servicio (`ru
 - **`POST /repositories/:id/chat`** — Body: `{ message, history?, scope?, twoPhase?, responseMode?, threadId? }` (`scope`: `repoIds`, `includePathPrefixes`, `excludePathGlobs`; `twoPhase` alinea con `CHAT_TWO_PHASE` en ingest). **`responseMode: 'evidence_first'`** — fuerza two-phase, amplía el recorte de contexto hacia el sintetizador (`CHAT_EVIDENCE_FIRST_MAX_CHARS`, default 18000) y aplica prompt SDD (## Evidencia primero, listados anclados). Expuesto en MCP `ask_codebase` para The Forge legacy. Con orchestrator, `threadId` opcional se usa en el servicio remoto para Redis.
 - **`POST /projects/:projectId/chat`** — Igual body (multi-root)
 - **`POST .../modification-plan`** — Body: `{ userDescription, scope? }`
-- **`POST /repositories/:id/analyze`** — Body: `{ mode: 'diagnostico'|'duplicados'|'reingenieria'|'codigo_muerto'|'seguridad'|'agents'|'skill' }`
-- **`POST /projects/:projectId/analyze`** — Body: `{ mode: 'agents'|'skill' }` — Genera AGENTS.md y SKILL.md por proyecto (multi-root)
+- **`POST /repositories/:id/analyze`** — Body: `{ mode: 'diagnostico'|'duplicados'|'reingenieria'|'codigo_muerto'|'seguridad'|'agents'|'skill' }`. **`:id` = UUID del repositorio** (mismo grafo/embeddings que el sync).
+- **`POST /projects/:projectId/analyze`** — Body:
+  - `{ mode: 'agents'|'skill' }` — AGENTS.md / SKILL.md (multi-root; comportamiento previo).
+  - `{ mode: 'diagnostico'|'duplicados'|… , idePath?: string, repositoryId?: string }` — Resolución multi-root vía **`AnalyticsService`**: mono-repo → único root; varios roots → **`repositoryId`** (`roots[].id`) o **`idePath`** (ruta absoluta/local del IDE) para inferir el repo; luego mismo pipeline que `POST /repositories/:id/analyze`.
 - **`GET /repositories/:id/graph-summary`** — Query: `full=1` (muestras completas), `repoScoped=1` (solo nodos con `repoId` = `:id` dentro del proyecto Falkor). Útil en multi-root para listar componentes de un repo sin mezclar el resto. El ingest usa `repoScoped` de forma interna en diagnóstico, overview, herramienta `get_graph_summary` (chat/ReAct y retriever) y el plan de modificación acota por `repositoryId` salvo `scope.repoIds` explícito.
 
 **Requisitos:** `OPENAI_API_KEY`, `CHAT_MODEL` opcional (default `gpt-4o-mini`).
