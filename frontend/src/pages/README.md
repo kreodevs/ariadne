@@ -11,7 +11,7 @@ Vistas principales de la aplicación Ariadne.
 
 ## Repositorios
 
-- **RepoList.tsx** — Lista de todos los repositorios.
+- **RepoList.tsx** — Lista de todos los repositorios; acciones **Ver**, **Editar**, **Resync** (reindexación completa sin entrar al detalle), **Eliminar**.
 - **RepoDetail.tsx** — Detalle de un repo (sync, jobs, análisis).
 - **RepoChat.tsx** — Chat por repositorio + panel de análisis (diagnóstico, duplicados, reingeniería, código muerto, **seguridad** heurística, AGENTS, SKILL, Full Audit). **Alcance opcional** y badges de caché / foco vía `reportMeta`. Ruta: `/repos/:id/chat`.
 - **RepoIndex.tsx** — Navegador del índice Falkor del repo (`GET graph-summary` con `full=1` y **`repoScoped=1`** para no mezclar nodos de otros roots en proyectos multi-root).

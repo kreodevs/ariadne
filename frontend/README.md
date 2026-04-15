@@ -37,6 +37,7 @@ Proyecto en la raíz del repo (`frontend/`), independiente de `services/`. UI pa
 - `/repos/:id/chat` — Layout split: **izquierda** botones Diagnóstico/Duplicados/Reingeniería y resultados (`POST /repositories/:id/analyze`); **derecha** chat NL→Cypher (`POST /repositories/:id/chat`). Requiere `OPENAI_API_KEY`. Spinner durante carga; errores visibles; markdown en respuestas.
 - `/repos/:id/index` — Índice completo: **izquierda** File, Component, Function, Hook, **Dominio** (conceptos de dominio), etc.; **derecha** código del archivo al hacer click. Usa `GET /repositories/:id/graph-summary?full=1` y `GET /repositories/:id/file?path=`.
 - `/repos/:id/edit` — Editar repo: credencial, branch por defecto y webhook secret (Bitbucket). Misma estructura que alta con Provider/Workspace/Repo en solo lectura (`PATCH /repositories/:id`).
+- Lista `/repos`: **Resync** por fila (`POST /repositories/:id/resync`), sin abrir el detalle.
 - Eliminar repo: botón en lista y detalle (`DELETE /repositories/:id`), con confirmación.
 - `/credentials` — Lista de credenciales (tokens, app passwords, webhook secrets) cifradas en BD.
 - `/credentials/new` — Alta de credencial.

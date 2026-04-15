@@ -44,6 +44,7 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.0.0/).
   - Docs: `docs/plan-analyze-layer-cache.md`, `docs/diagnostico-layer-dependencies.md` (caché analyze / capas diagnóstico en ingest).  
   - CI: `.github/workflows/ci-ingest-mcp.yml` (Vitest ingest + build MCP).  
   - Frontend **RepoDetail**: `JobAnalysisModal` usa `api.getJobAnalysisByProject` cuando el repo tiene `projectId` / `projectIds`.
+  - Frontend **RepoList** (`/repos`): botón **Resync** por fila (`POST /repositories/:id/resync`) sin entrar al detalle.
 
 ## [1.2.0] — 2026-04-14
 

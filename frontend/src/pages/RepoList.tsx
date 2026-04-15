@@ -1,5 +1,5 @@
 /**
- * @fileoverview Lista de repositorios con tabla, link a detalle y eliminar.
+ * @fileoverview Lista de repositorios con tabla: Ver, Editar, Resync (reindexación completa), Eliminar.
  */
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
@@ -25,6 +25,8 @@ export function RepoList() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [resyncingId, setResyncingId] = useState<string | null>(null);
+  const [feedback, setFeedback] = useState<string | null>(null);
 
   /** Carga GET /repositories y actualiza estado. */
   const load = () => {
@@ -38,6 +40,33 @@ export function RepoList() {
   useEffect(() => {
     load();
   }, []);
+
+  /** Re-sincroniza desde cero (mismo endpoint que en detalle del repo). */
+  const onResync = (r: Repository) => {
+    if (
+      !window.confirm(
+        `¿Re-sincronizar ${r.projectKey}/${r.repoSlug}? Se borrará el índice actual y se volverá a indexar desde cero.`,
+      )
+    ) {
+      return;
+    }
+    setResyncingId(r.id);
+    api
+      .triggerResync(r.id)
+      .then((res) => {
+        setError(null);
+        const n = (res as { deletedNodes?: number }).deletedNodes;
+        setFeedback(
+          n != null
+            ? `Resync encolado. Se borraron ${n} nodos del grafo; la reindexación corre en segundo plano.`
+            : 'Resync encolado. La reindexación corre en segundo plano.',
+        );
+        setTimeout(() => setFeedback(null), 6000);
+        load();
+      })
+      .catch((e) => setError(e.message))
+      .finally(() => setResyncingId(null));
+  };
 
   /** Elimina repo con DELETE /repositories/:id tras confirmar; recarga la lista. */
   const onDelete = (r: Repository) => {
@@ -71,6 +100,13 @@ export function RepoList() {
               ))}
             </CardContent>
           </Card>
+        )}
+
+        {feedback && (
+          <Alert>
+            <AlertTitle>Listo</AlertTitle>
+            <AlertDescription>{feedback}</AlertDescription>
+          </Alert>
         )}
 
         {error && (
@@ -112,7 +148,7 @@ export function RepoList() {
                       <TableHead>Status</TableHead>
                       <TableHead>Project ID (MCP)</TableHead>
                       <TableHead>Último sync</TableHead>
-                      <TableHead className="w-[200px]"></TableHead>
+                      <TableHead className="min-w-[280px]"></TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -153,10 +189,18 @@ export function RepoList() {
                               <Link to={`/repos/${r.id}/edit`}>Editar</Link>
                             </Button>
                             <Button
+                              variant="outline"
+                              size="sm"
+                              disabled={resyncingId === r.id || deletingId === r.id}
+                              onClick={() => onResync(r)}
+                            >
+                              {resyncingId === r.id ? 'Resync…' : 'Resync'}
+                            </Button>
+                            <Button
                               variant="ghost"
                               size="sm"
                               className="text-destructive hover:text-destructive"
-                              disabled={deletingId === r.id}
+                              disabled={deletingId === r.id || resyncingId === r.id}
                               onClick={() => onDelete(r)}
                             >
                               {deletingId === r.id ? '...' : 'Eliminar'}
