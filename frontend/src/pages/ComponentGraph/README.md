@@ -7,6 +7,7 @@ Vista **Explorador de grafo** (`/graph-explorer`):
 
 - **Alcance**: *Proyectos* (shard completo), *Repos por proyecto* (`graph-summary?repoScoped=1`) y *Repositorios aislados*.
 - **Componente**: `graph-summary?full=1` para poblar el desplegable (proyecto agregado: una petición; repo concreto: `repoScoped=1`). Fallback en ingest si faltan aristas File→Component.
+- **Errores de validación** (`Elige un componente`, etc.): al cambiar el componente en el `Select` o la profundidad se limpia el mensaje; antes podía quedar el banner rojo tras un intento fallido aunque ya hubiera nombre elegido.
 
 ## Visualización
 

@@ -478,6 +478,7 @@ export function ComponentGraphExplorer() {
         if (want && list.includes(want)) {
           setName(want);
           urlComponentRef.current = null;
+          setErr(null);
         }
       } catch (e) {
         if (!cancel) {
@@ -668,6 +669,7 @@ export function ComponentGraphExplorer() {
               value={name.trim() || undefined}
               onValueChange={(v) => {
                 setName(v);
+                setErr(null);
                 setNodes([]);
                 setEdges([]);
                 setMeta(null);
@@ -706,7 +708,10 @@ export function ComponentGraphExplorer() {
               min={1}
               max={10}
               value={depth}
-              onChange={(e) => setDepth(e.target.value)}
+              onChange={(e) => {
+                setDepth(e.target.value);
+                setErr(null);
+              }}
               className="w-20"
             />
           </div>
