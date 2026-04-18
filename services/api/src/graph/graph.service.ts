@@ -376,7 +376,25 @@ export class GraphService {
         `MATCH (n {name: $nodeName${matchProj}})<-[:CALLS|RENDERS*]-(dependent) RETURN dependent.name AS name, labels(dependent) AS labels`,
         { params },
       )) as FalkorResult;
-      return this.mapImpactQueryRows(result);
+      const rows = this.mapImpactQueryRows(result);
+      if (!projectId) return rows;
+      /** Consumidores vía IMPORTS entre archivos (módulos API / utils sin aristas RENDERS hacia otros Component). */
+      const importCons = (await graph.query(
+        `MATCH (c:Component {name: $nodeName, projectId: $projectId})<-[:CONTAINS]-(f:File {projectId: $projectId}) ` +
+          `MATCH (f2:File {projectId: $projectId})-[:IMPORTS]->(f) ` +
+          `MATCH (f2)-[:CONTAINS]->(consumer:Component {projectId: $projectId}) ` +
+          `RETURN consumer.name AS name, labels(consumer) AS labels`,
+        { params },
+      )) as FalkorResult;
+      const extra = this.mapImpactQueryRows(importCons);
+      const seen = new Set(rows.map((r) => `${String(r.name)}\0${JSON.stringify(r.labels)}`));
+      for (const r of extra) {
+        const k = `${String(r.name)}\0${JSON.stringify(r.labels)}`;
+        if (seen.has(k)) continue;
+        seen.add(k);
+        rows.push(r);
+      }
+      return rows;
     };
 
     let dependents: { name: unknown; labels: unknown }[];
@@ -512,23 +530,30 @@ export class GraphService {
 
     normalizeComponentGraphFocal(nodes, edges, name, centerId);
 
-    let focalIdForHints: string | null = null;
-    for (const [id, n] of nodes) {
-      if (n.name === name && (n.kind === 'Component' || n.kind === 'Node')) {
-        focalIdForHints = id;
-        break;
+    /** Priorizar el nodo centro del corte Falkor (evita colisión si hay varios nodos con el mismo nombre). */
+    let focalIdForHints: string | null =
+      centerId && nodes.has(centerId) ? centerId : null;
+    if (!focalIdForHints) {
+      for (const [id, n] of nodes) {
+        if (n.name === name && (n.kind === 'Component' || n.kind === 'Node')) {
+          focalIdForHints = id;
+          break;
+        }
       }
     }
     if (!focalIdForHints) focalIdForHints = centerId;
     const dependsOut = focalIdForHints
       ? edges.filter((e) => e.kind === 'depends' && e.source === focalIdForHints).length
       : 0;
+    const legacyInForHints = focalIdForHints
+      ? edges.filter((e) => e.kind === 'legacy_impact' && e.target === focalIdForHints).length
+      : 0;
     const graphHints: GraphComponentHintsDto | undefined =
-      dependsOut === 0 && pid
+      dependsOut === 0 && legacyInForHints === 0 && pid
         ? {
             suggestResync: true,
             messageEs:
-              'Sin aristas depends salientes en Falkor para este foco. Si el chat sí lista RENDERS, confirma projectId/resync del repo; tras indexar rutas React Router, deberían aparecer como RENDERS.',
+              'Sin aristas depends salientes ni consumidores vía CALLS/RENDERS/IMPORTS en Falkor para este foco. Si es módulo API sin JSX, puede ser normal; si esperas uso desde otros archivos, resync y comprueba projectId. Rutas React: revisa aristas RENDERS tras indexar.',
           }
         : undefined;
 
