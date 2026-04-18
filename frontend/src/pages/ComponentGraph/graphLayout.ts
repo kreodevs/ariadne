@@ -1,13 +1,15 @@
 import dagre from '@dagrejs/dagre';
 import type { GraphEdge, GraphNode } from './componentGraphFlow';
-import { filterValidEdges } from './componentGraphFlow';
-
-const NODE_W = 240;
-const NODE_H = 150;
+import {
+  COMPONENT_NODE_HEIGHT,
+  COMPONENT_NODE_WIDTH,
+  filterValidEdges,
+} from './componentGraphFlow';
 
 /**
- * Layout en capas (TB): consumidores legacy arriba, foco al centro, dependientes abajo.
- * Dagre recibe aristas orientadas: depends = foco→hijo, legacy = consumidor→foco.
+ * Layout en capas (LR): foco a la izquierda, dependientes en columna a la derecha.
+ * Con TB + muchos hijos, Dagre ponía todos en una sola fila horizontal (difícil de leer).
+ * Aristas: depends = foco→hijo, legacy = consumidor→foco.
  */
 export function layoutWithDagre(
   graphNodes: GraphNode[],
@@ -18,17 +20,21 @@ export function layoutWithDagre(
   if (graphNodes.length === 0) return pos;
 
   const validEdges = filterValidEdges(graphNodes, graphEdges);
+  if (validEdges.length === 0 && graphNodes.length > 1) {
+    return fallbackGrid(graphNodes);
+  }
+
   const g = new dagre.graphlib.Graph({ compound: false }).setDefaultEdgeLabel(() => ({}));
   g.setGraph({
-    rankdir: 'TB',
-    ranksep: 72,
-    nodesep: 48,
-    marginx: 24,
-    marginy: 24,
+    rankdir: 'LR',
+    ranksep: 88,
+    nodesep: 56,
+    marginx: 32,
+    marginy: 32,
   });
 
   for (const n of graphNodes) {
-    g.setNode(n.id, { width: NODE_W, height: NODE_H });
+    g.setNode(n.id, { width: COMPONENT_NODE_WIDTH, height: COMPONENT_NODE_HEIGHT });
   }
 
   const seenLayout = new Set<string>();
@@ -49,7 +55,7 @@ export function layoutWithDagre(
   for (const n of graphNodes) {
     const nd = g.node(n.id);
     if (nd && typeof nd.x === 'number' && typeof nd.y === 'number') {
-      pos.set(n.id, { x: nd.x - NODE_W / 2, y: nd.y - NODE_H / 2 });
+      pos.set(n.id, { x: nd.x - COMPONENT_NODE_WIDTH / 2, y: nd.y - COMPONENT_NODE_HEIGHT / 2 });
     }
   }
 
@@ -79,7 +85,10 @@ function fallbackGrid(graphNodes: GraphNode[]): Map<string, { x: number; y: numb
   graphNodes.forEach((n, i) => {
     const col = i % cols;
     const row = Math.floor(i / cols);
-    pos.set(n.id, { x: col * 280 - (cols * 280) / 2, y: row * 200 });
+    pos.set(n.id, {
+      x: col * (COMPONENT_NODE_WIDTH + 40) - (cols * (COMPONENT_NODE_WIDTH + 40)) / 2,
+      y: row * (COMPONENT_NODE_HEIGHT + 36),
+    });
   });
   return pos;
 }

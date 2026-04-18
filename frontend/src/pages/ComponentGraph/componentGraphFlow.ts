@@ -1,6 +1,10 @@
 import { MarkerType, type Edge } from '@xyflow/react';
 import type { ComponentGraphRFNode, NodeFlowRole } from './GraphFlowNode';
 
+/** Tamaño fijo del nodo en RF + Dagre (evita aristas al centro tapadas por la tarjeta). */
+export const COMPONENT_NODE_WIDTH = 240;
+export const COMPONENT_NODE_HEIGHT = 160;
+
 export type GraphNode = { id: string; kind: string; name?: string; path?: string };
 export type GraphEdge = { source: string; target: string; kind: string };
 
@@ -124,6 +128,8 @@ export function toFlowElements(
       id: n.id,
       type: 'componentGraph',
       position: pos,
+      width: COMPONENT_NODE_WIDTH,
+      height: COMPONENT_NODE_HEIGHT,
       data: {
         label: lbl,
         kind: safeLabel(n.kind),
@@ -147,8 +153,11 @@ export function toFlowElements(
       id: `e-${e.source}-${e.target}-${e.kind}`,
       source: e.source,
       target: e.target,
+      sourceHandle: 'out',
+      targetHandle: 'in',
       type: 'smoothstep',
       animated: directDependsFromFocal,
+      zIndex: 1,
       style: {
         stroke,
         strokeWidth: isLegacy ? 2.5 : directDependsFromFocal ? 2.75 : 2,

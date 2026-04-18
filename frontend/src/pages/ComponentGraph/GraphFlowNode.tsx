@@ -1,5 +1,5 @@
 import { memo } from 'react';
-import { type Node, type NodeProps } from '@xyflow/react';
+import { Handle, Position, type Node, type NodeProps } from '@xyflow/react';
 import { Box, GitBranch, Radio, Link2 } from 'lucide-react';
 
 export type NodeFlowRole = 'focal' | 'dependency' | 'legacy_consumer' | 'related';
@@ -64,7 +64,7 @@ function GraphFlowNodeInner({ data, selected }: NodeProps<ComponentGraphRFNode>)
   return (
     <div
       className={[
-        'rounded-xl border border-[var(--border)] border-l-[3px] px-3 py-2.5 min-w-[168px] max-w-[260px] shadow-md transition-[box-shadow,transform]',
+        'relative rounded-xl border border-[var(--border)] border-l-[3px] px-3 py-2.5 min-w-[168px] max-w-[260px] w-[240px] shadow-md transition-[box-shadow,transform]',
         accent,
         expandable ? 'cursor-pointer' : '',
         'bg-[var(--card)] text-[var(--foreground)]',
@@ -76,6 +76,20 @@ function GraphFlowNodeInner({ data, selected }: NodeProps<ComponentGraphRFNode>)
         .filter(Boolean)
         .join(' ')}
     >
+      <Handle
+        type="target"
+        position={Position.Left}
+        id="in"
+        isConnectable={false}
+        className="!h-3 !w-3 !min-h-0 !min-w-0 !border-2 !border-[var(--border)] !bg-[var(--card)]"
+      />
+      <Handle
+        type="source"
+        position={Position.Right}
+        id="out"
+        isConnectable={false}
+        className="!h-3 !w-3 !min-h-0 !min-w-0 !border-2 !border-[var(--border)] !bg-[var(--card)]"
+      />
       <div className="flex items-start justify-between gap-2 mb-2">
         <div className="flex items-center gap-2 min-w-0">
           <RoleIcon role={role} />
