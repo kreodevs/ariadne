@@ -4,7 +4,7 @@
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { DataSet } from 'vis-data';
-import { Network } from 'vis-network';
+import { Network, type Options } from 'vis-network';
 import { ChevronRight } from 'lucide-react';
 import 'vis-network/styles/vis-network.css';
 import { api } from '@/api';
@@ -17,6 +17,44 @@ import {
   filterValidEdges,
   labelFor,
 } from './componentGraphFlow';
+
+/** Opciones vis-network: fuerzas + zoom/pan/rueda; tras estabilizar se apaga la física para mover la vista con fluidez. */
+const VIS_NETWORK_OPTIONS = {
+  autoResize: true,
+  physics: {
+    enabled: true,
+    solver: 'forceAtlas2Based' as const,
+    forceAtlas2Based: {
+      gravitationalConstant: -42,
+      centralGravity: 0.012,
+      springLength: 115,
+      springConstant: 0.055,
+      damping: 0.55,
+      avoidOverlap: 0.65,
+    },
+    maxVelocity: 48,
+    minVelocity: 0.75,
+    stabilization: {
+      enabled: true,
+      iterations: 380,
+      updateInterval: 20,
+      fit: true,
+    },
+  },
+  layout: { improvedLayout: true },
+  edges: { smooth: true },
+  interaction: {
+    hover: true,
+    tooltipDelay: 140,
+    zoomView: true,
+    dragView: true,
+    dragNodes: true,
+    zoomSpeed: 1,
+    navigationButtons: true,
+    keyboard: true,
+    multiselect: false,
+  },
+} satisfies Options;
 
 export type ComponentGraphDebugHints = {
   suggestResync?: boolean;
@@ -165,7 +203,10 @@ export function ComponentGraphDebugPanel({
   hidden,
 }: Props) {
   const [open, setOpen] = useState(false);
+  /** Fuerza recreación del Network para volver a ejecutar física / autolayout. */
+  const [visLayoutGeneration, setVisLayoutGeneration] = useState(0);
   const containerRef = useRef<HTMLDivElement>(null);
+  const visNetworkRef = useRef<Network | null>(null);
 
   const jsonText = useMemo(
     () =>
@@ -215,36 +256,34 @@ export function ComponentGraphDebugPanel({
       })),
     );
 
-    const network = new Network(
-      el,
-      { nodes: visNodes, edges: visEdges },
-      {
-        physics: {
-          enabled: true,
-          stabilization: { iterations: 200 },
-        },
-        layout: { improvedLayout: true },
-        edges: { smooth: true },
-        interaction: { navigationButtons: true, hover: true, tooltipDelay: 120 },
-      },
-    );
+    const network = new Network(el, { nodes: visNodes, edges: visEdges }, {
+      ...VIS_NETWORK_OPTIONS,
+    });
+    visNetworkRef.current = network;
+
+    const onStabilized = () => {
+      network.setOptions({ physics: { enabled: false } });
+    };
+    network.on('stabilizationIterationsDone', onStabilized);
+
     const fit = () => {
-      network.fit({ animation: { duration: 280, easingFunction: 'easeInOutQuad' } });
+      network.fit({ animation: { duration: 320, easingFunction: 'easeInOutQuad' } });
     };
     const raf = requestAnimationFrame(() => requestAnimationFrame(fit));
 
     const ro = new ResizeObserver(() => {
       network.redraw();
-      fit();
     });
     ro.observe(el);
 
     return () => {
       cancelAnimationFrame(raf);
       ro.disconnect();
+      network.off('stabilizationIterationsDone', onStabilized);
       network.destroy();
+      visNetworkRef.current = null;
     };
-  }, [hidden, open, nodes, validEdges]);
+  }, [hidden, open, nodes, validEdges, visLayoutGeneration]);
 
   if (hidden) return null;
 
@@ -272,10 +311,35 @@ export function ComponentGraphDebugPanel({
               <p className="text-xs text-[var(--foreground-muted)]">
                 Aristas visibles: mismas que React Flow (<span className="font-mono">filterValidEdges</span>).
                 JSON: datos crudos (<span className="font-mono">nodes</span> / <span className="font-mono">edges</span>).
+                Rueda: zoom · arrastrar fondo: pan · botones inferiores (vis) · teclado si está habilitado.
               </p>
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-8 text-xs"
+                  onClick={() => {
+                    visNetworkRef.current?.fit({
+                      animation: { duration: 380, easingFunction: 'easeInOutQuad' },
+                    });
+                  }}
+                >
+                  Encuadrar
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-8 text-xs"
+                  onClick={() => setVisLayoutGeneration((n) => n + 1)}
+                >
+                  Autolayout (re-física)
+                </Button>
+              </div>
               <div
                 ref={containerRef}
-                className="min-h-[260px] flex-1 rounded-md border border-[var(--border)] bg-[var(--background)]"
+                className="min-h-[320px] flex-1 touch-none rounded-md border border-[var(--border)] bg-[var(--background)]"
               />
             </div>
             <div className="flex min-h-[280px] min-w-0 flex-col gap-1">
