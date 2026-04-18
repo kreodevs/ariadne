@@ -38,6 +38,19 @@ interface FalkorResult {
   data?: unknown[][];
 }
 
+/** Instancia de grafo Falkor (misma forma para getGraph y selectGraphByLogicalName). */
+type FalkorGraph = Awaited<ReturnType<FalkorService['getGraph']>>;
+
+/** Acumulador al fusionar cortes de varios subgrafos (sharding por dominio). */
+interface ComponentShardAccum {
+  seenDepKeys: Set<string>;
+  dependencies: { name?: string; path?: string }[];
+  nodes: Map<string, GraphNodeDto>;
+  edgeKey: Set<string>;
+  edges: GraphEdgeDto[];
+  centerId: string | null;
+}
+
 export interface GraphNodeDto {
   id: string;
   kind: string;
@@ -224,6 +237,110 @@ export class GraphService {
     return this.falkor.getGraph(projectId);
   }
 
+  private mapImpactQueryRows(result: FalkorResult): { name: unknown; labels: unknown }[] {
+    const data = result.data ?? [];
+    const headers = result.headers ?? ['name', 'labels'];
+    const nameIdx = headers.indexOf('name');
+    const labelsIdx = headers.indexOf('labels');
+    return data.map((row: unknown) => {
+      const arr = Array.isArray(row) ? row : [row];
+      return {
+        name: nameIdx >= 0 ? arr[nameIdx] : arr[0],
+        labels: labelsIdx >= 0 ? arr[labelsIdx] : arr[1],
+      };
+    });
+  }
+
+  /**
+   * Añade al acumulador las aristas/nodos de un shard para un componente (RENDERS + caminos + padres).
+   * Usado en bucle multi-shard: el primer shard sin datos no impide que otros aporten el vecindario.
+   */
+  private async appendComponentShardData(
+    graph: FalkorGraph,
+    name: string,
+    depth: number,
+    pid: string | undefined,
+    accum: ComponentShardAccum,
+  ): Promise<void> {
+    const compMatch = pid ? ', projectId: $projectId' : '';
+    const params: Record<string, string> = { componentName: name };
+    if (pid) params.projectId = pid;
+
+    const rendersRows = (await graph.query(
+      pid
+        ? `MATCH (n:Component {name: $componentName, projectId: $projectId})-[:RENDERS]->(m:Component) WHERE n.projectId = $projectId AND m.projectId = $projectId RETURN n AS c, m AS dependency`
+        : `MATCH (n:Component {name: $componentName})-[:RENDERS]->(m:Component) RETURN n AS c, m AS dependency`,
+      { params },
+    )) as FalkorResult;
+    const pathWhere = pid ? ` WHERE dependency.projectId = $projectId` : '';
+    const pathRows = (await graph.query(
+      `MATCH (c:Component {name: $componentName${compMatch}})-[*1..${depth}]->(dependency)${pathWhere} RETURN c, dependency`,
+      { params },
+    )) as FalkorResult;
+    const data = [...(rendersRows.data ?? []), ...(pathRows.data ?? [])];
+    const headers = pathRows.headers ?? rendersRows.headers ?? ['c', 'dependency'];
+    const cIdx = headers.indexOf('c');
+    const depIdx = headers.indexOf('dependency');
+
+    for (const row of data as unknown[]) {
+      const arr = Array.isArray(row) ? row : [row];
+      const centerCell = cIdx >= 0 && arr[cIdx] != null ? arr[cIdx] : arr[0];
+      const dep = depIdx >= 0 && arr[depIdx] != null ? arr[depIdx] : arr[1];
+      const centerNode = parseGraphNodeCell(centerCell);
+      if (centerNode && !accum.centerId) {
+        accum.centerId = centerNode.id;
+        accum.nodes.set(centerNode.id, centerNode);
+      }
+      const depParsed = parseGraphNodeCell(dep);
+      const obj =
+        dep && typeof dep === 'object' && !Array.isArray(dep)
+          ? (dep as Record<string, unknown>)
+          : { name: dep != null ? falkorScalarToString(dep) ?? String(dep) : undefined };
+      const key =
+        [
+          falkorScalarToString((obj as { repoId?: unknown }).repoId),
+          falkorScalarToString((obj as { projectId?: unknown }).projectId),
+          falkorScalarToString(obj.name),
+          falkorScalarToString(obj.path),
+        ]
+          .filter(Boolean)
+          .join('\0') ||
+        (typeof dep === 'object' && dep != null ? JSON.stringify(dep) : String(dep));
+      if (accum.seenDepKeys.has(key)) continue;
+      accum.seenDepKeys.add(key);
+      accum.dependencies.push({
+        name: falkorScalarToString(obj.name),
+        path: falkorScalarToString(obj.path),
+      });
+      if (depParsed) {
+        accum.nodes.set(depParsed.id, depParsed);
+        if (accum.centerId) addGraphEdge(accum.edges, accum.edgeKey, accum.centerId, depParsed.id, 'depends');
+      }
+    }
+
+    const parentParams: Record<string, string> = { componentName: name };
+    if (pid) parentParams.projectId = pid;
+    const parentQ = pid
+      ? `MATCH (parent:Component {projectId: $projectId})-[:RENDERS]->(c:Component {name: $componentName, projectId: $projectId}) WHERE parent.projectId = $projectId AND c.projectId = $projectId RETURN parent, c`
+      : `MATCH (parent:Component)-[:RENDERS]->(c:Component {name: $componentName}) RETURN parent, c`;
+    const parentRes = (await graph.query(parentQ, { params: parentParams })) as FalkorResult;
+    const ph = parentRes.headers ?? ['parent', 'c'];
+    const pIdx = ph.indexOf('parent');
+    const cIdxParent = ph.indexOf('c');
+    for (const row of parentRes.data ?? []) {
+      const arr = Array.isArray(row) ? row : [row];
+      const parentCell = pIdx >= 0 && arr[pIdx] != null ? arr[pIdx] : arr[0];
+      const focalCell = cIdxParent >= 0 && arr[cIdxParent] != null ? arr[cIdxParent] : arr[1];
+      const pr = parseGraphNodeCell(parentCell);
+      const focal = parseGraphNodeCell(focalCell);
+      if (!pr || !focal) continue;
+      accum.nodes.set(pr.id, pr);
+      accum.nodes.set(focal.id, focal);
+      if (!accum.centerId) accum.centerId = focal.id;
+      addGraphEdge(accum.edges, accum.edgeKey, pr.id, focal.id, 'depends');
+    }
+  }
+
   async getImpact(nodeId: string, projectId?: string, scopePath?: string) {
     const cached = await this.cache.get<{ nodeId: string; dependents: unknown[] }>(
       this.cache.impactKey(nodeId, projectId, scopePath),
@@ -232,35 +349,61 @@ export class GraphService {
     const matchProj = projectId ? ', projectId: $projectId' : '';
     const params: Record<string, string> = { nodeName: nodeId };
     if (projectId) params.projectId = projectId;
-    const graph = await this.pickShardGraph(projectId, scopePath, async (g) => {
-      const r = (await g.query(
-        `MATCH (n {name: $nodeName${matchProj}}) RETURN count(n) AS c`,
+
+    const runImpact = async (graph: FalkorGraph) => {
+      const result = (await graph.query(
+        `MATCH (n {name: $nodeName${matchProj}})<-[:CALLS|RENDERS*]-(dependent) RETURN dependent.name AS name, labels(dependent) AS labels`,
         { params },
       )) as FalkorResult;
-      const row = r.data?.[0] as unknown;
-      let c = 0;
-      if (row != null && typeof row === 'object' && 'c' in row) {
-        c = Number((row as { c: unknown }).c);
-      } else if (Array.isArray(row)) {
-        c = Number(row[0]);
-      }
-      return Number.isFinite(c) && c > 0;
-    });
-    const result = (await graph.query(
-      `MATCH (n {name: $nodeName${matchProj}})<-[:CALLS|RENDERS*]-(dependent) RETURN dependent.name AS name, labels(dependent) AS labels`,
-      { params },
-    )) as FalkorResult;
-    const data = result.data ?? [];
-    const headers = result.headers ?? ['name', 'labels'];
-    const nameIdx = headers.indexOf('name');
-    const labelsIdx = headers.indexOf('labels');
-    const dependents = data.map((row: unknown) => {
-      const arr = Array.isArray(row) ? row : [row];
-      return {
-        name: nameIdx >= 0 ? arr[nameIdx] : arr[0],
-        labels: labelsIdx >= 0 ? arr[labelsIdx] : arr[1],
+      return this.mapImpactQueryRows(result);
+    };
+
+    let dependents: { name: unknown; labels: unknown }[];
+
+    if (!projectId || scopePath) {
+      const graph = await this.pickShardGraph(projectId, scopePath, async (g) => {
+        const r = (await g.query(
+          `MATCH (n {name: $nodeName${matchProj}}) RETURN count(n) AS c`,
+          { params },
+        )) as FalkorResult;
+        const row = r.data?.[0] as unknown;
+        let c = 0;
+        if (row != null && typeof row === 'object' && 'c' in row) {
+          c = Number((row as { c: unknown }).c);
+        } else if (Array.isArray(row)) {
+          c = Number(row[0]);
+        }
+        return Number.isFinite(c) && c > 0;
+      });
+      dependents = await runImpact(graph);
+    } else {
+      const names = await this.falkor.getProjectGraphNames(projectId);
+      const merged: { name: unknown; labels: unknown }[] = [];
+      const seen = new Set<string>();
+      const pushDeduped = (rows: { name: unknown; labels: unknown }[]) => {
+        for (const r of rows) {
+          const k = `${String(r.name)}\0${JSON.stringify(r.labels)}`;
+          if (seen.has(k)) continue;
+          seen.add(k);
+          merged.push(r);
+        }
       };
-    });
+      if (names.length <= 1) {
+        const g = await this.falkor.getGraph(projectId);
+        pushDeduped(await runImpact(g));
+      } else {
+        for (const nm of names) {
+          try {
+            const g = await this.falkor.selectGraphByLogicalName(nm);
+            pushDeduped(await runImpact(g));
+          } catch {
+            /* shard vacío */
+          }
+        }
+      }
+      dependents = merged;
+    }
+
     const payload = { nodeId, dependents };
     await this.cache.set(this.cache.impactKey(nodeId, projectId, scopePath), payload, this.cache.TTL.impact);
     return payload;
@@ -281,104 +424,56 @@ export class GraphService {
     const compMatch = pid ? ', projectId: $projectId' : '';
     const params: Record<string, string> = { componentName: name };
     if (pid) params.projectId = pid;
-    const graph = await this.pickShardGraph(pid, scopePath, async (g) => {
-      const r = (await g.query(
-        `MATCH (c:Component {name: $componentName${compMatch}}) RETURN count(c) AS c`,
-        { params },
-      )) as FalkorResult;
-      const row = r.data?.[0] as unknown;
-      let c = 0;
-      if (row != null && typeof row === 'object' && 'c' in row) {
-        c = Number((row as { c: unknown }).c);
-      } else if (Array.isArray(row)) {
-        c = Number(row[0]);
-      }
-      return Number.isFinite(c) && c > 0;
-    });
-    /** (n)-[:RENDERS]->(m): consulta explícita; projectId = índice ingest (sin OR NULL). */
-    const rendersRows = (await graph.query(
-      pid
-        ? `MATCH (n:Component {name: $componentName, projectId: $projectId})-[:RENDERS]->(m:Component) WHERE n.projectId = $projectId AND m.projectId = $projectId RETURN n AS c, m AS dependency`
-        : `MATCH (n:Component {name: $componentName})-[:RENDERS]->(m:Component) RETURN n AS c, m AS dependency`,
-      { params },
-    )) as FalkorResult;
-    const pathWhere = pid ? ` WHERE dependency.projectId = $projectId` : '';
-    const pathRows = (await graph.query(
-      `MATCH (c:Component {name: $componentName${compMatch}})-[*1..${depth}]->(dependency)${pathWhere} RETURN c, dependency`,
-      { params },
-    )) as FalkorResult;
-    const data = [...(rendersRows.data ?? []), ...(pathRows.data ?? [])];
-    const headers = pathRows.headers ?? rendersRows.headers ?? ['c', 'dependency'];
-    const cIdx = headers.indexOf('c');
-    const depIdx = headers.indexOf('dependency');
-    const seen = new Set<string>();
-    const dependencies: { name?: string; path?: string }[] = [];
-    const nodes = new Map<string, GraphNodeDto>();
-    const edgeKey = new Set<string>();
-    const edges: GraphEdgeDto[] = [];
 
-    let centerId: string | null = null;
+    const accum: ComponentShardAccum = {
+      seenDepKeys: new Set<string>(),
+      dependencies: [],
+      nodes: new Map<string, GraphNodeDto>(),
+      edgeKey: new Set<string>(),
+      edges: [],
+      centerId: null,
+    };
 
-    for (const row of data as unknown[]) {
-      const arr = Array.isArray(row) ? row : [row];
-      const centerCell = cIdx >= 0 && arr[cIdx] != null ? arr[cIdx] : arr[0];
-      const dep = depIdx >= 0 && arr[depIdx] != null ? arr[depIdx] : arr[1];
-      const centerNode = parseGraphNodeCell(centerCell);
-      if (centerNode && !centerId) {
-        centerId = centerNode.id;
-        nodes.set(centerNode.id, centerNode);
-      }
-      const depParsed = parseGraphNodeCell(dep);
-      const obj =
-        dep && typeof dep === 'object' && !Array.isArray(dep)
-          ? (dep as Record<string, unknown>)
-          : { name: dep != null ? falkorScalarToString(dep) ?? String(dep) : undefined };
-      const key =
-        [
-          falkorScalarToString((obj as { repoId?: unknown }).repoId),
-          falkorScalarToString((obj as { projectId?: unknown }).projectId),
-          falkorScalarToString(obj.name),
-          falkorScalarToString(obj.path),
-        ]
-          .filter(Boolean)
-          .join('\0') ||
-        (typeof dep === 'object' && dep != null ? JSON.stringify(dep) : String(dep));
-      if (seen.has(key)) continue;
-      seen.add(key);
-      dependencies.push({
-        name: falkorScalarToString(obj.name),
-        path: falkorScalarToString(obj.path),
+    /**
+     * Sin projectId o con scopePath: un solo grafo (comportamiento anterior).
+     * Con projectId y varios subgrafos por dominio: fusionar todos — el primer shard donde exista
+     * un stub de «App» ya no oculta las aristas RENDERS del shard correcto.
+     */
+    if (!pid || scopePath) {
+      const graph = await this.pickShardGraph(pid, scopePath, async (g) => {
+        const r = (await g.query(
+          `MATCH (c:Component {name: $componentName${compMatch}}) RETURN count(c) AS c`,
+          { params },
+        )) as FalkorResult;
+        const row = r.data?.[0] as unknown;
+        let c = 0;
+        if (row != null && typeof row === 'object' && 'c' in row) {
+          c = Number((row as { c: unknown }).c);
+        } else if (Array.isArray(row)) {
+          c = Number(row[0]);
+        }
+        return Number.isFinite(c) && c > 0;
       });
-      if (depParsed) {
-        nodes.set(depParsed.id, depParsed);
-        if (centerId) addGraphEdge(edges, edgeKey, centerId, depParsed.id, 'depends');
+      await this.appendComponentShardData(graph, name, depth, pid, accum);
+    } else {
+      const shardNames = await this.falkor.getProjectGraphNames(pid);
+      if (shardNames.length <= 1) {
+        const graph = await this.falkor.getGraph(pid);
+        await this.appendComponentShardData(graph, name, depth, pid, accum);
+      } else {
+        for (const gName of shardNames) {
+          try {
+            const graph = await this.falkor.selectGraphByLogicalName(gName);
+            await this.appendComponentShardData(graph, name, depth, pid, accum);
+          } catch {
+            /* shard vacío o no legible */
+          }
+        }
       }
     }
 
-    /** (parent:Component)-[:RENDERS]->(c:foco): aristas entrantes al componente pedido; projectId estricto como en ingest. */
-    {
-      const parentParams: Record<string, string> = { componentName: name };
-      if (pid) parentParams.projectId = pid;
-      const parentQ = pid
-        ? `MATCH (parent:Component {projectId: $projectId})-[:RENDERS]->(c:Component {name: $componentName, projectId: $projectId}) WHERE parent.projectId = $projectId AND c.projectId = $projectId RETURN parent, c`
-        : `MATCH (parent:Component)-[:RENDERS]->(c:Component {name: $componentName}) RETURN parent, c`;
-      const parentRes = (await graph.query(parentQ, { params: parentParams })) as FalkorResult;
-      const ph = parentRes.headers ?? ['parent', 'c'];
-      const pIdx = ph.indexOf('parent');
-      const cIdx = ph.indexOf('c');
-      for (const row of parentRes.data ?? []) {
-        const arr = Array.isArray(row) ? row : [row];
-        const parentCell = pIdx >= 0 && arr[pIdx] != null ? arr[pIdx] : arr[0];
-        const focalCell = cIdx >= 0 && arr[cIdx] != null ? arr[cIdx] : arr[1];
-        const pr = parseGraphNodeCell(parentCell);
-        const focal = parseGraphNodeCell(focalCell);
-        if (!pr || !focal) continue;
-        nodes.set(pr.id, pr);
-        nodes.set(focal.id, focal);
-        if (!centerId) centerId = focal.id;
-        addGraphEdge(edges, edgeKey, pr.id, focal.id, 'depends');
-      }
-    }
+    const { dependencies, nodes, edgeKey, edges } = accum;
+    let centerId = accum.centerId;
 
     if (!centerId) {
       centerId = graphNodeKey({ kind: 'Component', projectId: pid ?? '', name });
