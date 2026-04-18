@@ -36,7 +36,7 @@ Ver [src/chat/README.md](src/chat/README.md) y [docs/comparativa/Plan_Implementa
 - `GET /repositories/:id/jobs/:jobId/analysis` — Análisis de un job **incremental** (impacto en grafo, heurística de secretos, resumen); el job debe pertenecer a ese repositorio
 - `GET /embed?text=` — Vector de embedding para RAG (requiere EMBEDDING_PROVIDER + OPENAI_API_KEY o GOOGLE_API_KEY)
 - `POST /repositories/:id/sync` — Encola job de full sync; retorna `{ jobId, queued: true }`
-- `POST /repositories/:id/resync` — Borra el grafo e índice del proyecto y encola sync completo. Retorna `{ jobId, queued, deletedNodes? }`
+- `POST /repositories/:id/resync` — Borra en Falkor solo los nodos de **este** repositorio (`projectId` + `repoId` por cada vínculo; no el grafo de otros repos del mismo proyecto) y `indexed_files` del repo; encola sync completo. Retorna `{ jobId, queued, deletedNodes? }`
 - `POST /repositories/:id/chat` — Chat NL→Cypher. Body: `{ message, history? }`. Requiere `OPENAI_API_KEY`. Ver [src/chat/README.md](src/chat/README.md).
 - `POST /repositories/:id/analyze` — Análisis estructurado. Body: `{ mode: 'diagnostico'|'duplicados'|'reingenieria'|'codigo_muerto'|'seguridad'|... }`. Diagnóstico: top riesgo, antipatrones; Duplicados: embeddings; Reingeniería: plan priorizado; Código muerto: detalle de uso por archivo; **seguridad:** escaneo heurístico de secretos + informe LLM (complementa Full Audit).
 - `GET /repositories/:id/graph-summary` — Conteos y muestras de nodos indexados.

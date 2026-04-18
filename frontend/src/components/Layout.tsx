@@ -37,6 +37,7 @@ const navigationGroups: SidebarGroup[] = [
         href: '/repos',
         icon: Flame,
         children: [
+          { label: 'Repositorios', href: '/repos' },
           { label: 'Cola de sync', href: '/jobs' },
           { label: 'Nuevo repo', href: '/repos/new' },
         ],

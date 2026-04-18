@@ -2,7 +2,7 @@
 
 ## Layout
 
-- **Layout** — Shell principal con SidebarModern (Kreo), header y área de contenido. Usa `100dvh`, safe areas (`env(safe-area-inset-*)`), cierra el menú móvil al cambiar de ruta, header con blur.
+- **Layout** — Shell principal con SidebarModern (Kreo), header y área de contenido. Usa `100dvh`, safe areas (`env(safe-area-inset-*)`), cierra el menú móvil al cambiar de ruta, header con blur. En **The Forge**, el ítem padre con submenú no navega solo: incluye enlace explícito **Repositorios** → `/repos` (lista y acceso a cada repo / reindex).
 - **HeaderSearch** — Paleta (Cmd/Ctrl+K): proyectos, repos, **componentes del grafo** (tras `graph-summary` por repo) y atajos; los componentes se filtran al escribir y abren el explorador con `scope` + `name`.
 - **layout/SidebarModern** — Navegación lateral colapsable con grupos, iconos y sección de usuario; padding inferior safe-area en drawer.
 - **atoms/Avatar** — Avatar con imagen, iniciales o icono por defecto.

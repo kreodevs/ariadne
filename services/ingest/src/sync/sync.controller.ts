@@ -30,11 +30,11 @@ export class SyncController {
   }
 
   /**
-   * Borra grafo del proyecto implícito (repo solo) y encola sync completo.
+   * Borra solo los nodos Falkor de este repo (por participación projectId+repoId) y encola sync completo.
    */
   @Post(':id/resync')
   async resync(@Param('id') id: string) {
-    const { deletedNodes } = await this.syncService.clearProject(id);
+    const { deletedNodes } = await this.syncService.clearRepositoryForResync(id);
     const syncJob = await this.syncService.createQueuedJob(id);
     await this.syncQueue.add(
       'full-sync',

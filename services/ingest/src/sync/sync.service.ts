@@ -133,53 +133,15 @@ export class SyncService {
   }
 
   /**
-   * Borra todo el grafo e índice del proyecto (nodos con projectId, registros en indexed_file). Luego se puede re-sincronizar.
-   * @param {string} repositoryId - ID del repositorio (projectId en FalkorDB para proyecto implícito 1:1).
-   * @returns {Promise<{ deletedNodes: number }>} Número de nodos eliminados del grafo.
+   * Antes de `POST /resync`: borra solo el slice Falkor de **este** repo (`projectId` + `repoId`)
+   * en cada proyecto vinculado (o `repoId`×2 en modo standalone), más `indexed_files` del repo.
+   * No vacía el grafo de otros roots del mismo proyecto Ariadne.
    */
-  async clearProject(repositoryId: string): Promise<{ deletedNodes: number }> {
+  async clearRepositoryForResync(repositoryId: string): Promise<{ deletedNodes: number }> {
     await this.repos.findOne(repositoryId);
-    const falconProjectIds = await this.repos.getProjectIdsForRepo(repositoryId);
-    const projectIds = falconProjectIds.length > 0 ? falconProjectIds : [repositoryId];
-
-    const config = getFalkorConfig();
-    const client = await FalkorDB.connect({
-      socket: { host: config.host, port: config.port },
-    });
-    try {
-      let countBefore = 0;
-      for (const projectId of projectIds) {
-        const proj = await this.projectEntityRepo.findOne({ where: { id: projectId } });
-        const shardMode = effectiveShardMode(proj?.falkorShardMode ?? 'project');
-        const segments = Array.isArray(proj?.falkorDomainSegments) ? proj!.falkorDomainSegments! : [];
-        const graphNames = listGraphNamesForProjectRouting(
-          projectId,
-          shardMode === 'domain' ? 'domain' : 'project',
-          segments,
-        );
-        for (const gName of graphNames) {
-          const graph = client.selectGraph(gName);
-          try {
-            const countRes = (await graph.query(
-              `MATCH (n) WHERE n.projectId = $projectId RETURN count(n) AS c`,
-              { params: { projectId } },
-            )) as { data?: [{ c: number }] };
-            countBefore += countRes.data?.[0]?.c ?? 0;
-            await graph.query(`MATCH (n) WHERE n.projectId = $projectId DETACH DELETE n`, {
-              params: { projectId },
-            });
-          } catch {
-            /* grafo ausente */
-          }
-        }
-      }
-
-      await this.indexedFileRepo.delete({ repositoryId });
-
-      return { deletedNodes: countBefore };
-    } finally {
-      await client.close();
-    }
+    const { deletedNodes } = await this.clearGraphDataForRepository(repositoryId);
+    await this.indexedFileRepo.delete({ repositoryId });
+    return { deletedNodes };
   }
 
   /**
