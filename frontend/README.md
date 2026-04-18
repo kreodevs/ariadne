@@ -9,6 +9,7 @@ Proyecto en la raíz del repo (`frontend/`), independiente de `services/`. UI pa
 - `src/types.ts` — tipos e interfaces.
 - `src/components/` — Layout (Kreo AppLayout + SidebarModern), StatusBadge, Kreo UI (Button, Card, Input, Select, Badge, Alert, Skeleton, Table, Dialog).
 - `src/pages/` — RepoList, RepoDetail (compound components), RepoChat, RepoIndex, CreateRepo, EditRepo, CredentialsList, CreateCredential, EditCredential, **Ayuda**.
+- **Tests:** `pnpm run test:unit` (Vitest), `pnpm run test:e2e` (Playwright; instalar Chromium con `pnpm exec playwright install chromium`). Ver `docs/TESTING.md` y `e2e/smoke.spec.ts`.
 
 ## Stack
 

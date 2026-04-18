@@ -13,7 +13,10 @@
     "dev:front": "pnpm -C frontend dev",
     "docker:up": "node scripts/ensure-docker.js",
     "docker:down": "node scripts/colima-stop.js",
-    "metrics:chat-telemetry": "node scripts/aggregate-chat-telemetry.mjs"
+    "metrics:chat-telemetry": "node scripts/aggregate-chat-telemetry.mjs",
+    "test:ingest": "pnpm -C services/ingest test -- --run",
+    "test:frontend:unit": "pnpm -C frontend test:unit",
+    "test:unit": "pnpm run test:ingest && pnpm run test:frontend:unit"
   },
   "devDependencies": {
     "dotenv": "^16.6.1"

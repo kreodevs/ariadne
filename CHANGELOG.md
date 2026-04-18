@@ -45,6 +45,8 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.0.0/).
   - CI: `.github/workflows/ci-ingest-mcp.yml` (Vitest ingest + build MCP).  
   - Frontend **RepoDetail**: `JobAnalysisModal` usa `api.getJobAnalysisByProject` cuando el repo tiene `projectId` / `projectIds`.
   - Frontend **RepoList** (`/repos`): botón **Resync** por fila (`POST /repositories/:id/resync`) sin entrar al detalle.
+  - **Indexado:** `sync-path-filter` omite carpetas e2e/playwright/cypress/`__tests__`/`__mocks__` y `*.e2e.*`; env **`INDEX_E2E=1`** para incluirlas; Vitest `sync-path-filter.spec.ts`.
+  - **Frontend:** Vitest (`utils.spec.ts`), Playwright (`e2e/smoke.spec.ts`), `VITE_E2E_AUTH_BYPASS` en `ProtectedRoute`; CI `ci-frontend.yml`; `docs/TESTING.md`.
 
 ## [1.2.0] — 2026-04-14
 

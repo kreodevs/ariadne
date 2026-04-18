@@ -245,7 +245,7 @@ export function ProjectChat() {
       </div>
 
       <div className="flex min-h-0 flex-1 flex-col gap-4 lg:flex-row lg:gap-4">
-        <aside className="order-2 flex max-h-[38vh] w-full shrink-0 flex-col gap-4 overflow-y-auto overflow-x-hidden border-t border-[var(--border)] pt-4 lg:order-1 lg:max-h-none lg:w-[min(420px,45%)] lg:border-t-0 lg:border-r lg:pt-0 lg:pr-4">
+        <aside className="order-2 flex max-h-[38vh] w-full min-h-0 shrink-0 flex-col gap-4 overflow-y-auto overflow-x-hidden border-t border-[var(--border)] pt-4 lg:order-1 lg:max-h-none lg:w-[min(420px,45%)] lg:overflow-hidden lg:border-t-0 lg:border-r lg:pt-0 lg:pr-4">
           {project.repositories.length > 1 ? (
             <div className="space-y-1 text-xs">
               <span className="text-muted-foreground">Repo para análisis de código</span>
@@ -362,8 +362,8 @@ export function ProjectChat() {
             </Alert>
           )}
           {analysisResult && !loadingAnalysis && (
-            <Card>
-              <CardHeader className="pb-2">
+            <Card className="flex min-h-0 flex-1 flex-col">
+              <CardHeader className="shrink-0 pb-2">
                 <CardTitle className="text-base">
                   {ANALYSIS_RESULT_TITLES[analysisResult.mode] ?? analysisResult.mode}
                 </CardTitle>
@@ -374,8 +374,8 @@ export function ProjectChat() {
                   </p>
                 ) : null}
               </CardHeader>
-              <CardContent>
-                <div className="max-h-[50vh] overflow-auto rounded border bg-muted/50 p-3 text-sm [&_ul]:my-1 [&_ol]:my-1 [&_li]:my-0 [&_p]:my-1 [&_strong]:font-semibold [&_pre]:overflow-x-auto [&_h1]:text-lg [&_h2]:text-base [&_h3]:text-sm [&_table]:w-full [&_th]:text-left [&_th]:border [&_td]:border [&_td]:px-2 [&_td]:py-1">
+              <CardContent className="flex min-h-0 flex-1 flex-col p-0 px-6 pb-6">
+                <div className="flex-1 min-h-0 overflow-auto rounded border bg-muted/50 p-3 text-sm [&_ul]:my-1 [&_ol]:my-1 [&_li]:my-0 [&_p]:my-1 [&_strong]:font-semibold [&_pre]:overflow-x-auto [&_h1]:text-lg [&_h2]:text-base [&_h3]:text-sm [&_table]:w-full [&_th]:text-left [&_th]:border [&_td]:border [&_td]:px-2 [&_td]:py-1">
                   <MarkdownBlock content={typeof analysisResult.summary === 'string' ? analysisResult.summary : String(analysisResult.summary ?? '')} />
                 </div>
               </CardContent>

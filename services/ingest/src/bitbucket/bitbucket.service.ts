@@ -5,7 +5,7 @@
 import { Injectable } from '@nestjs/common';
 import type { BitbucketAuth } from '../credentials/credentials.service';
 import { CredentialsService } from '../credentials/credentials.service';
-import { SYNC_IGNORE_DIRS, shouldSyncIndexPath } from '../providers/sync-path-filter';
+import { shouldSkipWalkDirectory, shouldSyncIndexPath } from '../providers/sync-path-filter';
 
 interface SrcEntry {
   path: string;
@@ -151,7 +151,7 @@ export class BitbucketService {
         for (const v of page.values ?? []) {
           if (v.type === 'commit_directory') {
             const dirName = v.path.split('/').pop();
-            if (dirName && !SYNC_IGNORE_DIRS.has(dirName)) queue.push(v.path);
+            if (dirName && !shouldSkipWalkDirectory(dirName)) queue.push(v.path);
           } else if (v.type === 'commit_file' && shouldSyncIndexPath(v.path)) {
             files.push(v.path);
           }

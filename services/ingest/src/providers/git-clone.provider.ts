@@ -7,7 +7,7 @@ import { execSync, spawnSync } from 'child_process';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { SYNC_IGNORE_DIRS, shouldSyncIndexPath } from './sync-path-filter';
+import { shouldSkipWalkDirectory, shouldSyncIndexPath } from './sync-path-filter';
 
 function walkDir(dir: string, base = ''): string[] {
   const files: string[] = [];
@@ -15,7 +15,7 @@ function walkDir(dir: string, base = ''): string[] {
   for (const e of entries) {
     const rel = base ? `${base}/${e.name}` : e.name;
     if (e.isDirectory()) {
-      if (!SYNC_IGNORE_DIRS.has(e.name)) {
+      if (!shouldSkipWalkDirectory(e.name)) {
         files.push(...walkDir(path.join(dir, e.name), rel));
       }
     } else if (e.isFile() && shouldSyncIndexPath(rel)) {

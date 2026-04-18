@@ -9,13 +9,23 @@ interface ProtectedRouteProps {
   children: React.ReactNode;
 }
 
-/** Envuelve children y exige token JWT válido. Redirige a /login si no hay sesión. */
+/**
+ * Envuelve children y exige token JWT válido. Redirige a /login si no hay sesión.
+ * Solo pruebas e2e: `VITE_E2E_AUTH_BYPASS=true` (nunca en producción).
+ */
 export function ProtectedRoute({ children }: ProtectedRouteProps) {
   const navigate = useNavigate();
   const [ready, setReady] = useState(false);
   const [authenticated, setAuthenticated] = useState(false);
 
+  const e2eBypass = import.meta.env.VITE_E2E_AUTH_BYPASS === 'true';
+
   useEffect(() => {
+    if (e2eBypass) {
+      setAuthenticated(true);
+      setReady(true);
+      return;
+    }
     const token = getToken();
     if (!token || isTokenExpired(token)) {
       setAuthenticated(false);
@@ -23,14 +33,15 @@ export function ProtectedRoute({ children }: ProtectedRouteProps) {
       setAuthenticated(true);
     }
     setReady(true);
-  }, []);
+  }, [e2eBypass]);
 
   useEffect(() => {
+    if (e2eBypass) return;
     if (!ready) return;
     if (!authenticated) {
       navigate('/login', { replace: true });
     }
-  }, [ready, authenticated, navigate]);
+  }, [e2eBypass, ready, authenticated, navigate]);
 
   if (!ready) {
     return (

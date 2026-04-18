@@ -1,13 +1,17 @@
 /**
  * Filtro único para listFiles (GitHub/Bitbucket) y walk del shallow clone.
  * Incluye código JS/TS, `.md` del repo (salvo bajo `node_modules`), MDX Storybook y JSON Strapi v4 acotados.
+ *
+ * Carpetas típicas de **e2e** / Playwright / Cypress y archivos `*.e2e.*` se omiten por defecto.
+ * Override: `INDEX_E2E=true` (mismo espíritu que `INDEX_TESTS` para specs).
  */
 
 import { isProjectMarkdownPath, isStorybookDocumentationPath } from '../pipeline/storybook-documentation';
 
 const CODE_EXT = ['.js', '.jsx', '.ts', '.tsx'];
-/** Directorios que no se recorren (Bitbucket crawl / consistencia con clone). */
-export const SYNC_IGNORE_DIRS = new Set([
+
+/** Segmentos de ruta que nunca se indexan (artefactos, deps, entornos). */
+export const SYNC_ALWAYS_SKIP_SEGMENTS = new Set([
   'node_modules',
   '.git',
   'dist',
@@ -17,7 +21,51 @@ export const SYNC_IGNORE_DIRS = new Set([
   '.venv',
   '__pycache__',
 ]);
+
+/**
+ * Carpetas de tests e2e / herramientas y salidas; omitidas salvo `INDEX_E2E=1`.
+ * No usar nombres genéricos como `tests` (podría ser código de dominio).
+ */
+export const SYNC_E2E_STYLE_SEGMENTS = new Set([
+  'e2e',
+  'playwright',
+  'playwright-report',
+  'test-results',
+  '.playwright',
+  'cypress',
+  '__tests__',
+  '__mocks__',
+]);
+
+/** @deprecated Preferir `SYNC_ALWAYS_SKIP_SEGMENTS` y `SYNC_E2E_STYLE_SEGMENTS`. */
+export const SYNC_IGNORE_DIRS = new Set([
+  ...SYNC_ALWAYS_SKIP_SEGMENTS,
+  ...SYNC_E2E_STYLE_SEGMENTS,
+]);
+
 const IGNORE_FILE = /\.(test|spec)\.(js|jsx|ts|tsx)$|\.log$|\/\.env$|^\.env$/;
+const E2E_FILE_RE = /\.e2e\.(js|jsx|ts|tsx)$/i;
+
+function splitPathSegments(path: string): string[] {
+  return path.replace(/\\/g, '/').split('/').filter(Boolean);
+}
+
+/** Si true, entran rutas bajo carpetas e2e/playwright/cypress y `*.e2e.*`. */
+export function indexE2ePathsFromEnv(): boolean {
+  const v = process.env.INDEX_E2E?.trim().toLowerCase();
+  return v === 'true' || v === '1';
+}
+
+/** ¿Omitir este directorio al recorrer el árbol (clone / API)? */
+export function shouldSkipWalkDirectory(dirName: string): boolean {
+  if (SYNC_ALWAYS_SKIP_SEGMENTS.has(dirName)) return true;
+  if (!indexE2ePathsFromEnv() && SYNC_E2E_STYLE_SEGMENTS.has(dirName)) return true;
+  return false;
+}
+
+function pathHasSegmentIn(path: string, set: Set<string>): boolean {
+  return splitPathSegments(path).some((s) => set.has(s));
+}
 
 /**
  * JSON necesarios para el grafo Strapi (ApiRoute / StrapiContentType desde schema).
@@ -38,15 +86,21 @@ function shouldIndexTests(): boolean {
 
 /** ¿Incluir este path en mapping/sync/chunking? */
 export function shouldSyncIndexPath(path: string): boolean {
-  const base = path.split('/').pop() ?? '';
-  if (SYNC_IGNORE_DIRS.has(base)) return false;
-  const ext = path.slice(path.lastIndexOf('.')).toLowerCase();
+  const norm = path.replace(/\\/g, '/');
+
+  if (pathHasSegmentIn(norm, SYNC_ALWAYS_SKIP_SEGMENTS)) return false;
+  if (!indexE2ePathsFromEnv()) {
+    if (pathHasSegmentIn(norm, SYNC_E2E_STYLE_SEGMENTS)) return false;
+    if (E2E_FILE_RE.test(norm)) return false;
+  }
+
+  const ext = norm.slice(norm.lastIndexOf('.')).toLowerCase();
   const ignoreRe = shouldIndexTests() ? /\.log$|\/\.env$|^\.env$/ : IGNORE_FILE;
-  if (CODE_EXT.includes(ext) && !ignoreRe.test(path)) return true;
-  if (isProjectMarkdownPath(path)) return true;
-  if (ext === '.mdx' && isStorybookDocumentationPath(path)) return true;
-  if (ext === '.json' && isStrapiIndexableJsonPath(path)) return true;
-  if ((ext === '.mjs' || ext === '.cjs') && !ignoreRe.test(path)) return true;
+  if (CODE_EXT.includes(ext) && !ignoreRe.test(norm)) return true;
+  if (isProjectMarkdownPath(norm)) return true;
+  if (ext === '.mdx' && isStorybookDocumentationPath(norm)) return true;
+  if (ext === '.json' && isStrapiIndexableJsonPath(norm)) return true;
+  if ((ext === '.mjs' || ext === '.cjs') && !ignoreRe.test(norm)) return true;
   if (ext === '.prisma') return true;
   return false;
 }

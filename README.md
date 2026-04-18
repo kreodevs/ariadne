@@ -42,6 +42,7 @@ Ver [docs/DEPLOYMENT_DOKPLOY.md](docs/DEPLOYMENT_DOKPLOY.md).
 - [Manual de uso](docs/manual/README.md) — Puesta en marcha, endpoints, troubleshooting
 - [Caché de análisis en ingest](docs/plan-analyze-layer-cache.md) — LRU, Redis, capa extrínseca CALL
 - [Capas del diagnóstico](docs/diagnostico-layer-dependencies.md) — intrínseca vs extrínseca
+- [Tests (Vitest / Playwright)](docs/TESTING.md)
 
 ## Versionado (semver)
 
