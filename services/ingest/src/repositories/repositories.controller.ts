@@ -42,6 +42,12 @@ export class RepositoriesController {
     return this.service.findAll(projectId);
   }
 
+  /** Cola global: jobs queued o running en todos los repos (debe ir antes de :id). */
+  @Get('jobs/active')
+  findActiveJobs() {
+    return this.service.findActiveJobsGlobal();
+  }
+
   @Get(':id/branches')
   async listBranches(
     @Param('id') id: string,

@@ -22,6 +22,7 @@ import { Ayuda } from './pages/Ayuda';
 import { ErrorPage } from './pages/ErrorPage';
 import { ComponentGraphExplorer } from './pages/ComponentGraph';
 import { DomainsList } from './pages/DomainsList';
+import { ActiveJobsQueue } from './pages/ActiveJobsQueue';
 
 /** Componente raíz con enrutamiento. */
 function App() {
@@ -41,6 +42,7 @@ function App() {
                   <Route path="/projects/:id/chat" element={<ProjectChat />} />
                   <Route path="/projects/:id" element={<ProjectDetail />} />
                   <Route path="/repos" element={<RepoList />} />
+                  <Route path="/jobs" element={<ActiveJobsQueue />} />
                   <Route path="/repos/new" element={<CreateRepo />} />
                   <Route path="/repos/:id/edit" element={<EditRepo />} />
                   <Route path="/repos/:id/chat" element={<RepoChat />} />

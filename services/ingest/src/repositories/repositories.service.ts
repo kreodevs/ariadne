@@ -202,6 +202,53 @@ export class RepositoriesService {
     });
   }
 
+  /**
+   * Jobs de sync pendientes o en curso en todo el sistema (cola global).
+   * Orden: más antiguos primero (FIFO aproximado).
+   */
+  async findActiveJobsGlobal(): Promise<
+    Array<{
+      id: string;
+      repositoryId: string;
+      type: SyncJob['type'];
+      startedAt: Date;
+      finishedAt: Date | null;
+      status: SyncJob['status'];
+      payload: Record<string, unknown> | null;
+      errorMessage: string | null;
+      repository: {
+        id: string;
+        provider: string;
+        projectKey: string;
+        repoSlug: string;
+        defaultBranch: string;
+      };
+    }>
+  > {
+    const rows = await this.jobsRepo.find({
+      where: { status: In(['queued', 'running']) },
+      relations: ['repository'],
+      order: { startedAt: 'ASC' },
+    });
+    return rows.map((j) => ({
+      id: j.id,
+      repositoryId: j.repositoryId,
+      type: j.type,
+      startedAt: j.startedAt,
+      finishedAt: j.finishedAt,
+      status: j.status,
+      payload: j.payload,
+      errorMessage: j.errorMessage,
+      repository: {
+        id: j.repository.id,
+        provider: j.repository.provider,
+        projectKey: j.repository.projectKey,
+        repoSlug: j.repository.repoSlug,
+        defaultBranch: j.repository.defaultBranch,
+      },
+    }));
+  }
+
   async removeJob(repositoryId: string, jobId: string): Promise<void> {
     await this.findOne(repositoryId);
     const r = await this.jobsRepo.delete({

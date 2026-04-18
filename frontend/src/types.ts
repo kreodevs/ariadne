@@ -118,6 +118,17 @@ export interface SyncJob {
   errorMessage: string | null;
 }
 
+/** Job activo (queued/running) con datos mínimos del repo (cola global). */
+export interface ActiveSyncJob extends SyncJob {
+  repository: {
+    id: string;
+    provider: string;
+    projectKey: string;
+    repoSlug: string;
+    defaultBranch: string;
+  };
+}
+
 /** DTO para crear repositorio (provider, projectKey, repoSlug; opcional projectId para multi-root). */
 export interface CreateRepositoryDto {
   provider: 'bitbucket' | 'github';

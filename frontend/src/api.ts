@@ -136,6 +136,9 @@ export const api = {
     return request<{ branches: string[] }>(`/repositories/${repoId}/branches${q}`);
   },
   getJobs: (repoId: string) => request<import('./types').SyncJob[]>(`/repositories/${repoId}/jobs`),
+  /** Jobs queued/running en todos los repos. */
+  getActiveSyncJobs: () =>
+    request<import('./types').ActiveSyncJob[]>('/repositories/jobs/active'),
   getJobAnalysis: (repoId: string, jobId: string) =>
     request<import('./types').JobAnalysisResult>(`/repositories/${repoId}/jobs/${jobId}/analysis`),
   getJobAnalysisByProject: (projectId: string, jobId: string) =>
