@@ -12,6 +12,7 @@ import {
   HelpCircle,
   Share2,
   ListOrdered,
+  Layers,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { SidebarModern, type SidebarGroup } from "./layout/SidebarModern"
@@ -22,6 +23,7 @@ const navigationGroups: SidebarGroup[] = [
   {
     items: [
       { label: "Proyectos", href: "/", icon: LayoutDashboard },
+      { label: "Dominios", href: "/domains", icon: Layers },
       { label: "Repositorios", href: "/repos", icon: FolderGit2 },
       { label: "Cola de sync", href: "/jobs", icon: ListOrdered },
       { label: "+ Nuevo repo", href: "/repos/new", icon: Plus },
@@ -56,9 +58,11 @@ export function Layout({ children }: { children: React.ReactNode }) {
               ? "/repos"
               : path.startsWith("/graph-explorer")
                 ? "/graph-explorer"
-                : path.startsWith("/projects")
-                  ? "/"
-                  : "/"
+                : path.startsWith("/domains")
+                  ? "/domains"
+                  : path.startsWith("/projects")
+                    ? "/"
+                    : "/"
 
   return (
     <div className="flex h-[100dvh] min-h-0 bg-[var(--background)] overflow-hidden">

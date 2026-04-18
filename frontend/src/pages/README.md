@@ -4,7 +4,8 @@ Vistas principales de la aplicación Ariadne.
 
 ## Proyectos (multi-root)
 
-- **ProjectList.tsx** — Lista de proyectos; cada proyecto puede tener varios repos. Muestra el ID del proyecto (MCP) en cada card, clic para copiar. Botón "Nuevo proyecto" → alta de proyecto.
+- **DomainsList.tsx** — CRUD de **dominios** de arquitectura (nombre, color, descripción). Los proyectos se asignan a un dominio y la whitelist entre dominios se configura en el detalle del proyecto (pestaña Arquitectura). Ruta: `/domains`; también enlazado desde el sidebar.
+- **ProjectList.tsx** — Lista de proyectos; cada proyecto puede tener varios repos. Muestra el ID del proyecto (MCP) en cada card, clic para copiar. Botón "Nuevo proyecto" → alta de proyecto. Botón **Dominios** → `/domains`.
 - **CreateProject.tsx** — Alta de proyecto (nombre y descripción opcionales). Tras crear redirige a `/projects/:id` donde se pueden añadir repos. Ruta: `/projects/new`.
 - **ProjectDetail.tsx** — Detalle de proyecto: nombre, descripción (editable), ID (MCP) con copiar y botón **Regenerar ID** (crea nuevo UUID sin perder datos), tabla de repos (columna **Rol (chat)** editable, persiste vía API para inferencia multi-root), acciones por repo.
 - **ProjectChat.tsx** — Chat a nivel proyecto: consulta el grafo de **todos** los repos. Con **varios repos**, opción **chat amplio** (`strictChatScope: false`) para evitar `[AMBIGUOUS_SCOPE]` cuando no hay scope ni inferencia por rol. Análisis de código (diagnóstico, duplicados, …) por repo con **selector de root** si hay varios repos, **alcance opcional** en análisis y badges **`reportMeta`**. AGENTS/SKILL a nivel proyecto. Ruta: `/projects/:id/chat`.
