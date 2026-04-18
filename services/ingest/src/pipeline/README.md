@@ -7,5 +7,6 @@
 - **prisma-extract.ts** — `getDMMF` (`@prisma/internals`): nodos `Model`, `Enum`, relaciones `RELATES_TO` / `USES_ENUM`.
 - **markdown-chunk.ts** / **markdown-graph.ts** — Utilidades legadas (`Document` + `HAS_CHUNK`); el sync actual indexa markdown vía **`MarkdownDoc`** en producer, no por este par.
 - **project.ts**, **falkor.ts**, **domain-*** — Proyecto Falkor y dominio.
+- **c4-infrastructure.ts** / **c4-cypher.ts** — Tras indexar archivos, el sync infiere contenedores desde `docker-compose*`, manifiestos `kubernetes/`/`k8s/` y `workspaces` en `package.json`; escribe `:System`, `:Container`, `File-[:PART_OF]->Container` y roll-up `[:COMMUNICATES_WITH]` (imports/calls entre archivos de distintos contenedores).
 
 Shadow y sync comparten producer + resolución de imports; Prisma y tsconfig virtual se aplican también en `POST /shadow`.

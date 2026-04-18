@@ -1,6 +1,9 @@
 # ComponentGraph
 
-Vista **Grafo de componente** (`/graph-explorer`): consume `GET /api/graph/component/:name` con `depth` y `projectId`.
+Vista **Explorador de grafo** (`/graph-explorer`):
+
+- **Grafo de componente** — `GET /api/graph/component/:name` con `depth` y `projectId`.
+- **Vista C4** — `GET /api/graph/c4-model?projectId=` — nodos padre `System` (subflow) y contenedores hijos; aristas `COMMUNICATES_WITH` (roll-up desde el grafo de código).
 
 - **Alcance**: *Proyectos* (shard completo), *Repos por proyecto* (`graph-summary?repoScoped=1`) y *Repositorios aislados*.
 - **Componente**: `graph-summary?full=1` para poblar el desplegable (proyecto agregado: una petición; repo concreto: `repoScoped=1`). Fallback en ingest si faltan aristas File→Component.
@@ -19,8 +22,10 @@ Vista **Grafo de componente** (`/graph-explorer`): consume `GET /api/graph/compo
 
 | Archivo | Rol |
 |--------|-----|
-| `index.tsx` | Formulario alcance/componente, estado del grafo, expansión y `ReactFlowProvider` |
-| `GraphFlowNode.tsx` | Nodo personalizado |
+| `index.tsx` | Formulario alcance/componente, toggle vista componente vs C4, estado del grafo, expansión y `ReactFlowProvider` |
+| `GraphFlowNode.tsx` | Nodo personalizado (componente) |
+| `C4FlowNodes.tsx` | Nodos `c4System` / `c4Container` (subflows) |
+| `c4ArchitectureFlow.ts` | Mapeo de `C4ModelResponse` → nodos/aristas React Flow |
 | `componentGraphFlow.ts` | Tipos API, `resolveFocalNode`, `filterValidEdges`, mapeo a nodos/aristas React Flow |
 | `graphLayout.ts` | Layout Dagre centrado en el foco |
 | `graphMerge.ts` | Fusión de nodos/aristas al expandir |

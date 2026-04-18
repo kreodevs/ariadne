@@ -255,4 +255,10 @@ export const api = {
       edges: Array<{ source: string; target: string; kind: string }>;
     }>(`/graph/component/${encodeURIComponent(name)}${qs ? `?${qs}` : ''}`);
   },
+
+  /** Vista C4: sistemas, contenedores y COMMUNICATES_WITH (roll-up desde imports/calls). */
+  getC4Model: (projectId: string) =>
+    request<import('./types').C4ModelResponse>(
+      `/graph/c4-model?projectId=${encodeURIComponent(projectId)}`,
+    ),
 };

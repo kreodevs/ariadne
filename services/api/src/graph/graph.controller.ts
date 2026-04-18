@@ -74,6 +74,19 @@ export class GraphController {
     }
   }
 
+  /** GET /graph/c4-model?projectId= — Modelo C4 (sistemas, contenedores, COMMUNICATES_WITH). projectId obligatorio con sharding. */
+  @Get('c4-model')
+  async c4Model(@Query('projectId') projectId: string) {
+    if (!projectId?.trim()) {
+      throw new HttpException('projectId required', HttpStatus.BAD_REQUEST);
+    }
+    try {
+      return await this.graph.getC4Model(projectId.trim());
+    } catch (err) {
+      throw new HttpException(String(err), HttpStatus.INTERNAL_SERVER_ERROR);
+    }
+  }
+
   /** GET /graph/manual?projectId= — Manual del proyecto en Markdown (opcional projectId). */
   @Get('manual')
   async manual(@Query('projectId') projectId?: string) {

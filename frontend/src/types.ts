@@ -208,3 +208,20 @@ export interface FullAuditResult {
     duplicados: Array<{ a: string; b: string; score?: number }>;
   };
 }
+
+/** Modelo C4 (API GET /graph/c4-model): sistemas → contenedores + aristas abstractas. */
+export interface C4ModelResponse {
+  projectId: string;
+  systems: Array<{
+    repoId: string;
+    name: string;
+    containers: Array<{
+      key: string;
+      name: string;
+      repoId: string;
+      technology?: string;
+      c4Kind: string;
+    }>;
+    communicates: Array<{ sourceKey: string; targetKey: string; reason?: string }>;
+  }>;
+}

@@ -17,6 +17,7 @@ npm publish
 ### Core
 - **list_known_projects** — Proyectos indexados (`id` = proyecto Ariadne, `roots[]` = repos). El texto de respuesta indica que para **`get_modification_plan`** en multi-root conviene usar `roots[].id` del repo donde está el código (p. ej. frontend).
 - **get_component_graph**, **get_legacy_impact**, **get_contract_specs** — Grafo, impacto, props (con `description` JSDoc si existe).
+- **get_c4_model** — Modelo C4 (sistemas, contenedores, `COMMUNICATES_WITH`) vía API `GET /api/graph/c4-model`. Requiere **`ARIADNE_API_URL`** (por defecto `http://localhost:3000`) con el servicio API Nest en ejecución.
 - **get_functions_in_file**, **get_import_graph** — Contenido estructural de archivos.
 - **get_file_content** — Contenido crudo del archivo desde Bitbucket/GitHub (requiere INGEST_URL).
 - **validate_before_edit** — OBLIGATORIO antes de editar: impacto + contrato en un llamado.
@@ -58,7 +59,7 @@ Variables: `FALKORDB_HOST`, `FALKORDB_PORT`, `FALKOR_SHARD_BY_PROJECT`, `FALKOR_
 - Requiere FalkorDB con el grafo `AriadneSpecs` ya poblado.
 - **Auth:** Si `MCP_AUTH_TOKEN` está definido, las peticiones deben incluir `Authorization: Bearer <token>`.
 
-Variables: `PORT` (8080), `FALKORDB_HOST`, `FALKORDB_PORT`, `INGEST_URL`, `MCP_AUTH_TOKEN` (opcional).
+Variables: `PORT` (8080), `FALKORDB_HOST`, `FALKORDB_PORT`, `INGEST_URL`, **`ARIADNE_API_URL`** (API Nest para `get_c4_model`; default `http://localhost:3000`), `MCP_AUTH_TOKEN` (opcional).
 
 ### Caché de herramientas MCP (no es la caché de `analyze`)
 

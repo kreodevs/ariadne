@@ -17,6 +17,7 @@ import {
   useEdgesState,
   useReactFlow,
   type Edge,
+  type Node,
   type NodeMouseHandler,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
@@ -38,6 +39,7 @@ import {
 } from '@/components/ui/select';
 import type { ComponentGraphNodeData, ComponentGraphRFNode } from './GraphFlowNode';
 import { GraphFlowNode } from './GraphFlowNode';
+import { C4ContainerNode, C4SystemNode } from './C4FlowNodes';
 import {
   type GraphEdge,
   type GraphNode,
@@ -47,8 +49,13 @@ import {
 } from './componentGraphFlow';
 import { layoutWithDagre } from './graphLayout';
 import { mergeGraphEdges, mergeGraphNodes } from './graphMerge';
+import { buildC4FlowElements } from './c4ArchitectureFlow';
 
-const RF_NODE_TYPES = { componentGraph: GraphFlowNode };
+const RF_NODE_TYPES = {
+  componentGraph: GraphFlowNode,
+  c4System: C4SystemNode,
+  c4Container: C4ContainerNode,
+} as const;
 
 /** Tras cargar el subgrafo desde Falkor, encuadra el viewport. */
 function FitViewOnGraphLoad({ graphKey }: { graphKey: string }) {
@@ -61,6 +68,142 @@ function FitViewOnGraphLoad({ graphKey }: { graphKey: string }) {
     return () => cancelAnimationFrame(id);
   }, [graphKey, fitView]);
   return null;
+}
+
+function C4ArchitectureFlowView({
+  graphKey,
+  projectId,
+}: {
+  graphKey: string;
+  projectId: string;
+}) {
+  const [rfNodes, setRfNodes, onNodesChange] = useNodesState<Node>([]);
+  const [rfEdges, setRfEdges, onEdgesChange] = useEdgesState<Edge>([]);
+  const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!projectId.trim()) {
+      setLoading(false);
+      setRfNodes([]);
+      setRfEdges([]);
+      return;
+    }
+    let cancel = false;
+    setLoading(true);
+    setErr(null);
+    (async () => {
+      try {
+        const data = await api.getC4Model(projectId.trim());
+        if (cancel) return;
+        const { nodes, edges } = buildC4FlowElements(data);
+        setRfNodes(nodes);
+        setRfEdges(edges);
+      } catch (e) {
+        if (!cancel) {
+          setErr(e instanceof Error ? e.message : String(e));
+          setRfNodes([]);
+          setRfEdges([]);
+        }
+      } finally {
+        if (!cancel) setLoading(false);
+      }
+    })();
+    return () => {
+      cancel = true;
+    };
+  }, [projectId, graphKey, setRfNodes, setRfEdges]);
+
+  if (!projectId.trim()) {
+    return (
+      <div
+        className="flex items-center justify-center text-sm text-[var(--foreground-muted)] border border-dashed border-[var(--border)] rounded-lg bg-[var(--muted)]/30"
+        style={{ height: 560 }}
+      >
+        Elige un proyecto indexado para cargar el modelo C4.
+      </div>
+    );
+  }
+
+  if (loading) {
+    return (
+      <div
+        className="flex items-center justify-center text-sm text-[var(--foreground-muted)] border border-[var(--border)] rounded-lg bg-[var(--background)]"
+        style={{ height: 560 }}
+      >
+        Cargando modelo C4…
+      </div>
+    );
+  }
+
+  if (err) {
+    return (
+      <div
+        className="flex items-center justify-center text-sm text-destructive border border-destructive/40 rounded-lg bg-destructive/10 px-4 text-center"
+        style={{ height: 560 }}
+      >
+        {err}
+      </div>
+    );
+  }
+
+  if (rfNodes.length === 0) {
+    return (
+      <div
+        className="flex items-center justify-center text-sm text-[var(--foreground-muted)] border border-dashed border-[var(--border)] rounded-lg bg-[var(--muted)]/30"
+        style={{ height: 560 }}
+      >
+        Sin datos C4 en Falkor (ejecuta sync tras desplegar ingest). Si aún no hay docker-compose/workspaces, se
+        genera un contenedor por defecto.
+      </div>
+    );
+  }
+
+  return (
+    <div
+      className="component-graph-rf w-full rounded-lg overflow-hidden border border-[var(--border)] bg-[var(--background)]"
+      style={{ height: 560 }}
+    >
+      <ReactFlow
+        key={graphKey}
+        nodes={rfNodes}
+        edges={rfEdges}
+        onNodesChange={onNodesChange}
+        onEdgesChange={onEdgesChange}
+        nodeTypes={RF_NODE_TYPES}
+        nodesConnectable={false}
+        edgesReconnectable={false}
+        deleteKeyCode={null}
+        attributionPosition="bottom-right"
+        minZoom={0.12}
+        maxZoom={1.6}
+        defaultEdgeOptions={{ type: 'smoothstep' }}
+        proOptions={{ hideAttribution: true }}
+        elevateEdgesOnSelect
+        nodesDraggable
+      >
+        <FitViewOnGraphLoad graphKey={graphKey} />
+        <Background
+          variant={BackgroundVariant.Dots}
+          gap={20}
+          size={1}
+          color="var(--border)"
+        />
+        <Controls className="!bg-[var(--card)] !border-[var(--border)] [&_button]:!bg-[var(--card)] [&_button]:!border-[var(--border)] [&_button]:!text-[var(--foreground)]" />
+        <Panel
+          position="top-left"
+          className="m-2 max-w-[min(100%,320px)] rounded-md border border-[var(--border)] bg-[var(--card)]/95 backdrop-blur-sm px-3 py-2 text-xs text-[var(--foreground)] shadow-sm"
+        >
+          <p className="font-semibold text-[var(--foreground)] mb-1">Vista C4 (contenedores)</p>
+          <p className="text-[var(--foreground-muted)] leading-relaxed">
+            Nodos padre: <span className="font-mono">System</span>. Hijos: <span className="font-mono">Container</span>{' '}
+            (azul software, verde BD, gris externo). Aristas <span className="font-mono">COMMUNICATES_WITH</span> desde
+            imports/calls entre archivos de distintos contenedores.
+          </p>
+        </Panel>
+      </ReactFlow>
+    </div>
+  );
 }
 
 function ComponentGraphFlowView({
@@ -219,6 +362,8 @@ export function ComponentGraphExplorer() {
   const [graphNonce, setGraphNonce] = useState(0);
   const [expanding, setExpanding] = useState(false);
   const [expandErr, setExpandErr] = useState<string | null>(null);
+  /** Vista componente vs arquitectura C4 (subflows System → Container). */
+  const [viewMode, setViewMode] = useState<'component' | 'c4'>('component');
   /** Evita refetch del mismo componente al expandir (se resetea al cargar un grafo nuevo). */
   const expandedNamesRef = useRef<Set<string>>(new Set());
 
@@ -395,13 +540,42 @@ export function ComponentGraphExplorer() {
 
   return (
     <div className="space-y-4">
-      <div>
-        <h1 className="text-2xl font-bold text-[var(--foreground)] tracking-tight">Grafo de componente</h1>
-        <p className="text-sm text-[var(--foreground-muted)] mt-1">
-          Elige el alcance indexado en Falkor (proyecto multi-repo o repo aislado), luego un componente. Aristas
-          azules: <span className="font-mono">depends</span>. Ámbar discontinuas:{' '}
-          <span className="font-mono">legacy_impact</span> (quienes te usan).
-        </p>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-[var(--foreground)] tracking-tight">Explorador de grafo</h1>
+          <p className="text-sm text-[var(--foreground-muted)] mt-1">
+            {viewMode === 'component' ? (
+              <>
+                Elige el alcance indexado en Falkor (proyecto multi-repo o repo aislado), luego un componente. Aristas
+                azules: <span className="font-mono">depends</span>. Ámbar discontinuas:{' '}
+                <span className="font-mono">legacy_impact</span> (quienes te usan).
+              </>
+            ) : (
+              <>
+                Vista <span className="font-mono">C4</span>: sistemas y contenedores inferidos desde compose/k8s/workspaces
+                y aristas <span className="font-mono">COMMUNICATES_WITH</span> (roll-up de imports/calls entre archivos).
+              </>
+            )}
+          </p>
+        </div>
+        <div className="flex gap-2 shrink-0">
+          <Button
+            type="button"
+            variant={viewMode === 'component' ? 'default' : 'outline'}
+            size="sm"
+            onClick={() => setViewMode('component')}
+          >
+            Grafo de componente
+          </Button>
+          <Button
+            type="button"
+            variant={viewMode === 'c4' ? 'default' : 'outline'}
+            size="sm"
+            onClick={() => setViewMode('c4')}
+          >
+            Vista C4
+          </Button>
+        </div>
       </div>
 
       <Card className="p-4 flex flex-col gap-4 border-[var(--border)] bg-[var(--card)]">
@@ -493,7 +667,7 @@ export function ComponentGraphExplorer() {
                 setEdges([]);
                 setMeta(null);
               }}
-              disabled={!selectedScope || componentsLoading || componentNames.length === 0}
+              disabled={!selectedScope || componentsLoading || componentNames.length === 0 || viewMode === 'c4'}
             >
               <SelectTrigger id="comp-select" className="w-full">
                 <SelectValue
@@ -531,7 +705,11 @@ export function ComponentGraphExplorer() {
             />
           </div>
 
-          <Button type="button" onClick={() => void load()} disabled={loading || !selectedScope}>
+          <Button
+            type="button"
+            onClick={() => void load()}
+            disabled={loading || !selectedScope || viewMode === 'c4'}
+          >
             {loading ? 'Cargando…' : 'Cargar grafo'}
           </Button>
         </div>
@@ -549,15 +727,32 @@ export function ComponentGraphExplorer() {
         </div>
       )}
 
-      <div className="flex flex-wrap gap-4 text-xs text-[var(--foreground-muted)]">
-        <span className="flex items-center gap-2">
-          <span className="inline-block w-8 h-0.5 bg-blue-500 rounded-full" /> depends (animada)
-        </span>
-        <span className="flex items-center gap-2">
-          <span className="inline-block w-8 h-0.5 bg-amber-500 rounded-full border border-dashed border-amber-500/80" />{' '}
-          legacy_impact
-        </span>
-      </div>
+      {viewMode === 'component' ? (
+        <div className="flex flex-wrap gap-4 text-xs text-[var(--foreground-muted)]">
+          <span className="flex items-center gap-2">
+            <span className="inline-block w-8 h-0.5 bg-blue-500 rounded-full" /> depends (animada)
+          </span>
+          <span className="flex items-center gap-2">
+            <span className="inline-block w-8 h-0.5 bg-amber-500 rounded-full border border-dashed border-amber-500/80" />{' '}
+            legacy_impact
+          </span>
+        </div>
+      ) : (
+        <div className="flex flex-wrap gap-4 text-xs text-[var(--foreground-muted)]">
+          <span className="flex items-center gap-2">
+            <span className="inline-block w-3 h-3 rounded border-2 border-sky-500 bg-sky-50 dark:bg-sky-950/40" />{' '}
+            Software
+          </span>
+          <span className="flex items-center gap-2">
+            <span className="inline-block w-3 h-3 rounded border-2 border-emerald-500 bg-emerald-50 dark:bg-emerald-950/40" />{' '}
+            Base de datos
+          </span>
+          <span className="flex items-center gap-2">
+            <span className="inline-block w-3 h-3 rounded border-2 border-slate-400 bg-slate-100 dark:bg-slate-800" />{' '}
+            Externo
+          </span>
+        </div>
+      )}
 
       {expandErr && (
         <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-800 dark:text-amber-200">
@@ -566,15 +761,22 @@ export function ComponentGraphExplorer() {
       )}
 
       <ReactFlowProvider>
-        <ComponentGraphFlowView
-          graphNodes={nodes}
-          graphEdges={edges}
-          rootFocalName={rootFocalName}
-          graphKey={graphKey}
-          projectId={graphProjectId}
-          expanding={expanding}
-          onExpandNode={expandNode}
-        />
+        {viewMode === 'component' ? (
+          <ComponentGraphFlowView
+            graphNodes={nodes}
+            graphEdges={edges}
+            rootFocalName={rootFocalName}
+            graphKey={graphKey}
+            projectId={graphProjectId}
+            expanding={expanding}
+            onExpandNode={expandNode}
+          />
+        ) : (
+          <C4ArchitectureFlowView
+            graphKey={`c4|${scopeKey}|${graphProjectId}`}
+            projectId={graphProjectId}
+          />
+        )}
       </ReactFlowProvider>
     </div>
   );

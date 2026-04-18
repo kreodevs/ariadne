@@ -6,6 +6,33 @@ import { isProjectShardingEnabled } from 'ariadne-common';
 import { FalkorService } from '../falkor.service';
 import { CacheService } from '../cache.service';
 
+/** Contenedor C4 (nivel 2). */
+export interface C4ContainerNodeDto {
+  key: string;
+  name: string;
+  repoId: string;
+  technology?: string;
+  c4Kind: string;
+}
+
+/** Sistema software (nivel 1) con hijos y aristas abstractas. */
+export interface C4SystemNodeDto {
+  repoId: string;
+  name: string;
+  containers: C4ContainerNodeDto[];
+  communicates: Array<{
+    sourceKey: string;
+    targetKey: string;
+    reason?: string;
+  }>;
+}
+
+/** Respuesta jerárquica GET /graph/c4-model. */
+export interface C4ModelResponseDto {
+  projectId: string;
+  systems: C4SystemNodeDto[];
+}
+
 interface FalkorResult {
   headers?: string[];
   data?: unknown[][];
@@ -502,6 +529,110 @@ export class GraphService {
       missingInShadow,
       extraInShadow,
     };
+  }
+
+  async getC4Model(projectId: string): Promise<C4ModelResponseDto> {
+    const pid = String(projectId ?? '').trim();
+    if (!pid) {
+      throw new Error('projectId required');
+    }
+    const cached = await this.cache.get<C4ModelResponseDto>(this.cache.c4ModelKey(pid));
+    if (cached) return cached;
+
+    const graphNames = await this.falkor.getProjectGraphNames(pid);
+    type SysAgg = { repoId: string; name: string; containers: Map<string, C4ContainerNodeDto> };
+    const byRepo = new Map<string, SysAgg>();
+    const commByRepo = new Map<string, C4SystemNodeDto['communicates']>();
+
+    const mergeComm = (repoId: string, row: { sourceKey: string; targetKey: string; reason?: string }) => {
+      const list = commByRepo.get(repoId) ?? [];
+      const ek = `${row.sourceKey}|${row.targetKey}|${row.reason ?? ''}`;
+      const exists = list.some(
+        (x) => `${x.sourceKey}|${x.targetKey}|${x.reason ?? ''}` === ek,
+      );
+      if (!exists) list.push(row);
+      commByRepo.set(repoId, list);
+    };
+
+    for (const nm of graphNames) {
+      const g = await this.falkor.selectGraphByLogicalName(nm);
+      const r1 = (await g.query(
+        `MATCH (s:System {projectId: $projectId}) OPTIONAL MATCH (s)-[:HAS_CONTAINER]->(c:Container)
+         RETURN s.repoId AS repoId, s.name AS sysName, c.key AS ck, c.name AS cname, c.technology AS tech, c.c4Kind AS kind, c.repoId AS cRepo`,
+        { params: { projectId: pid } },
+      )) as FalkorResult;
+      const d1 = r1.data ?? [];
+      const h1 = r1.headers ?? [];
+      const idx = (name: string) => h1.indexOf(name);
+      const iRepo = idx('repoId');
+      const iName = idx('sysName');
+      const iCk = idx('ck');
+      const iCn = idx('cname');
+      const iTech = idx('tech');
+      const iKind = idx('kind');
+      const iCrepo = idx('cRepo');
+      for (const row of d1 as unknown[]) {
+        const arr = Array.isArray(row) ? row : [row];
+        const repoId = falkorScalarToString(arr[iRepo >= 0 ? iRepo : 0] as unknown);
+        const sysName = falkorScalarToString(arr[iName >= 0 ? iName : 1] as unknown);
+        if (!repoId) continue;
+        let agg = byRepo.get(repoId);
+        if (!agg) {
+          agg = { repoId, name: sysName || repoId, containers: new Map() };
+          byRepo.set(repoId, agg);
+        } else if (sysName) {
+          agg.name = sysName;
+        }
+        const ck = iCk >= 0 ? falkorScalarToString(arr[iCk] as unknown) : undefined;
+        if (!ck) continue;
+        const cname = falkorScalarToString(arr[iCn >= 0 ? iCn : 0] as unknown) ?? ck;
+        const tech = falkorScalarToString(arr[iTech >= 0 ? iTech : 0] as unknown);
+        const kind = falkorScalarToString(arr[iKind >= 0 ? iKind : 0] as unknown) ?? 'software';
+        const cRepo = falkorScalarToString(arr[iCrepo >= 0 ? iCrepo : 0] as unknown) ?? repoId;
+        agg.containers.set(ck, {
+          key: ck,
+          name: cname,
+          repoId: cRepo,
+          ...(tech ? { technology: tech } : {}),
+          c4Kind: kind,
+        });
+      }
+
+      const r2 = (await g.query(
+        `MATCH (a:Container {projectId: $projectId})-[r:COMMUNICATES_WITH]->(b:Container {projectId: $projectId})
+         WHERE a.repoId = b.repoId
+         RETURN a.repoId AS repoId, a.key AS src, b.key AS tgt, r.reason AS reason`,
+        { params: { projectId: pid } },
+      )) as FalkorResult;
+      const d2 = r2.data ?? [];
+      const h2 = r2.headers ?? [];
+      const j = (name: string) => h2.indexOf(name);
+      const jr = j('repoId');
+      const js = j('src');
+      const jt = j('tgt');
+      const jrns = j('reason');
+      for (const row of d2 as unknown[]) {
+        const arr = Array.isArray(row) ? row : [row];
+        const repoId = falkorScalarToString(arr[jr >= 0 ? jr : 0] as unknown);
+        const src = falkorScalarToString(arr[js >= 0 ? js : 1] as unknown);
+        const tgt = falkorScalarToString(arr[jt >= 0 ? jt : 2] as unknown);
+        const reason = falkorScalarToString(arr[jrns >= 0 ? jrns : 3] as unknown);
+        if (!repoId || !src || !tgt) continue;
+        mergeComm(repoId, { sourceKey: src, targetKey: tgt, ...(reason ? { reason } : {}) });
+      }
+    }
+
+    const systems: C4SystemNodeDto[] = [...byRepo.values()].map((agg) => ({
+      repoId: agg.repoId,
+      name: agg.name,
+      containers: [...agg.containers.values()].sort((a, b) => a.key.localeCompare(b.key)),
+      communicates: commByRepo.get(agg.repoId) ?? [],
+    }));
+    systems.sort((a, b) => a.repoId.localeCompare(b.repoId));
+
+    const payload: C4ModelResponseDto = { projectId: pid, systems };
+    await this.cache.set(this.cache.c4ModelKey(pid), payload, this.cache.TTL.component);
+    return payload;
   }
 
   async getManual(projectId?: string): Promise<string> {
