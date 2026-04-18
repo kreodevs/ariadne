@@ -13,9 +13,33 @@ export class DomainsController {
     return this.domains.findAll();
   }
 
+  @Get(':id/projects')
+  listDomainProjects(@Param('id') id: string) {
+    return this.domains.listProjectsForDomain(id);
+  }
+
+  @Get(':id/visibility')
+  listDomainVisibility(@Param('id') id: string) {
+    return this.domains.listOutgoingVisibility(id);
+  }
+
   @Get(':id')
   findOne(@Param('id') id: string) {
     return this.domains.findOne(id);
+  }
+
+  @Post(':id/visibility')
+  addDomainVisibility(
+    @Param('id') id: string,
+    @Body() body: { toDomainId: string; description?: string | null },
+  ) {
+    return this.domains.addDomainVisibility(id, body);
+  }
+
+  @Delete(':id/visibility/:edgeId')
+  async removeDomainVisibility(@Param('id') id: string, @Param('edgeId') edgeId: string) {
+    await this.domains.removeDomainVisibility(id, edgeId);
+    return { ok: true };
   }
 
   @Post()

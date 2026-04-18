@@ -4,7 +4,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { api } from '../api';
-import type { Project, Repository } from '../types';
+import type { Domain, Project, Repository } from '../types';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import {
@@ -27,6 +27,14 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Skeleton } from '@/components/ui/skeleton';
 import { StatusBadge } from '@/components/StatusBadge';
 import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { Pencil, RefreshCw } from 'lucide-react';
 import { ArchitecturePanel } from './ProjectDetail/ArchitecturePanel';
 
@@ -187,6 +195,8 @@ export function ProjectDetail() {
   const [resyncForProjectRepoId, setResyncForProjectRepoId] = useState<string | null>(null);
   const [roleSavingRepoId, setRoleSavingRepoId] = useState<string | null>(null);
   const [detailTab, setDetailTab] = useState<'general' | 'architecture'>('general');
+  const [domains, setDomains] = useState<Domain[]>([]);
+  const [savingDomain, setSavingDomain] = useState(false);
 
   const fetchProject = useCallback(() => {
     if (!id) return;
@@ -202,6 +212,13 @@ export function ProjectDetail() {
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false));
   }, [id]);
+
+  useEffect(() => {
+    api
+      .getDomains()
+      .then(setDomains)
+      .catch(() => setDomains([]));
+  }, []);
 
   useEffect(() => {
     if (associateDialogOpen && id) {
@@ -360,6 +377,21 @@ export function ProjectDetail() {
       '';
     setNameDraft(current);
     setEditingName(true);
+  };
+
+  const saveProjectDomain = async (domainId: string | null) => {
+    if (!id) return;
+    setSavingDomain(true);
+    setError(null);
+    try {
+      await api.updateProject(id, { domainId });
+      const updated = await api.getProject(id);
+      setProject(updated);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Error al asignar dominio');
+    } finally {
+      setSavingDomain(false);
+    }
   };
 
   /** Guarda nombre con PATCH /projects/:id y cierra modo edición. */
@@ -531,6 +563,47 @@ export function ProjectDetail() {
         onDraftChange={setDescriptionDraft}
         onSave={saveDescription}
       />
+
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-base">Dominio (gobierno C4)</CardTitle>
+          <CardDescription>
+            FK estructural en BD: el proyecto pertenece a un dominio. Afecta coloración, whitelist de grafos y visibilidad
+            entre dominios.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="flex flex-wrap gap-4 items-end pt-0">
+          <div className="space-y-1 min-w-[220px]">
+            <Label htmlFor="proj-domain">Dominio</Label>
+            <Select
+              value={project.domainId ?? '__none__'}
+              onValueChange={(v) => void saveProjectDomain(v === '__none__' ? null : v)}
+              disabled={savingDomain || domains.length === 0}
+            >
+              <SelectTrigger id="proj-domain">
+                <SelectValue placeholder={domains.length === 0 ? 'Crea dominios primero' : 'Sin dominio'} />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__none__">(ninguno)</SelectItem>
+                {domains.map((d) => (
+                  <SelectItem key={d.id} value={d.id}>
+                    <span className="inline-flex items-center gap-2">
+                      <span
+                        className="inline-block size-3 rounded border"
+                        style={{ backgroundColor: d.color }}
+                      />
+                      {d.name}
+                    </span>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <Button variant="link" className="text-xs h-auto p-0" asChild>
+            <Link to="/domains">Gestionar dominios</Link>
+          </Button>
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader>

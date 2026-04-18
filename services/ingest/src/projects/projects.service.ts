@@ -10,6 +10,7 @@ import { ProjectEntity } from './entities/project.entity';
 import { RepositoryEntity } from '../repositories/entities/repository.entity';
 import { ProjectRepositoryEntity } from '../repositories/entities/project-repository.entity';
 import { ProjectDomainDependencyEntity } from '../domains/entities/project-domain-dependency.entity';
+import { DomainDomainVisibilityEntity } from '../domains/entities/domain-domain-visibility.entity';
 import { DomainEntity } from '../domains/entities/domain.entity';
 import {
   getFalkorConfig,
@@ -65,6 +66,8 @@ export class ProjectsService {
     private readonly repoRepo: Repository<RepositoryEntity>,
     @InjectRepository(ProjectDomainDependencyEntity)
     private readonly projectDomainDepRepo: Repository<ProjectDomainDependencyEntity>,
+    @InjectRepository(DomainDomainVisibilityEntity)
+    private readonly domainDomainVisRepo: Repository<DomainDomainVisibilityEntity>,
     @InjectRepository(DomainEntity)
     private readonly domainRepo: Repository<DomainEntity>,
   ) {}
@@ -283,11 +286,23 @@ export class ProjectsService {
       where: { projectId },
       select: ['dependsOnDomainId'],
     });
-    const domainIds = [...new Set(deps.map((d) => d.dependsOnDomainId))];
-    if (domainIds.length === 0) return out;
+    const projectRow = await this.projectRepo.findOne({
+      where: { id: projectId },
+      select: ['domainId'],
+    });
+    const domainIds = new Set(deps.map((d) => d.dependsOnDomainId));
+    if (projectRow?.domainId) {
+      const vis = await this.domainDomainVisRepo.find({
+        where: { fromDomainId: projectRow.domainId },
+        select: ['toDomainId'],
+      });
+      for (const v of vis) domainIds.add(v.toDomainId);
+    }
+    const domainIdsArr = [...domainIds];
+    if (domainIdsArr.length === 0) return out;
 
     const siblings = await this.projectRepo.find({
-      where: { domainId: In(domainIds) },
+      where: { domainId: In(domainIdsArr) },
       select: ['id'],
     });
     for (const s of siblings) {

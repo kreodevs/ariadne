@@ -136,6 +136,8 @@ export interface StrapiServiceInfo {
 export interface RouteInfo {
   path: string;
   componentName: string;
+  /** Componente React que envuelve esta `<Route>` (subida por el AST). */
+  enclosingComponent?: string;
 }
 
 /** Modelo de datos (clase con propiedades, sin JSX). */
@@ -844,6 +846,43 @@ function collectContextsAndDefinedHooks(
   }
 }
 
+/**
+ * Sube por el AST desde un nodo JSX hasta el componente funcional/clase que envuelve el JSX.
+ * Usado para RENDERS App → página declarada en `<Route element={<Page/>}/>`.
+ */
+function findEnclosingReactComponentName(node: Parser.SyntaxNode, source: string): string | undefined {
+  let cur: Parser.SyntaxNode | null = node;
+  while (cur) {
+    if (cur.type === 'function_declaration') {
+      const nameNode = cur.childForFieldName('name');
+      if (nameNode) {
+        const fn = getNodeText(source, nameNode);
+        if (isReactComponentName(fn)) return fn;
+      }
+    }
+    if (cur.type === 'class_declaration') {
+      const nameNode = cur.childForFieldName('name');
+      if (nameNode) {
+        const cn = getNodeText(source, nameNode);
+        if (isReactComponentName(cn)) return cn;
+      }
+    }
+    if (cur.type === 'function' || cur.type === 'arrow_function') {
+      const parent = cur.parent;
+      if (parent?.type === 'variable_declarator') {
+        const nameNode = parent.childForFieldName('name');
+        if (nameNode) {
+          const raw = getNodeText(source, nameNode);
+          const vn = extractIdentifierFromDeclName(raw);
+          if (vn && isReactComponentName(vn)) return vn;
+        }
+      }
+    }
+    cur = cur.parent;
+  }
+  return undefined;
+}
+
 /** Detecta rutas React Router (<Route path="..." element={<X />} />). */
 function collectRoutes(root: Parser.SyntaxNode, source: string, result: ParsedFile): void {
   const routeNodes = [
@@ -871,7 +910,8 @@ function collectRoutes(root: Parser.SyntaxNode, source: string, result: ParsedFi
       componentName = child ? getComponentFromJsxExpr(child, source) : undefined;
     }
     if (componentName && isReactComponentName(componentName)) {
-      result.routes.push({ path, componentName });
+      const enclosingComponent = findEnclosingReactComponentName(node, source);
+      result.routes.push({ path, componentName, ...(enclosingComponent ? { enclosingComponent } : {}) });
     }
   }
 }

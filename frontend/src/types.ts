@@ -56,6 +56,18 @@ export interface Domain {
   metadata: Record<string, unknown> | null;
   createdAt: string;
   updatedAt: string;
+  /** Proyectos con domain_id = este dominio (listado GET /domains). */
+  assignedProjectCount?: number;
+}
+
+/** Arista de visibilidad dominio → dominio (C4 / shards). Tabla `domain_domain_visibility`. */
+export interface DomainVisibilityEdge {
+  id: string;
+  fromDomainId: string;
+  toDomainId: string;
+  toDomainName?: string;
+  description: string | null;
+  createdAt: string;
 }
 
 export interface ProjectDomainDependency {

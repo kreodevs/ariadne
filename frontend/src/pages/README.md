@@ -9,7 +9,7 @@ Vistas principales de la aplicación Ariadne (shell SaaS: sidebar + header con b
 
 ## Proyectos (multi-root)
 
-- **DomainsList.tsx** — CRUD de **dominios** de arquitectura (nombre, color, descripción). Los proyectos se asignan a un dominio y la whitelist entre dominios se configura en el detalle del proyecto (pestaña Arquitectura). Ruta: `/domains`; también enlazado desde el sidebar.
+- **DomainsList.tsx** — CRUD de **dominios** (nombre, color, descripción), columna **Proyectos asignados** (recuento + diálogo con enlaces), y diálogo **Visibilidad C4** (`domain_domain_visibility`). Los proyectos también asignan dominio en **ProjectDetail** (General o Arquitectura). Ruta: `/domains`.
 - **ProjectList.tsx** — Lista de proyectos en **cards** con barra de salud de ingesta (repos `ready`/total), badge de dominio si aplica, ID MCP. Títulos de página `text-4xl`. Ruta **`/projects`** (no `/`; la raíz redirige al dashboard). Botón **Dominios** → `/domains`.
 - **CreateProject.tsx** — Alta de proyecto (nombre y descripción opcionales). Tras crear redirige a `/projects/:id` donde se pueden añadir repos. Ruta: `/projects/new`.
 - **ProjectDetail.tsx** — Detalle de proyecto: nombre, descripción (editable), ID (MCP) con copiar y botón **Regenerar ID** (crea nuevo UUID sin perder datos), tabla de repos (columna **Rol (chat)** editable, persiste vía API para inferencia multi-root), acciones por repo.

@@ -98,6 +98,28 @@ export const api = {
     request<import('./types').Domain>(`/domains/${id}`, { method: 'PATCH', body: JSON.stringify(dto) }),
   deleteDomain: (id: string) => request<void>(`/domains/${id}`, { method: 'DELETE' }),
 
+  getDomainProjects: (domainId: string) =>
+    request<Array<{ id: string; name: string | null }>>(
+      `/domains/${encodeURIComponent(domainId)}/projects`,
+    ),
+  listDomainVisibility: (domainId: string) =>
+    request<import('./types').DomainVisibilityEdge[]>(
+      `/domains/${encodeURIComponent(domainId)}/visibility`,
+    ),
+  addDomainVisibility: (
+    domainId: string,
+    dto: { toDomainId: string; description?: string | null },
+  ) =>
+    request<import('./types').DomainVisibilityEdge>(
+      `/domains/${encodeURIComponent(domainId)}/visibility`,
+      { method: 'POST', body: JSON.stringify(dto) },
+    ),
+  removeDomainVisibility: (domainId: string, edgeId: string) =>
+    request<void>(
+      `/domains/${encodeURIComponent(domainId)}/visibility/${encodeURIComponent(edgeId)}`,
+      { method: 'DELETE' },
+    ),
+
   getProjectArchitectureC4: (projectId: string, opts?: { level?: number; sessionId?: string | null }) => {
     const q = new URLSearchParams();
     if (opts?.level != null) q.set('level', String(opts.level));
@@ -310,6 +332,7 @@ export const api = {
       dependencies: Array<{ name?: string; path?: string }>;
       nodes: Array<{ id: string; kind: string; name?: string; path?: string }>;
       edges: Array<{ source: string; target: string; kind: string }>;
+      graphHints?: { suggestResync?: boolean; messageEs?: string };
     }>(`/graph/component/${encodeURIComponent(name)}${qs ? `?${qs}` : ''}`);
   },
 

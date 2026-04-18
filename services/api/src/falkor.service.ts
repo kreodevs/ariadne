@@ -78,6 +78,39 @@ export class FalkorService implements OnModuleDestroy {
   }
 
   /**
+   * Grafos Falkor y el `projectId` que llevan los nodos en cada uno (propio + whitelist de dominios vía ingest).
+   * Usado por C4 y cualquier fan-out que deba alinearse con `graph-routing`.
+   */
+  async getCypherShardContexts(
+    projectId: string,
+  ): Promise<Array<{ graphName: string; cypherProjectId: string }>> {
+    const pid = String(projectId ?? '').trim();
+    if (!pid) {
+      return [];
+    }
+    const base = process.env.INGEST_URL?.replace(/\/$/, '') ?? '';
+    if (base) {
+      try {
+        const res = await fetch(`${base}/projects/${encodeURIComponent(pid)}/graph-routing`, {
+          signal: AbortSignal.timeout(8000),
+        });
+        if (res.ok) {
+          const j = (await res.json()) as {
+            cypherShardContexts?: Array<{ graphName: string; cypherProjectId: string }>;
+          };
+          if (Array.isArray(j.cypherShardContexts) && j.cypherShardContexts.length > 0) {
+            return j.cypherShardContexts;
+          }
+        }
+      } catch {
+        /* ingest no alcanzable */
+      }
+    }
+    const names = await this.getProjectGraphNames(pid);
+    return names.map((graphName) => ({ graphName, cypherProjectId: pid }));
+  }
+
+  /**
    * Grafo principal. Con FALKOR_SHARD_BY_PROJECT, pasar projectId del índice Ariadne/repo.
    * Con partición por dominio, pasar `repoRelativePath` (ruta de archivo relativa al repo) para abrir el subgrafo.
    */

@@ -1,5 +1,5 @@
 # Dominios (gobierno de arquitectura)
 
-- **Entidades:** `DomainEntity`, `ProjectDomainDependencyEntity` (whitelist proyecto → dominio).
-- **API:** `DomainsController` bajo `/domains` — CRUD de dominios; dependencias por proyecto en `ProjectsController` (`GET|POST|DELETE .../domain-dependencies`). Proxificado por la API gateway como `/api/domains` y `/api/projects/...`.
-- **Falkor:** `ProjectsService.getCypherShardContexts()` combina grafos del proyecto con los de proyectos en dominios permitidos; el par `(graphName, cypherProjectId)` alimenta chat/MCP para Cypher correcto por shard.
+- **Entidades:** `DomainEntity`; `ProjectDomainDependencyEntity` (whitelist **proyecto → dominio** externo, tabla `project_domain_dependencies`); `DomainDomainVisibilityEntity` (visibilidad **dominio → dominio**, tabla `domain_domain_visibility`, sin self-loop).
+- **API:** `DomainsController` bajo `/domains` — CRUD de dominios; `GET /domains/:id/projects` (proyectos con `domain_id`); `GET|POST|DELETE /domains/:id/visibility` (aristas salientes). Dependencias por proyecto en `ProjectsController` (`GET|POST|DELETE .../domain-dependencies`). Proxificado por la API gateway como `/api/domains` y `/api/projects/...`.
+- **Falkor / C4:** `ProjectsService.getCypherShardContexts()` une el grafo propio con proyectos cuyo `domain_id` está en: (1) dominios declarados en `project_domain_dependencies` y (2) dominios alcanzables vía `domain_domain_visibility` desde el dominio del proyecto. El par `(graphName, cypherProjectId)` alimenta chat/MCP y el **API** (`FalkorService.getCypherShardContexts` → `GET /graph/c4-model`) para Cypher correcto por shard.

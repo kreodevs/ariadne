@@ -6,6 +6,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
 import { DomainEntity } from './entities/domain.entity';
 import { ProjectDomainDependencyEntity } from './entities/project-domain-dependency.entity';
+import { DomainDomainVisibilityEntity } from './entities/domain-domain-visibility.entity';
 import { ProjectEntity } from '../projects/entities/project.entity';
 
 export interface DomainDto {
@@ -16,6 +17,8 @@ export interface DomainDto {
   metadata: Record<string, unknown> | null;
   createdAt: string;
   updatedAt: string;
+  /** Proyectos con `domain_id` = este dominio. */
+  assignedProjectCount?: number;
 }
 
 export interface ProjectDomainDependencyDto {
@@ -28,6 +31,15 @@ export interface ProjectDomainDependencyDto {
   createdAt: string;
 }
 
+export interface DomainVisibilityEdgeDto {
+  id: string;
+  fromDomainId: string;
+  toDomainId: string;
+  toDomainName?: string;
+  description: string | null;
+  createdAt: string;
+}
+
 @Injectable()
 export class DomainsService {
   constructor(
@@ -35,6 +47,8 @@ export class DomainsService {
     private readonly domainRepo: Repository<DomainEntity>,
     @InjectRepository(ProjectDomainDependencyEntity)
     private readonly depRepo: Repository<ProjectDomainDependencyEntity>,
+    @InjectRepository(DomainDomainVisibilityEntity)
+    private readonly domainVisRepo: Repository<DomainDomainVisibilityEntity>,
     @InjectRepository(ProjectEntity)
     private readonly projectRepo: Repository<ProjectEntity>,
   ) {}
@@ -53,7 +67,22 @@ export class DomainsService {
 
   async findAll(): Promise<DomainDto[]> {
     const rows = await this.domainRepo.find({ order: { name: 'ASC' } });
-    return rows.map((r) => this.toDto(r));
+    if (rows.length === 0) return [];
+    const ids = rows.map((r) => r.id);
+    const raw = await this.projectRepo
+      .createQueryBuilder('p')
+      .select('p.domain_id', 'domainId')
+      .addSelect('COUNT(*)', 'cnt')
+      .where('p.domain_id IN (:...ids)', { ids })
+      .groupBy('p.domain_id')
+      .getRawMany();
+    const countByDomain = new Map<string, number>(
+      raw.map((x: { domainId: string; cnt: string }) => [x.domainId, parseInt(String(x.cnt), 10)]),
+    );
+    return rows.map((r) => ({
+      ...this.toDto(r),
+      assignedProjectCount: countByDomain.get(r.id) ?? 0,
+    }));
   }
 
   async findOne(id: string): Promise<DomainDto> {
@@ -97,6 +126,79 @@ export class DomainsService {
   async remove(id: string): Promise<void> {
     await this.findOne(id);
     await this.domainRepo.delete(id);
+  }
+
+  async listProjectsForDomain(domainId: string): Promise<Array<{ id: string; name: string | null }>> {
+    await this.findOne(domainId);
+    const projects = await this.projectRepo.find({
+      where: { domainId },
+      select: ['id', 'name'],
+      order: { updatedAt: 'DESC' },
+    });
+    return projects.map((p) => ({ id: p.id, name: p.name ?? null }));
+  }
+
+  async listOutgoingVisibility(fromDomainId: string): Promise<DomainVisibilityEdgeDto[]> {
+    await this.findOne(fromDomainId);
+    const rows = await this.domainVisRepo.find({
+      where: { fromDomainId },
+      order: { createdAt: 'ASC' },
+    });
+    const toIds = [...new Set(rows.map((r) => r.toDomainId))];
+    const domains =
+      toIds.length > 0
+        ? await this.domainRepo.find({ where: { id: In(toIds) }, select: ['id', 'name'] })
+        : [];
+    const nameById = new Map(domains.map((d) => [d.id, d.name] as const));
+    return rows.map((r) => ({
+      id: r.id,
+      fromDomainId: r.fromDomainId,
+      toDomainId: r.toDomainId,
+      toDomainName: nameById.get(r.toDomainId),
+      description: r.description ?? null,
+      createdAt: r.createdAt.toISOString(),
+    }));
+  }
+
+  async addDomainVisibility(
+    fromDomainId: string,
+    body: { toDomainId: string; description?: string | null },
+  ): Promise<DomainVisibilityEdgeDto> {
+    if (fromDomainId === body.toDomainId) {
+      throw new BadRequestException('fromDomainId and toDomainId must differ');
+    }
+    await this.findOne(fromDomainId);
+    await this.findOne(body.toDomainId);
+    const entity = this.domainVisRepo.create({
+      fromDomainId,
+      toDomainId: body.toDomainId,
+      description: body.description?.trim() ?? null,
+    });
+    try {
+      const saved = await this.domainVisRepo.save(entity);
+      const to = await this.domainRepo.findOne({ where: { id: saved.toDomainId }, select: ['name'] });
+      return {
+        id: saved.id,
+        fromDomainId: saved.fromDomainId,
+        toDomainId: saved.toDomainId,
+        toDomainName: to?.name,
+        description: saved.description ?? null,
+        createdAt: saved.createdAt.toISOString(),
+      };
+    } catch (e: unknown) {
+      const err = e as { code?: string };
+      if (err?.code === '23505') {
+        throw new BadRequestException('Visibility edge already exists for this pair');
+      }
+      throw e;
+    }
+  }
+
+  async removeDomainVisibility(fromDomainId: string, edgeId: string): Promise<void> {
+    await this.findOne(fromDomainId);
+    const r = await this.domainVisRepo.findOne({ where: { id: edgeId, fromDomainId } });
+    if (!r) throw new NotFoundException('Visibility edge not found');
+    await this.domainVisRepo.delete(edgeId);
   }
 
   async listProjectDependencies(projectId: string): Promise<ProjectDomainDependencyDto[]> {

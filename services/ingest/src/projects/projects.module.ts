@@ -7,6 +7,7 @@ import { ProjectEntity } from './entities/project.entity';
 import { RepositoryEntity } from '../repositories/entities/repository.entity';
 import { ProjectRepositoryEntity } from '../repositories/entities/project-repository.entity';
 import { ProjectDomainDependencyEntity } from '../domains/entities/project-domain-dependency.entity';
+import { DomainDomainVisibilityEntity } from '../domains/entities/domain-domain-visibility.entity';
 import { DomainEntity } from '../domains/entities/domain.entity';
 import { ProjectsController } from './projects.controller';
 import { ProjectsService } from './projects.service';
@@ -21,6 +22,7 @@ import { DomainsModule } from '../domains/domains.module';
       ProjectRepositoryEntity,
       RepositoryEntity,
       ProjectDomainDependencyEntity,
+      DomainDomainVisibilityEntity,
       DomainEntity,
     ]),
     RepositoriesModule,

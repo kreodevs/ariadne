@@ -222,6 +222,25 @@ export function buildCypherForFile(
     }
   }
 
+  /** RENDERS desde `<Route element={<Page/>}/>`: el parser infiere `enclosingComponent`; si no, archivo mono-componente. */
+  for (const r of parsed.routes ?? []) {
+    const parents: string[] = [];
+    if (
+      r.enclosingComponent &&
+      parsed.components.some((c) => c.name === r.enclosingComponent)
+    ) {
+      parents.push(r.enclosingComponent);
+    } else if (parsed.components.length === 1) {
+      parents.push(parsed.components[0]!.name);
+    }
+    for (const parentName of parents) {
+      statements.push(`MERGE (child:Component {name: ${cypherSafe(r.componentName)}, projectId: ${pid}, repoId: ${rid}})`);
+      statements.push(
+        `MATCH (parent:Component {name: ${cypherSafe(parentName)}, projectId: ${pid}, repoId: ${rid}}) MATCH (child:Component {name: ${cypherSafe(r.componentName)}, projectId: ${pid}, repoId: ${rid}}) MERGE (parent)-[:RENDERS]->(child)`,
+      );
+    }
+  }
+
   for (const ctx of parsed.contexts ?? []) {
     statements.push(
       `MERGE (ctx:Context {name: ${cypherSafe(ctx.name)}, projectId: ${pid}, repoId: ${rid}})`,

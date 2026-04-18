@@ -72,6 +72,13 @@ export const openApiSpec = {
                   properties: {
                     componentName: { type: "string" },
                     depth: { type: "integer" },
+                    graphHints: {
+                      type: "object",
+                      properties: {
+                        suggestResync: { type: "boolean" },
+                        messageEs: { type: "string" },
+                      },
+                    },
                     dependencies: {
                       type: "array",
                       items: {

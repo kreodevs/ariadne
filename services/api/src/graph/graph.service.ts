@@ -67,6 +67,12 @@ export interface GraphEdgeDto {
   kind: string;
 }
 
+/** Pistas cuando el corte Falkor no muestra depends salientes (p. ej. desincronización con el chat). */
+export interface GraphComponentHintsDto {
+  suggestResync?: boolean;
+  messageEs?: string;
+}
+
 /**
  * FalkorDB / drivers a veces devuelven `name` u otros campos como objetos anidados;
  * `String(obj)` produce "[object Object]" y rompe ids + aristas en el cliente.
@@ -262,23 +268,38 @@ export class GraphService {
     pid: string | undefined,
     accum: ComponentShardAccum,
   ): Promise<void> {
-    const compMatch = pid ? ', projectId: $projectId' : '';
     const params: Record<string, string> = { componentName: name };
     if (pid) params.projectId = pid;
 
+    const dRel = Math.min(Math.max(depth, 1), 10);
+    const importHop = Math.min(dRel, 5);
     const rendersRows = (await graph.query(
       pid
-        ? `MATCH (n:Component {name: $componentName, projectId: $projectId})-[:RENDERS]->(m:Component) WHERE n.projectId = $projectId AND m.projectId = $projectId RETURN n AS c, m AS dependency`
-        : `MATCH (n:Component {name: $componentName})-[:RENDERS]->(m:Component) RETURN n AS c, m AS dependency`,
+        ? `MATCH (c:Component {name: $componentName, projectId: $projectId})-[:RENDERS*1..${dRel}]->(dependency:Component) WHERE c.projectId = $projectId AND dependency.projectId = $projectId RETURN c, dependency`
+        : `MATCH (c:Component {name: $componentName})-[:RENDERS*1..${dRel}]->(dependency:Component) RETURN c, dependency`,
       { params },
     )) as FalkorResult;
-    const pathWhere = pid ? ` WHERE dependency.projectId = $projectId` : '';
-    const pathRows = (await graph.query(
-      `MATCH (c:Component {name: $componentName${compMatch}})-[*1..${depth}]->(dependency)${pathWhere} RETURN c, dependency`,
+    const hookRows = (await graph.query(
+      pid
+        ? `MATCH (c:Component {name: $componentName, projectId: $projectId})-[:USES_HOOK]->(dependency:Hook) WHERE c.projectId = $projectId AND dependency.projectId = $projectId RETURN c, dependency`
+        : `MATCH (c:Component {name: $componentName})-[:USES_HOOK]->(dependency:Hook) RETURN c, dependency`,
       { params },
     )) as FalkorResult;
-    const data = [...(rendersRows.data ?? []), ...(pathRows.data ?? [])];
-    const headers = pathRows.headers ?? rendersRows.headers ?? ['c', 'dependency'];
+    const importsRows = pid
+      ? ((await graph.query(
+          `MATCH (c:Component {name: $componentName, projectId: $projectId})<-[:CONTAINS]-(f:File {projectId: $projectId}) ` +
+            `MATCH (f)-[:IMPORTS*1..${importHop}]->(f2:File {projectId: $projectId}) ` +
+            `MATCH (f2)-[:CONTAINS]->(dependency:Component {projectId: $projectId}) ` +
+            `WHERE c.projectId = $projectId AND dependency.projectId = $projectId RETURN c, dependency`,
+          { params },
+        )) as FalkorResult)
+      : ({ data: [] as unknown[][] } as FalkorResult);
+    const data = [
+      ...(rendersRows.data ?? []),
+      ...(hookRows.data ?? []),
+      ...(importsRows.data ?? []),
+    ];
+    const headers = rendersRows.headers ?? ['c', 'dependency'];
     const cIdx = headers.indexOf('c');
     const depIdx = headers.indexOf('dependency');
 
@@ -287,9 +308,9 @@ export class GraphService {
       const centerCell = cIdx >= 0 && arr[cIdx] != null ? arr[cIdx] : arr[0];
       const dep = depIdx >= 0 && arr[depIdx] != null ? arr[depIdx] : arr[1];
       const centerNode = parseGraphNodeCell(centerCell);
-      if (centerNode && !accum.centerId) {
-        accum.centerId = centerNode.id;
+      if (centerNode) {
         accum.nodes.set(centerNode.id, centerNode);
+        if (!accum.centerId) accum.centerId = centerNode.id;
       }
       const depParsed = parseGraphNodeCell(dep);
       const obj =
@@ -312,9 +333,9 @@ export class GraphService {
         name: falkorScalarToString(obj.name),
         path: falkorScalarToString(obj.path),
       });
-      if (depParsed) {
+      if (depParsed && centerNode) {
         accum.nodes.set(depParsed.id, depParsed);
-        if (accum.centerId) addGraphEdge(accum.edges, accum.edgeKey, accum.centerId, depParsed.id, 'depends');
+        addGraphEdge(accum.edges, accum.edgeKey, centerNode.id, depParsed.id, 'depends');
       }
     }
 
@@ -418,6 +439,7 @@ export class GraphService {
       dependencies: unknown[];
       nodes: GraphNodeDto[];
       edges: GraphEdgeDto[];
+      graphHints?: GraphComponentHintsDto;
     }>(this.cache.componentKey(name, depth, pid, scopePath));
     if (cached) return cached;
 
@@ -490,6 +512,26 @@ export class GraphService {
 
     normalizeComponentGraphFocal(nodes, edges, name, centerId);
 
+    let focalIdForHints: string | null = null;
+    for (const [id, n] of nodes) {
+      if (n.name === name && (n.kind === 'Component' || n.kind === 'Node')) {
+        focalIdForHints = id;
+        break;
+      }
+    }
+    if (!focalIdForHints) focalIdForHints = centerId;
+    const dependsOut = focalIdForHints
+      ? edges.filter((e) => e.kind === 'depends' && e.source === focalIdForHints).length
+      : 0;
+    const graphHints: GraphComponentHintsDto | undefined =
+      dependsOut === 0 && pid
+        ? {
+            suggestResync: true,
+            messageEs:
+              'Sin aristas depends salientes en Falkor para este foco. Si el chat sí lista RENDERS, confirma projectId/resync del repo; tras indexar rutas React Router, deberían aparecer como RENDERS.',
+          }
+        : undefined;
+
     const payload = {
       componentName: name,
       depth,
@@ -497,6 +539,7 @@ export class GraphService {
       dependencies,
       nodes: [...nodes.values()],
       edges,
+      ...(graphHints ? { graphHints } : {}),
     };
     await this.cache.set(
       this.cache.componentKey(name, depth, pid, scopePath),
@@ -616,7 +659,7 @@ export class GraphService {
     const cached = await this.cache.get<C4ModelResponseDto>(this.cache.c4ModelKey(pid));
     if (cached) return cached;
 
-    const graphNames = await this.falkor.getProjectGraphNames(pid);
+    const shardContexts = await this.falkor.getCypherShardContexts(pid);
     type SysAgg = { repoId: string; name: string; containers: Map<string, C4ContainerNodeDto> };
     const byRepo = new Map<string, SysAgg>();
     const commByRepo = new Map<string, C4SystemNodeDto['communicates']>();
@@ -631,12 +674,12 @@ export class GraphService {
       commByRepo.set(repoId, list);
     };
 
-    for (const nm of graphNames) {
+    for (const { graphName: nm, cypherProjectId } of shardContexts) {
       const g = await this.falkor.selectGraphByLogicalName(nm);
       const r1 = (await g.query(
         `MATCH (s:System {projectId: $projectId}) OPTIONAL MATCH (s)-[:HAS_CONTAINER]->(c:Container)
          RETURN s.repoId AS repoId, s.name AS sysName, c.key AS ck, c.name AS cname, c.technology AS tech, c.c4Kind AS kind, c.repoId AS cRepo`,
-        { params: { projectId: pid } },
+        { params: { projectId: cypherProjectId } },
       )) as FalkorResult;
       const d1 = r1.data ?? [];
       const h1 = r1.headers ?? [];
@@ -679,7 +722,7 @@ export class GraphService {
         `MATCH (a:Container {projectId: $projectId})-[r:COMMUNICATES_WITH]->(b:Container {projectId: $projectId})
          WHERE a.repoId = b.repoId
          RETURN a.repoId AS repoId, a.key AS src, b.key AS tgt, r.reason AS reason`,
-        { params: { projectId: pid } },
+        { params: { projectId: cypherProjectId } },
       )) as FalkorResult;
       const d2 = r2.data ?? [];
       const h2 = r2.headers ?? [];

@@ -362,6 +362,8 @@ export function ComponentGraphExplorer() {
   const [graphNonce, setGraphNonce] = useState(0);
   const [expanding, setExpanding] = useState(false);
   const [expandErr, setExpandErr] = useState<string | null>(null);
+  /** API: sin depends salientes pero chat sí ve RENDERS — sugerir resync / misma causa raíz. */
+  const [graphHints, setGraphHints] = useState<{ suggestResync?: boolean; messageEs?: string } | null>(null);
   /** Vista componente vs arquitectura C4 (subflows System → Container). */
   const [viewMode, setViewMode] = useState<'component' | 'c4'>('component');
   /** Evita refetch del mismo componente al expandir (se resetea al cargar un grafo nuevo). */
@@ -512,6 +514,7 @@ export function ComponentGraphExplorer() {
       });
       setNodes(data.nodes ?? []);
       setEdges(data.edges ?? []);
+      setGraphHints(data.graphHints ?? null);
       setMeta({ componentName: data.componentName, depth: data.depth });
       expandedNamesRef.current.clear();
       setGraphNonce((x) => x + 1);
@@ -528,6 +531,7 @@ export function ComponentGraphExplorer() {
       setErr(e instanceof Error ? e.message : String(e));
       setNodes([]);
       setEdges([]);
+      setGraphHints(null);
       setMeta(null);
     } finally {
       setLoading(false);
@@ -590,6 +594,7 @@ export function ComponentGraphExplorer() {
                 setNodes([]);
                 setEdges([]);
                 setMeta(null);
+                setGraphHints(null);
                 setErr(null);
               }}
               disabled={scopesLoading || scopeOptions.length === 0}
@@ -666,6 +671,7 @@ export function ComponentGraphExplorer() {
                 setNodes([]);
                 setEdges([]);
                 setMeta(null);
+                setGraphHints(null);
               }}
               disabled={!selectedScope || componentsLoading || componentNames.length === 0 || viewMode === 'c4'}
             >
@@ -726,6 +732,13 @@ export function ComponentGraphExplorer() {
           {err}
         </div>
       )}
+
+      {graphHints?.suggestResync && graphHints.messageEs ? (
+        <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-900 dark:text-amber-100">
+          <span className="font-semibold">Detección de aristas ausentes: </span>
+          {graphHints.messageEs}
+        </div>
+      ) : null}
 
       {viewMode === 'component' ? (
         <div className="flex flex-wrap gap-4 text-xs text-[var(--foreground-muted)]">
