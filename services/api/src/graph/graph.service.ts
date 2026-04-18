@@ -267,6 +267,7 @@ export class GraphService {
   }
 
   async getComponent(name: string, depth: number, projectId?: string, scopePath?: string) {
+    const pid = projectId?.trim() || undefined;
     const cached = await this.cache.get<{
       componentName: string;
       depth: number;
@@ -274,13 +275,13 @@ export class GraphService {
       dependencies: unknown[];
       nodes: GraphNodeDto[];
       edges: GraphEdgeDto[];
-    }>(this.cache.componentKey(name, depth, projectId, scopePath));
+    }>(this.cache.componentKey(name, depth, pid, scopePath));
     if (cached) return cached;
 
-    const compMatch = projectId ? ', projectId: $projectId' : '';
+    const compMatch = pid ? ', projectId: $projectId' : '';
     const params: Record<string, string> = { componentName: name };
-    if (projectId) params.projectId = projectId;
-    const graph = await this.pickShardGraph(projectId, scopePath, async (g) => {
+    if (pid) params.projectId = pid;
+    const graph = await this.pickShardGraph(pid, scopePath, async (g) => {
       const r = (await g.query(
         `MATCH (c:Component {name: $componentName${compMatch}}) RETURN count(c) AS c`,
         { params },
@@ -294,15 +295,20 @@ export class GraphService {
       }
       return Number.isFinite(c) && c > 0;
     });
-    const whereFilter = projectId
-      ? ` WHERE (dependency.projectId = $projectId OR dependency.projectId IS NULL)`
-      : '';
-    const result = (await graph.query(
-      `MATCH (c:Component {name: $componentName${compMatch}})-[*1..${depth}]->(dependency)${whereFilter} RETURN c, dependency`,
+    /** (n)-[:RENDERS]->(m): consulta explícita; projectId = índice ingest (sin OR NULL). */
+    const rendersRows = (await graph.query(
+      pid
+        ? `MATCH (n:Component {name: $componentName, projectId: $projectId})-[:RENDERS]->(m:Component) WHERE n.projectId = $projectId AND m.projectId = $projectId RETURN n AS c, m AS dependency`
+        : `MATCH (n:Component {name: $componentName})-[:RENDERS]->(m:Component) RETURN n AS c, m AS dependency`,
       { params },
     )) as FalkorResult;
-    const data = result.data ?? [];
-    const headers = result.headers ?? ['c', 'dependency'];
+    const pathWhere = pid ? ` WHERE dependency.projectId = $projectId` : '';
+    const pathRows = (await graph.query(
+      `MATCH (c:Component {name: $componentName${compMatch}})-[*1..${depth}]->(dependency)${pathWhere} RETURN c, dependency`,
+      { params },
+    )) as FalkorResult;
+    const data = [...(rendersRows.data ?? []), ...(pathRows.data ?? [])];
+    const headers = pathRows.headers ?? rendersRows.headers ?? ['c', 'dependency'];
     const cIdx = headers.indexOf('c');
     const depIdx = headers.indexOf('dependency');
     const seen = new Set<string>();
@@ -349,64 +355,40 @@ export class GraphService {
       }
     }
 
-    const impact = await this.getImpact(name, projectId, scopePath);
-    if (!centerId) {
-      centerId = graphNodeKey({ kind: 'Component', projectId: projectId ?? '', name });
-      nodes.set(centerId, { id: centerId, kind: 'Component', name, projectId });
-    }
-
-    /** Hijos directos RENDERS tras fijar centerId (incl. fallback si el path variable devolvió 0 filas). */
-    {
-      const rendersParams: Record<string, string> = { componentName: name };
-      if (projectId) rendersParams.projectId = projectId;
-      const childWhere = projectId
-        ? ` WHERE (child.projectId = $projectId OR child.projectId IS NULL)`
-        : '';
-      const rendersQ = projectId
-        ? `MATCH (c:Component {name: $componentName, projectId: $projectId})-[:RENDERS]->(child:Component)${childWhere} RETURN child`
-        : `MATCH (c:Component {name: $componentName})-[:RENDERS]->(child:Component) RETURN child`;
-      try {
-        const childRes = (await graph.query(rendersQ, { params: rendersParams })) as FalkorResult;
-        for (const row of childRes.data ?? []) {
-          const arr = Array.isArray(row) ? row : [row];
-          const cell = arr[0];
-          const ch = parseGraphNodeCell(cell);
-          if (!ch) continue;
-          nodes.set(ch.id, ch);
-          addGraphEdge(edges, edgeKey, centerId!, ch.id, 'depends');
-        }
-      } catch {
-        /* RENDERS opcional si el esquema difiere */
-      }
-    }
-
-    /** Padres que RENDERS al foco (arista parent → center; el foco tiene dep in ≥ 1). */
+    /** (parent:Component)-[:RENDERS]->(c:foco): aristas entrantes al componente pedido; projectId estricto como en ingest. */
     {
       const parentParams: Record<string, string> = { componentName: name };
-      if (projectId) parentParams.projectId = projectId;
-      const parentWhere = projectId
-        ? ` WHERE (parent.projectId = $projectId OR parent.projectId IS NULL)`
-        : '';
-      const parentQ = projectId
-        ? `MATCH (parent:Component)-[:RENDERS]->(c:Component {name: $componentName, projectId: $projectId})${parentWhere} RETURN parent`
-        : `MATCH (parent:Component)-[:RENDERS]->(c:Component {name: $componentName}) RETURN parent`;
-      try {
-        const parentRes = (await graph.query(parentQ, { params: parentParams })) as FalkorResult;
-        for (const row of parentRes.data ?? []) {
-          const arr = Array.isArray(row) ? row : [row];
-          const cell = arr[0];
-          const pr = parseGraphNodeCell(cell);
-          if (!pr) continue;
-          nodes.set(pr.id, pr);
-          addGraphEdge(edges, edgeKey, pr.id, centerId!, 'depends');
-        }
-      } catch {
-        /* Padres opcional */
+      if (pid) parentParams.projectId = pid;
+      const parentQ = pid
+        ? `MATCH (parent:Component {projectId: $projectId})-[:RENDERS]->(c:Component {name: $componentName, projectId: $projectId}) WHERE parent.projectId = $projectId AND c.projectId = $projectId RETURN parent, c`
+        : `MATCH (parent:Component)-[:RENDERS]->(c:Component {name: $componentName}) RETURN parent, c`;
+      const parentRes = (await graph.query(parentQ, { params: parentParams })) as FalkorResult;
+      const ph = parentRes.headers ?? ['parent', 'c'];
+      const pIdx = ph.indexOf('parent');
+      const cIdx = ph.indexOf('c');
+      for (const row of parentRes.data ?? []) {
+        const arr = Array.isArray(row) ? row : [row];
+        const parentCell = pIdx >= 0 && arr[pIdx] != null ? arr[pIdx] : arr[0];
+        const focalCell = cIdx >= 0 && arr[cIdx] != null ? arr[cIdx] : arr[1];
+        const pr = parseGraphNodeCell(parentCell);
+        const focal = parseGraphNodeCell(focalCell);
+        if (!pr || !focal) continue;
+        nodes.set(pr.id, pr);
+        nodes.set(focal.id, focal);
+        if (!centerId) centerId = focal.id;
+        addGraphEdge(edges, edgeKey, pr.id, focal.id, 'depends');
       }
     }
 
+    if (!centerId) {
+      centerId = graphNodeKey({ kind: 'Component', projectId: pid ?? '', name });
+      nodes.set(centerId, { id: centerId, kind: 'Component', name, ...(pid ? { projectId: pid } : {}) });
+    }
+
+    const impact = await this.getImpact(name, pid, scopePath);
+
     for (const d of impact.dependents as { name?: unknown; labels?: unknown }[]) {
-      const gn = impactNode(d.name, d.labels, projectId);
+      const gn = impactNode(d.name, d.labels, pid);
       nodes.set(gn.id, gn);
       addGraphEdge(edges, edgeKey, gn.id, centerId!, 'legacy_impact');
     }
@@ -416,13 +398,13 @@ export class GraphService {
     const payload = {
       componentName: name,
       depth,
-      ...(projectId ? { projectId } : {}),
+      ...(pid ? { projectId: pid } : {}),
       dependencies,
       nodes: [...nodes.values()],
       edges,
     };
     await this.cache.set(
-      this.cache.componentKey(name, depth, projectId, scopePath),
+      this.cache.componentKey(name, depth, pid, scopePath),
       payload,
       this.cache.TTL.component,
     );

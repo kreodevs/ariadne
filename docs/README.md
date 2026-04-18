@@ -2,6 +2,8 @@
 
 Índice de documentación del proyecto Ariadne (análisis de código con grafo FalkorDB, ingesta Bitbucket/GitHub, chat NL, MCP Oracle, **gobierno de arquitectura** (dominios, C4, whitelist proyecto→dominio) y frontend de administración).
 
+**Contexto único para LLM / NotebookLM:** [`../PROJECT_CONTEXT.md`](../PROJECT_CONTEXT.md) — blueprint, dominio, cross-cutting y legado en un solo documento.
+
 ## Instalación y uso
 
 
