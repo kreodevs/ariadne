@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * @fileoverview AriadneSpecs Oracle MCP Server. Transporte Streamable HTTP. Tools: get_component_graph, get_legacy_impact, validate_before_edit, semantic_search, etc. Config: PORT, MCP_AUTH_TOKEN, FALKORDB_HOST, INGEST_URL.
+ * @fileoverview AriadneSpecs Oracle MCP Server. Transporte Streamable HTTP. Tools: get_component_graph, get_legacy_impact, validate_before_edit, semantic_search, etc. Config: PORT, MCP_AUTH_TOKEN, FALKORDB_HOST, INGEST_URL, ARIADNE_API_URL, ARIADNE_API_BEARER (JWT para GET /api/graph/* en Nest).
  */
 
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
@@ -62,6 +62,87 @@ function formatC4Markdown(data: {
   return lines.join("\n");
 }
 
+/** Base URL del API Nest (prefijo global `/api`). */
+function ariadneApiBase(): string {
+  return (process.env.ARIADNE_API_URL ?? "http://localhost:3000").replace(/\/$/, "");
+}
+
+/** Headers para `fetch` al API Nest: `Authorization: Bearer` si `ARIADNE_API_BEARER` o `ARIADNE_API_JWT` están definidos (middleware OTP en `/api/*`). */
+function ariadneApiFetchInit(extra: RequestInit = {}): RequestInit {
+  const headers = new Headers(extra.headers as HeadersInit | undefined);
+  const token = process.env.ARIADNE_API_BEARER?.trim() || process.env.ARIADNE_API_JWT?.trim();
+  if (token) headers.set("Authorization", `Bearer ${token}`);
+  return { ...extra, headers };
+}
+
+/** Respuesta JSON de `GET /api/graph/component/:name` (GraphService.getComponent). */
+type ComponentGraphApiPayload = {
+  componentName: string;
+  depth: number;
+  projectId?: string;
+  dependencies: Array<{ name?: string; path?: string }>;
+  nodes: Array<{ id: string; kind: string; name?: string; path?: string; projectId?: string }>;
+  edges: Array<{ kind: string; source: string; target: string }>;
+  graphHints?: { suggestResync?: boolean; messageEs?: string };
+};
+
+/** Markdown desde la respuesta JSON de `GET /api/graph/component/:name` (GraphService.getComponent). */
+function formatComponentGraphFromApi(payload: ComponentGraphApiPayload): string {
+  const lines: string[] = [
+    "## Grafo de componente (API Nest — mismo criterio que el explorador)",
+    "",
+    `**componentName:** \`${payload.componentName}\` · **depth:** ${payload.depth}` +
+      (payload.projectId ? ` · **projectId:** \`${payload.projectId}\`` : ""),
+    "",
+    "_Fuente: `GET /api/graph/component`_",
+    "",
+  ];
+  if (payload.graphHints?.messageEs) {
+    lines.push("### Aviso (graphHints)", "", String(payload.graphHints.messageEs), "");
+    if (payload.graphHints.suggestResync) lines.push("_Sugerencia: considerar resync del proyecto._", "");
+  }
+  const nodeById = new Map(payload.nodes.map((n) => [n.id, n]));
+  const fmtRef = (id: string) => {
+    const n = nodeById.get(id);
+    if (!n) return `\`${id}\``;
+    const nm = n.name ?? id;
+    const p = n.path ? ` — \`${n.path}\`` : "";
+    return `\`${nm}\` (${n.kind})${p}`;
+  };
+  lines.push(`**Resumen:** ${payload.nodes.length} nodos · ${payload.edges.length} aristas · ${payload.dependencies.length} dependencias (lista)`, "");
+  if (payload.edges.length > 0) {
+    lines.push("### Aristas", "");
+    const byKind = new Map<string, typeof payload.edges>();
+    for (const e of payload.edges) {
+      if (!byKind.has(e.kind)) byKind.set(e.kind, []);
+      byKind.get(e.kind)!.push(e);
+    }
+    for (const [kind, es] of byKind) {
+      lines.push(`**${kind}**`, "");
+      for (const e of es) {
+        lines.push(`- ${fmtRef(e.source)} → ${fmtRef(e.target)}`);
+      }
+      lines.push("");
+    }
+  }
+  if (payload.dependencies.length > 0) {
+    lines.push("### dependencies", "");
+    for (const d of payload.dependencies) {
+      lines.push(`- **${d.name ?? "?"}** — \`${d.path ?? ""}\``);
+    }
+    lines.push("");
+  }
+  if (payload.nodes.length > 0 && payload.edges.length === 0 && payload.dependencies.length === 0) {
+    lines.push("### Nodos", "");
+    for (const n of payload.nodes) {
+      const nm = n.name ?? n.id;
+      const p = n.path ? ` — \`${n.path}\`` : "";
+      lines.push(`- \`${nm}\` (${n.kind})${p}`);
+    }
+  }
+  return lines.join("\n").trimEnd();
+}
+
 function getTokenFromRequest(req: IncomingMessage): string | null {
   const m2m = req.headers["x-m2m-token"];
   if (typeof m2m === "string" && m2m.trim()) return m2m.trim();
@@ -81,6 +162,10 @@ function validateAuth(req: IncomingMessage): string | null {
 }
 
 const MCP_INSTRUCTIONS = `AriadneSpecs Oracle: herramientas de análisis de código indexado en FalkorDB.
+
+## API Nest (paridad con el explorador)
+
+Las herramientas **get_component_graph**, **get_legacy_impact** y **get_c4_model** pueden llamar a \`ARIADNE_API_URL\` (default http://localhost:3000). El middleware OTP del API exige JWT en \`Authorization: Bearer\`: define \`ARIADNE_API_BEARER\` o \`ARIADNE_API_JWT\` en el entorno del MCP. Sin token, esas llamadas fallan y el MCP usa fallback Falkor (resultados pueden diferir del UI).
 
 ## projectId (OBLIGATORIO)
 
@@ -112,7 +197,7 @@ function createMcpServer(): Server {
     {
       name: "get_component_graph",
       description:
-        "Recupera el árbol de dependencias directo e indirecto de un componente (archivos, componentes que renderiza, hooks que usa).",
+        "Árbol de dependencias de un componente. Preferencia: API Nest GET /api/graph/component (mismo grafo que el explorador: RENDERS, USES_HOOK, IMPORTS, graphHints). Requiere ARIADNE_API_URL y JWT en ARIADNE_API_BEARER o ARIADNE_API_JWT. Si la API no está disponible o falla, fallback a consulta Falkor genérica (puede diferir).",
       inputSchema: {
         type: "object" as const,
         properties: {
@@ -128,7 +213,7 @@ function createMcpServer(): Server {
     {
       name: "get_c4_model",
       description:
-        "Devuelve el modelo C4 de alto nivel (sistemas, contenedores, COMMUNICATES_WITH) indexado en Falkor. Requiere el servicio API (ARIADNE_API_URL, default http://localhost:3000) con GET /api/graph/c4-model. Usar tras sync.",
+        "Modelo C4 (sistemas, contenedores, COMMUNICATES_WITH) vía GET /api/graph/c4-model. Requiere ARIADNE_API_URL (default http://localhost:3000) y JWT en ARIADNE_API_BEARER o ARIADNE_API_JWT (middleware /api/*). Usar tras sync.",
       inputSchema: {
         type: "object" as const,
         properties: {
@@ -141,7 +226,7 @@ function createMcpServer(): Server {
     {
       name: "get_legacy_impact",
       description:
-        "Analiza qué componentes o funciones se verían afectados si se modifica el nodo dado (quién lo llama o lo renderiza).",
+        "Dependientes de un nodo (quién lo llama o lo renderiza). Preferencia: API Nest GET /api/graph/impact (GraphService.getImpact: CALLS/RENDERS e IMPORTS entre shards). Requiere ARIADNE_API_BEARER o ARIADNE_API_JWT. Fallback: consulta Falkor directa (solo CALLS|RENDERS*, sin fusión IMPORTS multi-shard).",
       inputSchema: {
         type: "object" as const,
         properties: {
@@ -1113,13 +1198,13 @@ async function fetchFileFromIngest(
     const depth = Math.min(Math.max(1, (args?.depth as number) ?? 2), 10);
     let projectId = args?.projectId as string | undefined;
     const currentFilePath = args?.currentFilePath as string | undefined;
-    
+
     if (!projectId && currentFilePath) {
       projectId = (await applyShardingInference(undefined, currentFilePath)) ?? undefined;
     }
 
     const cache = getMcpToolCache();
-    const cacheKey = `ariadne:component_graph:${projectId ?? 'global'}:${componentName}:${depth}`;
+    const cacheKey = `ariadne:component_graph:v2:${projectId ?? "global"}:${componentName}:${depth}`;
     const cached = await cache.get(cacheKey);
     if (cached) return { content: [{ type: "text", text: cached }] };
 
@@ -1127,11 +1212,35 @@ async function fetchFileFromIngest(
     const exists = await nodeExists(graph, componentName, projectId ?? null);
     if (!exists) {
       return {
-        content: [{ type: "text", text: `[NOT_FOUND_IN_GRAPH]\n\n**Componente \`${componentName}\` no encontrado en el grafo.**\n\nVerifica el nombre o ejecuta sync/resync del proyecto. No proceder sin reindexar.` }],
+        content: [
+          {
+            type: "text",
+            text: `[NOT_FOUND_IN_GRAPH]\n\n**Componente \`${componentName}\` no encontrado en el grafo.**\n\nVerifica el nombre o ejecuta sync/resync del proyecto. No proceder sin reindexar.`,
+          },
+        ],
         isError: true,
       };
     }
     const resolvedComponentName = await resolveNodeName(graph, componentName, projectId ?? null);
+
+    const base = ariadneApiBase();
+    const qs = new URLSearchParams();
+    qs.set("depth", String(depth));
+    if (projectId) qs.set("projectId", projectId);
+    const apiUrl = `${base}/api/graph/component/${encodeURIComponent(resolvedComponentName)}?${qs}`;
+
+    try {
+      const res = await fetch(apiUrl, ariadneApiFetchInit({ signal: AbortSignal.timeout(30_000) }));
+      if (res.ok) {
+        const payload = (await res.json()) as ComponentGraphApiPayload;
+        const markdown = formatComponentGraphFromApi(payload);
+        await cache.set(cacheKey, markdown, 120);
+        return { content: [{ type: "text", text: markdown }] };
+      }
+    } catch {
+      /* fallback Falkor */
+    }
+
     const params: Record<string, string | number> = { componentName: resolvedComponentName };
     const compMatchProject = projectId ? ", projectId: $projectId" : "";
     if (projectId) params.projectId = projectId;
@@ -1145,8 +1254,10 @@ async function fetchFileFromIngest(
     };
     const data = result.data ?? [];
     const headers = result.headers ?? ["c", "dependency"];
-    const markdown = formatComponentGraph(componentName, data, headers);
-    
+    const fallbackNote =
+      "> **Nota (fallback Falkor):** Consulta genérica `-[*1..depth]->`; no replica `GraphService.getComponent` (RENDERS/USES_HOOK/IMPORTS, hints multi-shard). Para paridad con el explorador, arranca el API Nest y define `ARIADNE_API_URL` + `ARIADNE_API_BEARER` (JWT OTP).\n\n";
+    const markdown = fallbackNote + formatComponentGraph(componentName, data, headers);
+
     await cache.set(cacheKey, markdown, 120);
 
     return { content: [{ type: "text", text: markdown }] };
@@ -1160,11 +1271,11 @@ async function fetchFileFromIngest(
         isError: true,
       };
     }
-    const base = (process.env.ARIADNE_API_URL ?? "http://localhost:3000").replace(/\/$/, "");
+    const base = ariadneApiBase();
     try {
       const res = await fetch(
         `${base}/api/graph/c4-model?projectId=${encodeURIComponent(projectId)}`,
-        { signal: AbortSignal.timeout(15_000) },
+        ariadneApiFetchInit({ signal: AbortSignal.timeout(15_000) }),
       );
       if (!res.ok) {
         const t = await res.text();
@@ -1195,7 +1306,7 @@ async function fetchFileFromIngest(
           {
             type: "text",
             text:
-              `**Error:** No se pudo obtener el modelo C4. ¿Está el API en **ARIADNE_API_URL** (default http://localhost:3000)? ${msg}`,
+              `**Error:** No se pudo obtener el modelo C4. ¿API en **ARIADNE_API_URL** y JWT en **ARIADNE_API_BEARER**? ${msg}`,
           },
         ],
         isError: true,
@@ -1212,7 +1323,7 @@ async function fetchFileFromIngest(
     }
 
     const cache = getMcpToolCache();
-    const cacheKey = `ariadne:legacy_impact:${projectId ?? 'global'}:${nodeName}`;
+    const cacheKey = `ariadne:legacy_impact:v2:${projectId ?? "global"}:${nodeName}`;
     const cachedLegacy = await cache.get(cacheKey);
     if (cachedLegacy) return { content: [{ type: "text", text: cachedLegacy }] };
 
@@ -1220,11 +1331,41 @@ async function fetchFileFromIngest(
     const exists = await nodeExists(graph, nodeName, projectId ?? null);
     if (!exists) {
       return {
-        content: [{ type: "text", text: `[NOT_FOUND_IN_GRAPH]\n\n**Nodo \`${nodeName}\` no encontrado en el grafo.**\n\nVerifica el nombre o ejecuta sync/resync del proyecto. Usa \`list_known_projects\` para el projectId. No proceder sin reindexar.` }],
+        content: [
+          {
+            type: "text",
+            text: `[NOT_FOUND_IN_GRAPH]\n\n**Nodo \`${nodeName}\` no encontrado en el grafo.**\n\nVerifica el nombre o ejecuta sync/resync del proyecto. Usa \`list_known_projects\` para el projectId. No proceder sin reindexar.`,
+          },
+        ],
         isError: true,
       };
     }
     const resolvedName = await resolveNodeName(graph, nodeName, projectId ?? null);
+
+    const base = ariadneApiBase();
+    const impactQs = new URLSearchParams();
+    if (projectId) impactQs.set("projectId", projectId);
+    const impactUrl = `${base}/api/graph/impact/${encodeURIComponent(resolvedName)}?${impactQs}`;
+
+    try {
+      const res = await fetch(impactUrl, ariadneApiFetchInit({ signal: AbortSignal.timeout(30_000) }));
+      if (res.ok) {
+        const payload = (await res.json()) as {
+          nodeId: string;
+          dependents: Array<{ name?: unknown; labels?: unknown }>;
+        };
+        const data = (payload.dependents ?? []).map((d) => [d.name, d.labels]) as unknown[][];
+        const headers = ["name", "labels"];
+        const apiNote =
+          "**Fuente:** API Nest `GET /api/graph/impact` (mismo criterio que GraphService.getImpact).\n\n";
+        const markdown = apiNote + formatLegacyImpact(nodeName, data, headers);
+        await cache.set(cacheKey, markdown, 120);
+        return { content: [{ type: "text", text: markdown }] };
+      }
+    } catch {
+      /* fallback Falkor */
+    }
+
     const params: Record<string, string | number> = { nodeName: resolvedName };
     const whereParts: string[] = [];
     if (projectId) {
@@ -1242,7 +1383,9 @@ async function fetchFileFromIngest(
     };
     const data = result.data ?? [];
     const headers = result.headers ?? ["name", "labels"];
-    const markdown = formatLegacyImpact(nodeName, data, headers);
+    const fallbackNote =
+      "> **Nota (fallback Falkor):** Solo `CALLS|RENDERS*` en un shard; no incluye la fusión IMPORTS multi-shard de Nest. Configura `ARIADNE_API_URL` + `ARIADNE_API_BEARER`.\n\n";
+    const markdown = fallbackNote + formatLegacyImpact(nodeName, data, headers);
 
     await cache.set(cacheKey, markdown, 120);
 

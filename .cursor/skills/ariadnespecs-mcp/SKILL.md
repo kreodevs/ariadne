@@ -12,6 +12,7 @@ Protocol for using the MCP AriadneSpecs Oracle tools (get_component_graph, valid
 1. **Run `list_known_projects`** to map project names to IDs.
 2. If `.ariadne-project` exists in workspace root, read its `projectId` and use it in all MCP calls.
 3. If user mentions project by name (e.g. "oohbp2"), use `list_known_projects` → find matching `id` → pass as `projectId`.
+4. **Grafo de componente / impacto / C4:** el MCP usa el API Nest (`ARIADNE_API_URL` + `ARIADNE_API_BEARER` / `ARIADNE_API_JWT`) cuando está configurado; sin JWT, `get_component_graph` y `get_legacy_impact` hacen fallback Falkor y el resultado puede no coincidir con el explorador. El markdown de respuesta indica la fuente.
 
 ## Tools by Intent
 
