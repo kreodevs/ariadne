@@ -1,94 +1,27 @@
 /**
- * Panel colapsable: misma carga en memoria que React Flow — vis-network (layout físico) + JSON crudo;
- * segundo bloque: Cypher contra Falkor vía API Nest (misma conexión que getComponentGraph).
+ * Panel colapsable: consulta Cypher contra Falkor vía API Nest (misma conexión que getComponentGraph).
  */
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { DataSet } from 'vis-data';
-import { Network, type Options } from 'vis-network';
+import { useEffect, useMemo, useState } from 'react';
 import { ChevronRight } from 'lucide-react';
-import 'vis-network/styles/vis-network.css';
 import { api } from '@/api';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import {
-  type GraphEdge,
-  type GraphNode,
-  filterValidEdges,
-  labelFor,
-} from './componentGraphFlow';
-
-/** Opciones vis-network: fuerzas + zoom/pan/rueda; tras estabilizar se apaga la física para mover la vista con fluidez. */
-const VIS_NETWORK_OPTIONS = {
-  autoResize: true,
-  physics: {
-    enabled: true,
-    solver: 'forceAtlas2Based' as const,
-    forceAtlas2Based: {
-      gravitationalConstant: -42,
-      centralGravity: 0.012,
-      springLength: 115,
-      springConstant: 0.055,
-      damping: 0.55,
-      avoidOverlap: 0.65,
-    },
-    maxVelocity: 48,
-    minVelocity: 0.75,
-    stabilization: {
-      enabled: true,
-      iterations: 380,
-      updateInterval: 20,
-      fit: true,
-    },
-  },
-  layout: { improvedLayout: true },
-  edges: { smooth: true },
-  interaction: {
-    hover: true,
-    tooltipDelay: 140,
-    zoomView: true,
-    dragView: true,
-    dragNodes: true,
-    zoomSpeed: 1,
-    navigationButtons: true,
-    keyboard: true,
-    multiselect: false,
-  },
-} satisfies Options;
-
-export type ComponentGraphDebugHints = {
-  suggestResync?: boolean;
-  messageEs?: string;
-} | null;
-
-export type ComponentGraphDebugMeta = { componentName: string; depth: number } | null;
-
-type Props = {
-  /** projectId usado por la API de grafo (prefill Cypher). */
-  graphProjectId: string;
-  /** Nombre de componente para plantilla de consulta (URL o meta tras cargar). */
-  prefillComponentName?: string;
-  nodes: GraphNode[];
-  edges: GraphEdge[];
-  graphHints: ComponentGraphDebugHints;
-  meta: ComponentGraphDebugMeta;
-  /** Ocultar en vista C4 u otras rutas donde no aplica. */
-  hidden?: boolean;
-};
 
 function escapeCypherString(s: string): string {
   return s.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
 }
 
-function FalkorDebugQueryBlock({
-  projectId,
-  prefillComponentName,
-}: {
-  projectId: string;
+type Props = {
+  graphProjectId: string;
   prefillComponentName?: string;
-}) {
+  /** Ocultar en vista C4. */
+  hidden?: boolean;
+};
+
+export function ComponentGraphDebugPanel({ graphProjectId, prefillComponentName, hidden }: Props) {
   const defaultQuery = useMemo(() => {
-    const pid = projectId.trim();
+    const pid = graphProjectId.trim();
     if (!pid) {
       return 'MATCH (n) RETURN count(n) AS c LIMIT 1';
     }
@@ -105,7 +38,7 @@ function FalkorDebugQueryBlock({
       `RETURN c.name AS name, labels(c) AS labels`,
       `LIMIT 50`,
     ].join('\n');
-  }, [projectId, prefillComponentName]);
+  }, [graphProjectId, prefillComponentName]);
 
   const [query, setQuery] = useState(defaultQuery);
   useEffect(() => {
@@ -125,7 +58,7 @@ function FalkorDebugQueryBlock({
       try {
         const r = await api.postFalkorDebugQuery({
           query,
-          projectId: projectId.trim() || undefined,
+          projectId: graphProjectId.trim() || undefined,
           graphName: graphNameOverride.trim() || undefined,
         });
         setResultJson(JSON.stringify(r, null, 2));
@@ -136,6 +69,8 @@ function FalkorDebugQueryBlock({
       }
     })();
   };
+
+  if (hidden) return null;
 
   return (
     <details className="group rounded-lg border border-[var(--border)] bg-[var(--card)] text-[var(--foreground)]">
@@ -190,169 +125,5 @@ function FalkorDebugQueryBlock({
         ) : null}
       </div>
     </details>
-  );
-}
-
-export function ComponentGraphDebugPanel({
-  graphProjectId,
-  prefillComponentName,
-  nodes,
-  edges,
-  graphHints,
-  meta,
-  hidden,
-}: Props) {
-  const [open, setOpen] = useState(false);
-  /** Fuerza recreación del Network para volver a ejecutar física / autolayout. */
-  const [visLayoutGeneration, setVisLayoutGeneration] = useState(0);
-  const containerRef = useRef<HTMLDivElement>(null);
-  const visNetworkRef = useRef<Network | null>(null);
-
-  const jsonText = useMemo(
-    () =>
-      JSON.stringify(
-        {
-          nodes,
-          edges,
-          graphHints,
-          meta,
-        },
-        null,
-        2,
-      ),
-    [nodes, edges, graphHints, meta],
-  );
-
-  /** Misma regla que React Flow: solo aristas con extremos en nodos (sin self-loops). */
-  const validEdges = useMemo(() => filterValidEdges(nodes, edges), [nodes, edges]);
-
-  useEffect(() => {
-    if (hidden || !open) return;
-    const el = containerRef.current;
-    if (!el || nodes.length === 0) return;
-
-    const visNodes = new DataSet(
-      nodes.map((n) => ({
-        id: n.id,
-        label: `${labelFor(n)} (${n.kind})`,
-        shape: 'box' as const,
-        font: { size: 12 },
-      })),
-    );
-
-    const visEdges = new DataSet(
-      validEdges.map((e, i) => ({
-        id: `e-${i}-${e.source}-${e.target}-${e.kind}`,
-        from: e.source,
-        to: e.target,
-        arrows: 'to' as const,
-        color:
-          e.kind === 'legacy_impact'
-            ? ({ color: '#d97706', highlight: '#f59e0b' } as const)
-            : ({ color: '#2563eb', highlight: '#3b82f6' } as const),
-        dashes: e.kind === 'legacy_impact',
-        label: e.kind,
-        font: { size: 10, align: 'middle' as const },
-      })),
-    );
-
-    const network = new Network(el, { nodes: visNodes, edges: visEdges }, {
-      ...VIS_NETWORK_OPTIONS,
-    });
-    visNetworkRef.current = network;
-
-    const onStabilized = () => {
-      network.setOptions({ physics: { enabled: false } });
-    };
-    network.on('stabilizationIterationsDone', onStabilized);
-
-    const fit = () => {
-      network.fit({ animation: { duration: 320, easingFunction: 'easeInOutQuad' } });
-    };
-    const raf = requestAnimationFrame(() => requestAnimationFrame(fit));
-
-    const ro = new ResizeObserver(() => {
-      network.redraw();
-    });
-    ro.observe(el);
-
-    return () => {
-      cancelAnimationFrame(raf);
-      ro.disconnect();
-      network.off('stabilizationIterationsDone', onStabilized);
-      network.destroy();
-      visNetworkRef.current = null;
-    };
-  }, [hidden, open, nodes, validEdges, visLayoutGeneration]);
-
-  if (hidden) return null;
-
-  return (
-    <div className="space-y-3">
-    <details
-      className="group rounded-lg border border-[var(--border)] bg-[var(--card)] text-[var(--foreground)]"
-      onToggle={(e) => setOpen((e.currentTarget as HTMLDetailsElement).open)}
-    >
-      <summary className="flex cursor-pointer list-none items-center gap-2 px-3 py-2 text-sm font-medium select-none [&::-webkit-details-marker]:hidden">
-        <ChevronRight className="h-4 w-4 shrink-0 transition-transform duration-200 group-open:rotate-90" />
-        Debug
-        <span className="text-xs font-normal text-[var(--foreground-muted)]">
-          (vis-network + JSON del estado en memoria)
-        </span>
-      </summary>
-      <div className="border-t border-[var(--border)] p-3">
-        {nodes.length === 0 ? (
-          <p className="text-sm text-[var(--foreground-muted)]">
-            Carga un grafo para ver la vista alternativa y el payload.
-          </p>
-        ) : (
-          <div className="grid min-h-[min(420px,50vh)] grid-cols-1 gap-3 lg:grid-cols-2">
-            <div className="flex min-h-[280px] min-w-0 flex-col gap-1">
-              <p className="text-xs text-[var(--foreground-muted)]">
-                Aristas visibles: mismas que React Flow (<span className="font-mono">filterValidEdges</span>).
-                JSON: datos crudos (<span className="font-mono">nodes</span> / <span className="font-mono">edges</span>).
-                Rueda: zoom · arrastrar fondo: pan · botones inferiores (vis) · teclado si está habilitado.
-              </p>
-              <div className="flex flex-wrap gap-2">
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  className="h-8 text-xs"
-                  onClick={() => {
-                    visNetworkRef.current?.fit({
-                      animation: { duration: 380, easingFunction: 'easeInOutQuad' },
-                    });
-                  }}
-                >
-                  Encuadrar
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  className="h-8 text-xs"
-                  onClick={() => setVisLayoutGeneration((n) => n + 1)}
-                >
-                  Autolayout (re-física)
-                </Button>
-              </div>
-              <div
-                ref={containerRef}
-                className="min-h-[320px] flex-1 touch-none rounded-md border border-[var(--border)] bg-[var(--background)]"
-              />
-            </div>
-            <div className="flex min-h-[280px] min-w-0 flex-col gap-1">
-              <p className="text-xs text-[var(--foreground-muted)]">JSON</p>
-              <pre className="max-h-[min(420px,50vh)] flex-1 overflow-auto rounded-md border border-[var(--border)] bg-[var(--muted)]/40 p-3 text-[11px] leading-relaxed font-mono text-[var(--foreground)]">
-                {jsonText}
-              </pre>
-            </div>
-          </div>
-        )}
-      </div>
-    </details>
-    <FalkorDebugQueryBlock projectId={graphProjectId} prefillComponentName={prefillComponentName} />
-    </div>
   );
 }

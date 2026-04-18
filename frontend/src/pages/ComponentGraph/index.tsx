@@ -1,7 +1,6 @@
 /**
- * Explorador visual del grafo de componente: dependencias + impacto legacy.
- * Alcance: select de proyecto (multi-root) o repositorio aislado → select de componentes desde graph-summary.
- * Vista: React Flow (@xyflow/react) — pan/zoom, minimap, controles, aristas dirigidas (depends / legacy_impact).
+ * Explorador visual del grafo de componente: dependencias + impacto legacy (vis-network).
+ * Vista C4: React Flow (@xyflow/react). Alcance: proyecto / repo → graph-summary.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
@@ -11,14 +10,12 @@ import {
   Background,
   BackgroundVariant,
   Controls,
-  MiniMap,
   Panel,
   useNodesState,
   useEdgesState,
   useReactFlow,
   type Edge,
   type Node,
-  type NodeMouseHandler,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import { api } from '@/api';
@@ -37,23 +34,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import type { ComponentGraphNodeData, ComponentGraphRFNode } from './GraphFlowNode';
-import { GraphFlowNode } from './GraphFlowNode';
 import { C4ContainerNode, C4SystemNode } from './C4FlowNodes';
-import {
-  type GraphEdge,
-  type GraphNode,
-  filterValidEdges,
-  resolveFocalNode,
-  toFlowElements,
-} from './componentGraphFlow';
-import { layoutWithDagre } from './graphLayout';
+import { type GraphEdge, type GraphNode } from './componentGraphFlow';
 import { mergeGraphEdges, mergeGraphNodes } from './graphMerge';
 import { buildC4FlowElements } from './c4ArchitectureFlow';
 import { ComponentGraphDebugPanel } from './ComponentGraphDebugPanel';
+import { ComponentGraphVisView } from './ComponentGraphVisView';
 
 const RF_NODE_TYPES = {
-  componentGraph: GraphFlowNode,
   c4System: C4SystemNode,
   c4Container: C4ContainerNode,
 } as const;
@@ -207,138 +195,6 @@ function C4ArchitectureFlowView({
   );
 }
 
-function ComponentGraphFlowView({
-  graphNodes,
-  graphEdges,
-  rootFocalName,
-  graphKey,
-  projectId,
-  expanding,
-  onExpandNode,
-}: {
-  graphNodes: GraphNode[];
-  graphEdges: GraphEdge[];
-  rootFocalName: string;
-  graphKey: string;
-  projectId: string;
-  expanding: boolean;
-  onExpandNode: (componentName: string) => void | Promise<void>;
-}) {
-  const [rfNodes, setRfNodes, onNodesChange] = useNodesState<ComponentGraphRFNode>([]);
-  const [rfEdges, setRfEdges, onEdgesChange] = useEdgesState<Edge>([]);
-
-  const flowPayload = useMemo(() => {
-    if (graphNodes.length === 0) {
-      return { nodes: [] as ComponentGraphRFNode[], edges: [] as Edge[] };
-    }
-    const validEdges = filterValidEdges(graphNodes, graphEdges);
-    const focal = resolveFocalNode(graphNodes, graphEdges, rootFocalName);
-    const focalId = focal?.id ?? null;
-    const positions = layoutWithDagre(graphNodes, validEdges, focalId);
-    return toFlowElements(graphNodes, validEdges, positions, rootFocalName);
-  }, [graphNodes, graphEdges, rootFocalName]);
-
-  useEffect(() => {
-    setRfNodes(flowPayload.nodes);
-    setRfEdges(flowPayload.edges);
-  }, [flowPayload, setRfNodes, setRfEdges]);
-
-  const onNodeClick = useCallback<NodeMouseHandler<ComponentGraphRFNode>>(
-    (_evt, node) => {
-      if (expanding) return;
-      if (!projectId.trim()) return;
-      if (node.data.isFocal || !node.data.expandable) return;
-      const cn = node.data.componentName?.trim();
-      if (!cn) return;
-      void onExpandNode(cn);
-    },
-    [expanding, projectId, onExpandNode],
-  );
-
-  if (graphNodes.length === 0) {
-    return (
-      <div
-        className="flex items-center justify-center text-sm text-[var(--foreground-muted)] border border-dashed border-[var(--border)] rounded-lg bg-[var(--muted)]/30"
-        style={{ height: 560 }}
-      >
-        Carga un componente para ver el vecindario en el grafo Falkor (depends + legacy_impact).
-      </div>
-    );
-  }
-
-  return (
-    <div
-      className="component-graph-rf w-full rounded-lg overflow-hidden border border-[var(--border)] bg-[var(--background)]"
-      style={{ height: 560 }}
-    >
-      <ReactFlow
-        key={graphKey}
-        nodes={rfNodes}
-        edges={rfEdges}
-        onNodesChange={onNodesChange}
-        onEdgesChange={onEdgesChange}
-        nodeTypes={RF_NODE_TYPES}
-        nodesConnectable={false}
-        edgesReconnectable={false}
-        deleteKeyCode={null}
-        attributionPosition="bottom-right"
-        minZoom={0.15}
-        maxZoom={1.8}
-        defaultEdgeOptions={{
-          type: 'smoothstep',
-        }}
-        proOptions={{ hideAttribution: true }}
-        elevateEdgesOnSelect
-        nodesDraggable
-        onNodeClick={onNodeClick}
-      >
-        <FitViewOnGraphLoad graphKey={graphKey} />
-        <Background
-          variant={BackgroundVariant.Dots}
-          gap={20}
-          size={1}
-          color="var(--border)"
-        />
-        <Controls className="!bg-[var(--card)] !border-[var(--border)] [&_button]:!bg-[var(--card)] [&_button]:!border-[var(--border)] [&_button]:!text-[var(--foreground)]" />
-        <MiniMap
-          className="!bg-[var(--card)] !border-[var(--border)]"
-          nodeStrokeWidth={2}
-          nodeColor={(n) => {
-            const d = n.data as ComponentGraphNodeData | undefined;
-            if (d?.isFocal) return 'var(--primary)';
-            return 'var(--muted-foreground)';
-          }}
-          maskColor="color-mix(in oklch, var(--background) 75%, transparent)"
-          pannable
-          zoomable
-        />
-        <Panel
-          position="top-left"
-          className="m-2 max-w-[min(100%,320px)] rounded-md border border-[var(--border)] bg-[var(--card)]/95 backdrop-blur-sm px-3 py-2 text-xs text-[var(--foreground)] shadow-sm"
-        >
-          <p className="font-semibold text-[var(--foreground)] mb-1">Subgrafo indexado</p>
-          {expanding ? (
-            <p className="text-[10px] font-medium text-amber-600 dark:text-amber-400 mb-1">Fusionando vecindario…</p>
-          ) : null}
-          <p className="text-[var(--foreground-muted)] leading-relaxed">
-            Mismo <span className="font-mono">projectId</span> que usa la API de grafo: vecindario de tipo{' '}
-            <span className="font-mono">Component</span> con aristas <span className="font-mono">depends</span>{' '}
-            (imports / uso) y <span className="font-mono">legacy_impact</span> (consumidores — radio de explosión
-            al refactorizar).
-          </p>
-          <p className="text-[var(--foreground-muted)] mt-2 leading-relaxed">
-            Los datos viven en FalkorDB como grafo de propiedad; Ariadne expone este corte para SDD y revisión de
-            impacto sin escribir Cypher a mano.
-          </p>
-          <p className="text-[var(--foreground-muted)] mt-2 leading-relaxed">
-            Clic en un nodo periférico: carga un corte de profundidad 1 y lo fusiona al grafo (sin duplicar IDs).
-          </p>
-        </Panel>
-      </ReactFlow>
-    </div>
-  );
-}
-
 export function ComponentGraphExplorer() {
   const [search, setSearch] = useSearchParams();
   const [scopeKey, setScopeKey] = useState<string>(() => search.get('scope') ?? '');
@@ -359,7 +215,7 @@ export function ComponentGraphExplorer() {
   const [nodes, setNodes] = useState<GraphNode[]>([]);
   const [edges, setEdges] = useState<GraphEdge[]>([]);
   const [meta, setMeta] = useState<{ componentName: string; depth: number } | null>(null);
-  /** Incrementa en cada carga exitosa para forzar remount de React Flow (evita nodos fantasma al cambiar de componente). */
+  /** Incrementa en cada carga exitosa para forzar remount del grafo (vis-network). */
   const [graphNonce, setGraphNonce] = useState(0);
   const [expanding, setExpanding] = useState(false);
   const [expandErr, setExpandErr] = useState<string | null>(null);
@@ -779,33 +635,29 @@ export function ComponentGraphExplorer() {
         </div>
       )}
 
-      <ReactFlowProvider>
-        {viewMode === 'component' ? (
-          <ComponentGraphFlowView
-            graphNodes={nodes}
-            graphEdges={edges}
-            rootFocalName={rootFocalName}
-            graphKey={graphKey}
-            projectId={graphProjectId}
-            expanding={expanding}
-            onExpandNode={expandNode}
-          />
-        ) : (
+      {viewMode === 'component' ? (
+        <ComponentGraphVisView
+          graphNodes={nodes}
+          graphEdges={edges}
+          rootFocalName={rootFocalName}
+          graphKey={graphKey}
+          projectId={graphProjectId}
+          expanding={expanding}
+          onExpandNode={expandNode}
+        />
+      ) : (
+        <ReactFlowProvider>
           <C4ArchitectureFlowView
             graphKey={`c4|${scopeKey}|${graphProjectId}`}
             projectId={graphProjectId}
           />
-        )}
-      </ReactFlowProvider>
+        </ReactFlowProvider>
+      )}
 
       <ComponentGraphDebugPanel
         hidden={viewMode !== 'component'}
         graphProjectId={graphProjectId}
         prefillComponentName={meta?.componentName ?? name.trim()}
-        nodes={nodes}
-        edges={edges}
-        graphHints={graphHints}
-        meta={meta}
       />
     </div>
   );
