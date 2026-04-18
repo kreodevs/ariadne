@@ -50,6 +50,7 @@ import {
 import { layoutWithDagre } from './graphLayout';
 import { mergeGraphEdges, mergeGraphNodes } from './graphMerge';
 import { buildC4FlowElements } from './c4ArchitectureFlow';
+import { ComponentGraphDebugPanel } from './ComponentGraphDebugPanel';
 
 const RF_NODE_TYPES = {
   componentGraph: GraphFlowNode,
@@ -796,6 +797,14 @@ export function ComponentGraphExplorer() {
           />
         )}
       </ReactFlowProvider>
+
+      <ComponentGraphDebugPanel
+        hidden={viewMode !== 'component'}
+        nodes={nodes}
+        edges={edges}
+        graphHints={graphHints}
+        meta={meta}
+      />
     </div>
   );
 }
