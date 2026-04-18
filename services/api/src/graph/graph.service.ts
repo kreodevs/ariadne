@@ -1,7 +1,7 @@
 /**
  * @fileoverview Servicio de consultas al grafo FalkorDB: impacto, componente, contrato, compare (API).
  */
-import { Injectable } from '@nestjs/common';
+import { HttpException, HttpStatus, Injectable } from '@nestjs/common';
 import { isProjectShardingEnabled } from 'ariadne-common';
 import { FalkorService } from '../falkor.service';
 import { CacheService } from '../cache.service';
@@ -837,6 +837,124 @@ export class GraphService {
       }
     }
     return lines.join('\n');
+  }
+
+  /**
+   * Ejecuta Cypher contra Falkor con la misma selección de grafo que el resto de la API.
+   * Requiere `FALKOR_DEBUG_CYPHER=1` en el proceso API (evita abrir escritura arbitraria en prod).
+   * Solo lectura: rechaza CREATE/MERGE/DELETE/SET/REMOVE/DROP/LOAD CSV (heurística, no sandbox formal).
+   */
+  async executeDebugCypher(body: {
+    query: string;
+    params?: Record<string, unknown>;
+    projectId?: string;
+    scopePath?: string;
+    graphName?: string;
+  }): Promise<{ headers: string[]; data: unknown[][]; graphLabel: string }> {
+    const enabled =
+      process.env.FALKOR_DEBUG_CYPHER === '1' || process.env.FALKOR_DEBUG_CYPHER === 'true';
+    if (!enabled) {
+      throw new HttpException(
+        'Cypher debug desactivado. Define FALKOR_DEBUG_CYPHER=1 en el servicio API (misma conexión Falkor que Nest).',
+        HttpStatus.FORBIDDEN,
+      );
+    }
+    const q = String(body.query ?? '').trim();
+    if (!q.length) {
+      throw new HttpException('query vacía', HttpStatus.BAD_REQUEST);
+    }
+    if (q.length > 12000) {
+      throw new HttpException('query demasiado larga (máx. 12000 caracteres)', HttpStatus.BAD_REQUEST);
+    }
+    this.assertReadOnlyCypher(q);
+    const params =
+      body.params != null && typeof body.params === 'object' && !Array.isArray(body.params)
+        ? (body.params as Record<string, unknown>)
+        : undefined;
+
+    const { graph, graphLabel } = await this.graphForDebugQuery({
+      projectId: body.projectId,
+      scopePath: body.scopePath,
+      graphName: body.graphName,
+    });
+
+    const result = (await graph.query(
+      q,
+      params
+        ? { params: params as Record<string, string | number | boolean | null> }
+        : undefined,
+    )) as FalkorResult;
+    const headers = result.headers ?? [];
+    const rawData = result.data ?? [];
+    const data = rawData.map((row) => {
+      const arr = Array.isArray(row) ? row : [row];
+      return arr.map((cell) => this.serializeFalkorDebugCell(cell));
+    });
+
+    return { headers, data, graphLabel };
+  }
+
+  private assertReadOnlyCypher(q: string): void {
+    const deny = [
+      /\bCREATE\b/i,
+      /\bMERGE\b/i,
+      /\bDELETE\b/i,
+      /\bDETACH\b/i,
+      /\bDROP\b/i,
+      /\bREMOVE\b/i,
+      /\bSET\b/i,
+      /\bLOAD\s+CSV\b/i,
+    ];
+    for (const re of deny) {
+      if (re.test(q)) {
+        throw new HttpException(
+          'Solo consultas de lectura (CREATE/MERGE/DELETE/DETACH/SET/REMOVE/DROP/LOAD CSV no permitidos)',
+          HttpStatus.BAD_REQUEST,
+        );
+      }
+    }
+  }
+
+  private async graphForDebugQuery(opts: {
+    projectId?: string;
+    scopePath?: string;
+    graphName?: string;
+  }): Promise<{ graph: FalkorGraph; graphLabel: string }> {
+    const gn = opts.graphName?.trim();
+    if (gn) {
+      const graph = await this.falkor.selectGraphByLogicalName(gn);
+      return { graph, graphLabel: gn };
+    }
+    const pid = opts.projectId?.trim() || undefined;
+    const sp = opts.scopePath?.trim() || undefined;
+    if (pid) {
+      const graph = await this.falkor.getGraph(pid, sp ? { repoRelativePath: sp } : undefined);
+      return { graph, graphLabel: sp ? `${pid}|scope:${sp}` : pid };
+    }
+    const graph = await this.falkor.getGraph(undefined);
+    return { graph, graphLabel: 'default' };
+  }
+
+  private serializeFalkorDebugCell(cell: unknown): unknown {
+    if (cell == null) return cell;
+    const t = typeof cell;
+    if (t !== 'object') return cell;
+    if (Array.isArray(cell)) return cell.map((c) => this.serializeFalkorDebugCell(c));
+    const o = cell as Record<string, unknown>;
+    if (Array.isArray(o.labels)) {
+      return {
+        labels: o.labels,
+        properties:
+          o.properties != null && typeof o.properties === 'object'
+            ? o.properties
+            : { ...o, labels: undefined },
+      };
+    }
+    try {
+      return JSON.parse(JSON.stringify(cell)) as unknown;
+    } catch {
+      return String(cell);
+    }
   }
 
   async shadowProxy(

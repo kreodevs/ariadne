@@ -121,6 +121,35 @@ export class GraphController {
     }
   }
 
+  /**
+   * POST /graph/falkor-debug-query — Cypher de solo lectura contra Falkor (misma conexión que Nest).
+   * Activa con FALKOR_DEBUG_CYPHER=1 en el API.
+   */
+  @Post('falkor-debug-query')
+  async falkorDebugQuery(
+    @Body()
+    body: {
+      query?: string;
+      params?: Record<string, unknown>;
+      projectId?: string;
+      scopePath?: string;
+      graphName?: string;
+    },
+  ) {
+    try {
+      return await this.graph.executeDebugCypher({
+        query: body.query ?? '',
+        params: body.params,
+        projectId: body.projectId,
+        scopePath: body.scopePath,
+        graphName: body.graphName,
+      });
+    } catch (err) {
+      if (err instanceof HttpException) throw err;
+      throw new HttpException(String(err), HttpStatus.INTERNAL_SERVER_ERROR);
+    }
+  }
+
   /** POST /graph/shadow — Proxy al Ingest para indexar shadow (body.files: path + content). */
   @Post('shadow')
   async shadow(

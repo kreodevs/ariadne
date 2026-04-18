@@ -17,7 +17,7 @@ Vista **Explorador de grafo** (`/graph-explorer`):
 - **API (Nest)**: normalización `falkorScalarToString` en `graph.service.ts` para evitar `[object Object]` en nombres/ids desde Falkor. El subgrafo usa Cypher explícito `RENDERS*`, `USES_HOOK`, cadena `File-IMPORTS->File` hacia otros `Component` (mismo `projectId`), no solo `[*]`. Las aristas se conectan con el **id del nodo origen de cada fila** (no un único `centerId` mezclado entre shards). Con **sharding por dominio**, se fusionan todos los shards del proyecto.
 - **graphHints** (opcional en la respuesta): si no hay aristas `depends` salientes del foco pero sí `projectId`, se muestra aviso de posible desincronización / resync (chat vs Falkor).
 - **Layout**: **Dagre** (`@dagrejs/dagre`, `rankdir: TB`) en `graphLayout.ts`: el nodo foco queda en el origen tras el layout; `depends` tienden a capas bajo el foco y `legacy_impact` (consumidor→foco) hacia arriba. Fallback en cuadrícula si Dagre falla.
-- **Debug** (`ComponentGraphDebugPanel.tsx`): panel colapsable bajo el canvas — columna izquierda **vis-network** (layout físico automático, flechas dirigidas; aristas = `filterValidEdges`, igual que React Flow), columna derecha **JSON** del estado en memoria (`nodes`, `edges`, `graphHints`, `meta`). Oculto en vista C4.
+- **Debug** (`ComponentGraphDebugPanel.tsx`): panel colapsable bajo el canvas — columna izquierda **vis-network** (layout físico automático, flechas dirigidas; aristas = `filterValidEdges`, igual que React Flow), columna derecha **JSON** del estado en memoria (`nodes`, `edges`, `graphHints`, `meta`). Segundo bloque **Falkor (Cypher vía API)**: `POST /api/graph/falkor-debug-query` ejecuta Cypher de solo lectura en la misma conexión Falkor que Nest (`FalkorService`); no es Redis desde el browser. Requiere **`FALKOR_DEBUG_CYPHER=1`** en el servicio API. Opcional `graphName` para un shard concreto. Oculto en vista C4.
 - **Expansión**: `onNodeClick` en nodos no foco → `getComponentGraph(componentName, { depth: 1, projectId })` → **merge** de nodos y aristas con deduplicación por `id` y por `source|target|kind` (`graphMerge.ts`). El set de nombres ya expandidos se resetea al cargar un grafo nuevo.
 - Tras cargar o fusionar, **`fitView`** acota el subgrafo (clave `graphKey` + `graphNonce`).
 
@@ -32,6 +32,6 @@ Vista **Explorador de grafo** (`/graph-explorer`):
 | `componentGraphFlow.ts` | Tipos API, `resolveFocalNode`, `filterValidEdges`, mapeo a nodos/aristas React Flow |
 | `graphLayout.ts` | Layout Dagre centrado en el foco |
 | `graphMerge.ts` | Fusión de nodos/aristas al expandir |
-| `ComponentGraphDebugPanel.tsx` | vis-network + JSON crudo (comparar con React Flow) |
+| `ComponentGraphDebugPanel.tsx` | vis-network + JSON crudo + ejecutor Cypher vía API (`falkor-debug-query`) |
 
 Query típica: `?scope=project:uuid|repo:uuid&projectId=&name=&depth=`.

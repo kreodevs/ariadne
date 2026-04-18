@@ -800,6 +800,8 @@ export function ComponentGraphExplorer() {
 
       <ComponentGraphDebugPanel
         hidden={viewMode !== 'component'}
+        graphProjectId={graphProjectId}
+        prefillComponentName={meta?.componentName ?? name.trim()}
         nodes={nodes}
         edges={edges}
         graphHints={graphHints}

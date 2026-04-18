@@ -341,4 +341,20 @@ export const api = {
     request<import('./types').C4ModelResponse>(
       `/graph/c4-model?projectId=${encodeURIComponent(projectId)}`,
     ),
+
+  /**
+   * Cypher de solo lectura contra Falkor vía Nest (misma conexión que el resto del grafo).
+   * Requiere FALKOR_DEBUG_CYPHER=1 en el API.
+   */
+  postFalkorDebugQuery: (body: {
+    query: string;
+    params?: Record<string, unknown>;
+    projectId?: string;
+    scopePath?: string;
+    graphName?: string;
+  }) =>
+    request<{ headers: string[]; data: unknown[][]; graphLabel: string }>('/graph/falkor-debug-query', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
 };
