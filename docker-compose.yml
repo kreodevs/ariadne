@@ -77,6 +77,8 @@ services:
       - FALKOR_SHARD_BY_DOMAIN=${FALKOR_SHARD_BY_DOMAIN:-false}
       - FALKOR_AUTO_DOMAIN_OVERFLOW=${FALKOR_AUTO_DOMAIN_OVERFLOW:-false}
       - FALKOR_GRAPH_NODE_SOFT_LIMIT=${FALKOR_GRAPH_NODE_SOFT_LIMIT:-100000}
+      # UI graph-explorer: POST /api/graph/falkor-debug-query (definir en .env o Dokploy: FALKOR_DEBUG_CYPHER=1)
+      - FALKOR_DEBUG_CYPHER=${FALKOR_DEBUG_CYPHER:-}
       - PORT=3000
       - REDIS_URL=redis://redis:6379
       - INGEST_URL=http://ingest:3002
