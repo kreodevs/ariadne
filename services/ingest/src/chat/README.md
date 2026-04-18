@@ -9,7 +9,7 @@ Arquitectura de agentes: **Coordinator** (clasificación LLM) → **CodeAnalysis
 - **`chat-analysis.utils.ts`** — Funciones puras: computeRiskScore, groupDuplicates, formatDuplicatesSummary, findImportCycles, normalizeOptions, extractSearchTerms, getSearchTermsWithSynonyms
 - **`resolve-chat-scope-from-message.util.ts`** — Inferencia de `repoId` desde mensaje + `project_repositories.role` (`CHAT_INFER_SCOPE_FROM_ROLES`).
 - **`chat-preflight-scope.util.ts`** — Paths en el mensaje; filtrado de filas/bloques por `repoId` antes del sintetizador (`CHAT_PREFLIGHT_PATH_REPO`).
-- **`chat-cypher.service.ts`** — Ejecución Cypher y formateo: executeCypher, executeCypherRaw(cypher, shardProjectId?), formatResultsHuman, getGraphSummary (inyectado en ChatService). Con `FALKOR_SHARD_BY_PROJECT`, los shards usan `graphNameForProject(projectId)`.
+- **`chat-cypher.service.ts`** — Ejecución Cypher y formateo: **executeCypher** recorre **`ProjectsService.getCypherShardContexts`** (proyecto + dominios whitelist) y deduplica filas; **executeCypherRaw**(cypher, shardProjectId?), formatResultsHuman, getGraphSummary. Con sharding, cada nombre de grafo se combina con el **cypherProjectId** correcto para los nodos en ese shard.
 - **`chat-llm.service.ts`** — Llamadas OpenAI: callLlm, callLlmWithTools
 - **`chat-antipatterns.service.ts`** — Detección de anti-patrones: detectAntipatterns (spaghetti, god functions, circularImports, etc.)
 - **`chat-handlers.service.ts`** — Handlers: answer*, `semanticSearchFallback`, `getSemanticSearchDiagnostics` (por qué semantic devolvió 0 filas)
@@ -52,7 +52,7 @@ Sin `ORCHESTRATOR_URL`, el pipeline unificado legacy sigue en este servicio (`ru
 
 **Requisitos:** `OPENAI_API_KEY`, `CHAT_MODEL` opcional (default `gpt-4o-mini`).
 
-**Grounding (pipeline unificado `runUnifiedPipeline`):** el Synthesizer exige sección **## Evidencia** cuando se citan rutas; sin datos en contexto → mensaje **sin datos en índice para este alcance**. Fase 1→2: bloque JSON `retrieval_summary` antes del contexto bruto (`CHAT_TWO_PHASE`, desactivar con `0|false|off`). Filtros multi-root: `chat-scope.util.ts` (`hasExplicitChatScopeNarrowing`). Telemetría: `CHAT_TELEMETRY_LOG=1` o `true` — log JSON por request con `pathGroundingRatio`, `chat_scope_effective` (`preflightPathRepoApplied`, `inferred`, `scopeFilterActive`, etc.); ver **`docs/metricas-alcance-chat.md`**. Plan de modificación: tope `MODIFICATION_PLAN_MAX_FILES` (default 150).
+**Grounding (pipeline unificado `runUnifiedPipeline`):** el Synthesizer exige sección **## Evidencia** cuando se citan rutas; sin datos en contexto → mensaje **sin datos en índice para este alcance**. Fase 1→2: bloque JSON `retrieval_summary` antes del contexto bruto (`CHAT_TWO_PHASE`, desactivar con `0|false|off`). Filtros multi-root: `chat-scope.util.ts` (`hasExplicitChatScopeNarrowing`). Telemetría: `CHAT_TELEMETRY_LOG=1` o `true` — log JSON por request con `pathGroundingRatio`, `chat_scope_effective` (`preflightPathRepoApplied`, `inferred`, `scopeFilterActive`, etc.); ver **`docs/notebooklm/metricas-alcance-chat.md`**. Plan de modificación: tope `MODIFICATION_PLAN_MAX_FILES` (default 150).
 
 **Monorepos (apps/admin, apps/api, apps/worker):** `get_graph_summary` usa muestreo estratificado por prefijo; el prompt del retriever indica explorar NestController, NestService y todas las apps.
 
@@ -98,4 +98,4 @@ Añade tus prefijos según la estructura de tu repo.
 
 - `loc`, `complexity` (McCabe), `nestingDepth` — usadas en diagnóstico y antipatrones
 
-Ver [docs/CHAT_Y_ANALISIS.md](../../../docs/CHAT_Y_ANALISIS.md) para detalles de extensión y modificación.
+Ver [docs/notebooklm/CHAT_Y_ANALISIS.md](../../../docs/notebooklm/CHAT_Y_ANALISIS.md) para detalles de extensión y modificación.

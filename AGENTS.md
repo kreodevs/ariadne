@@ -8,6 +8,10 @@ Al iniciar una sesión de desarrollo con el MCP AriadneSpecs Oracle:
 2. **OBLIGATORIO: Verificar que el `projectId` existe** antes de proponer modificaciones en componentes o funciones. Si una herramienta devuelve `[NOT_FOUND_IN_GRAPH]`, no proceder: solicitar reindexación (sync/resync) o verificar el nombre del nodo.
 3. Usar el resultado para saber qué `projectId` corresponde a cada proyecto cuando consultes el grafo.
 
+## Dominios y contexto multi-grafo
+
+Si el proyecto tiene **dependencias a dominios** (`ProjectDomainDependency` en ingest), el sistema consulta también los grafos Falkor de otros proyectos en esos dominios. Las herramientas y el chat usan **`cypherShardContexts`** (`graphName` + `cypherProjectId` por shard): en Cypher, el parámetro `$projectId` debe coincidir con el `projectId` almacenado en los nodos de ese grafo (no asumir solo el UUID del proyecto “actual”).
+
 ## Preferencia projectId
 
 **Fijar proyecto (recomendado):** Si existe `.ariadne-project` en la raíz del workspace, leer su `projectId` y usarlo en **todas** las llamadas al MCP. Evita errores por inferencia o pérdida de contexto.

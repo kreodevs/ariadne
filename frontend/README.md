@@ -8,8 +8,8 @@ Proyecto en la raíz del repo (`frontend/`), independiente de `services/`. UI pa
 - `src/api.ts` — cliente API para Ingest.
 - `src/types.ts` — tipos e interfaces.
 - `src/components/` — Layout (Kreo AppLayout + SidebarModern), StatusBadge, Kreo UI (Button, Card, Input, Select, Badge, Alert, Skeleton, Table, Dialog).
-- `src/pages/` — RepoList, RepoDetail (compound components), RepoChat, RepoIndex, CreateRepo, EditRepo, CredentialsList, CreateCredential, EditCredential, **Ayuda**.
-- **Tests:** `pnpm run test:unit` (Vitest), `pnpm run test:e2e` (Playwright; instalar Chromium con `pnpm exec playwright install chromium`). Ver `docs/TESTING.md` y `e2e/smoke.spec.ts`.
+- `src/pages/` — Listado de **proyectos**, **ProjectDetail** (General + **Arquitectura**: dominio, whitelist, `C4Previewer`), **DomainsList**, RepoList, RepoDetail, RepoChat, RepoIndex, CreateRepo, EditRepo, CredentialsList, CreateCredential, EditCredential, **Ayuda**.
+- **Tests:** `pnpm run test:unit` (Vitest), `pnpm run test:e2e` (Playwright; instalar Chromium con `pnpm exec playwright install chromium`). Ver `docs/notebooklm/TESTING.md` y `e2e/smoke.spec.ts`.
 
 ## Stack
 
@@ -33,6 +33,8 @@ Proyecto en la raíz del repo (`frontend/`), independiente de `services/`. UI pa
 
 - `/login` — Login con OTP: email → código de 6 dígitos.
 - `/` — Listado de proyectos (`GET /projects`).
+- `/domains` — CRUD de **dominios** de arquitectura (`GET/POST /domains` vía API → ingest).
+- `/projects/:id` — Detalle del proyecto: pestaña **General** (repos, roles, sync) y **Arquitectura** (asignación a dominio, dependencias cruzadas, diagrama C4 con Kroki y modo shadow opcional).
 - `/repos/new` — Formulario de alta (`POST /repositories`). Provider → Credencial → Workspace/Owner → Proyecto (select) → Repo slug (editable) → Branch (select) → Webhook secret (Bitbucket, opcional). Carga workspaces, repos y branches desde la API con credencial.
 - `/repos/:id` — Detalle del repo, Editar, Chat, Sync, **Resync** (`POST /repositories/:id/resync`), tabla de jobs.
 - `/repos/:id/chat` — Layout split: **izquierda** botones Diagnóstico/Duplicados/Reingeniería y resultados (`POST /repositories/:id/analyze`); **derecha** chat NL→Cypher (`POST /repositories/:id/chat`). Requiere `OPENAI_API_KEY`. Spinner durante carga; errores visibles; markdown en respuestas.
@@ -44,7 +46,7 @@ Proyecto en la raíz del repo (`frontend/`), independiente de `services/`. UI pa
 - `/credentials/new` — Alta de credencial.
 - `/credentials/:id/edit` — Editar credencial: nombre, valor (token/password) y usuario para app_password (`PATCH /credentials/:id`).
 - `/error` — Página de error genérica.
-- `/ayuda` — Ayuda con 3 subsecciones (navegación in-app, sin descargar): **MCP** (`docs/MCP_AYUDA.md`), **Skills** (Skill AriadneSpecs), **Manual de uso** (`docs/manual/README.md`).
+- `/ayuda` — Ayuda in-app: **MCP** (`docs/notebooklm/MCP_AYUDA.md` → `public/ayuda-mcp.md` vía `scripts/copy-docs.sh`), **Skills**, **Manual** (`docs/manual/README.md`).
 
 ## Docker
 

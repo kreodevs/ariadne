@@ -1,7 +1,7 @@
 /**
  * Tipos para la arquitectura de agentes.
  * @see Architecting Agentic Systems — Supervisor/Coordinator + Worker Agents
- * @see docs/mcp_server_specs.md, docs/CHAT_Y_ANALISIS.md
+ * @see docs/notebooklm/mcp_server_specs.md, docs/notebooklm/CHAT_Y_ANALISIS.md
  */
 
 /** Tipo de respuesta esperada: código/estructura vs lógica en lenguaje natural. */

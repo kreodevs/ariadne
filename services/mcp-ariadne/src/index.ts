@@ -854,8 +854,8 @@ async function queryFileRowsAllShards(
   filesQ: string,
 ): Promise<Array<Record<string, unknown>>> {
   const merged: Array<Record<string, unknown>> = [];
-  await forEachProjectShardGraph(projectId, async (g) => {
-    const filesRes = (await g.query(filesQ, { params: { projectId } })) as {
+  await forEachProjectShardGraph(projectId, async (g, ctx) => {
+    const filesRes = (await g.query(filesQ, { params: { projectId: ctx.cypherProjectId } })) as {
       data?: Array<Record<string, unknown>>;
     };
     for (const row of filesRes.data ?? []) merged.push(row);
@@ -865,14 +865,14 @@ async function queryFileRowsAllShards(
 
 async function runOnProjectGraphs(
   projectId: string | undefined,
-  fn: (g: GraphType) => Promise<void>,
+  fn: (g: GraphType, ctx: { cypherProjectId: string }) => Promise<void>,
 ): Promise<void> {
-  if (!isProjectShardingEnabled() || !projectId) {
-    await fn(await getGraph(undefined));
+  if (!projectId) {
+    await fn(await getGraph(undefined), { cypherProjectId: "" });
     return;
   }
-  await forEachProjectShardGraph(projectId, async (g) => {
-    await fn(g as GraphType);
+  await forEachProjectShardGraph(projectId, async (g, ctx) => {
+    await fn(g as GraphType, ctx);
   });
 }
 
@@ -1436,7 +1436,7 @@ async function fetchFileFromIngest(
           const mdVecQ = `CALL db.idx.vector.queryNodes('MarkdownDoc', '${vecProp}', ${k}, vecf32(${vecStr})) YIELD node, score RETURN node.title AS name, node.sourcePath AS path, node.projectId AS projectId, score`;
           try {
             const seen = new Set<string>();
-            await runOnProjectGraphs(projectId, async (g) => {
+            await runOnProjectGraphs(projectId, async (g, ctx) => {
               try {
                 const [fRes, cRes, dRes, sbRes, mdRes] = await Promise.all([
                   g.query(funcVecQ) as Promise<{ data?: Array<Record<string, unknown>> }>,
@@ -1459,7 +1459,7 @@ async function fetchFileFromIngest(
                   const name = _rv<string>(row, "name") ?? "";
                   const path = _rv<string>(row, "path") ?? "";
                   const pid = _rv<string>(row, "projectId");
-                  if (projectId && pid !== projectId) continue;
+                  if (ctx.cypherProjectId && pid !== ctx.cypherProjectId) continue;
                   const key = `Function:${name}:${path}`;
                   if (seen.has(key)) continue;
                   seen.add(key);
@@ -1473,7 +1473,7 @@ async function fetchFileFromIngest(
                   if (results.length >= limit) return;
                   const name = _rv<string>(row, "name");
                   const pid = _rv<string>(row, "projectId");
-                  if (projectId && pid !== projectId) continue;
+                  if (ctx.cypherProjectId && pid !== ctx.cypherProjectId) continue;
                   const key = `Component:${name}`;
                   if (seen.has(key)) continue;
                   seen.add(key);
@@ -1485,7 +1485,7 @@ async function fetchFileFromIngest(
                   const heading = _rv<string>(row, "heading") ?? "";
                   const ci = _rv<string>(row, "chunkIndex");
                   const pid = _rv<string>(row, "projectId");
-                  if (projectId && pid !== projectId) continue;
+                  if (ctx.cypherProjectId && pid !== ctx.cypherProjectId) continue;
                   const key = `Document:${path}:${ci ?? ""}`;
                   if (seen.has(key)) continue;
                   seen.add(key);
@@ -1497,7 +1497,7 @@ async function fetchFileFromIngest(
                   const name = _rv<string>(row, "name") ?? "";
                   const path = _rv<string>(row, "path") ?? "";
                   const pid = _rv<string>(row, "projectId");
-                  if (projectId && pid !== projectId) continue;
+                  if (ctx.cypherProjectId && pid !== ctx.cypherProjectId) continue;
                   const key = `StorybookDoc:${path}`;
                   if (seen.has(key)) continue;
                   seen.add(key);
@@ -1512,7 +1512,7 @@ async function fetchFileFromIngest(
                   const name = _rv<string>(row, "name") ?? "";
                   const path = _rv<string>(row, "path") ?? "";
                   const pid = _rv<string>(row, "projectId");
-                  if (projectId && pid !== projectId) continue;
+                  if (ctx.cypherProjectId && pid !== ctx.cypherProjectId) continue;
                   const key = `MarkdownDoc:${path}`;
                   if (seen.has(key)) continue;
                   seen.add(key);
@@ -1538,7 +1538,6 @@ async function fetchFileFromIngest(
     /** Vector puede ejecutarse pero devolver 0 filas (proyecto, índice vacío o filtro projectId). */
     if (!usedVector || results.length === 0) {
       const projFilter = projectId ? " WHERE n.projectId = $projectId" : "";
-      const compParams = projectId ? { params: { projectId } } : {};
       const compQ = `MATCH (n:Component)${projFilter} RETURN n.name AS name LIMIT 100`;
       const funcQ = `MATCH (n:Function)${projFilter} RETURN n.name AS name, n.path AS path LIMIT 100`;
       const fileQ = `MATCH (n:File)${projFilter} RETURN n.path AS path LIMIT 100`;
@@ -1550,8 +1549,9 @@ async function fetchFileFromIngest(
       const mdQ = `MATCH (n:MarkdownDoc)${projFilter} RETURN n.title AS title, n.sourcePath AS path LIMIT 100`;
       const mergeRows = async (q: string) => {
         const rows: unknown[] = [];
-        await runOnProjectGraphs(projectId, async (g) => {
-          const res = (await g.query(q, compParams)) as { data?: unknown[] };
+        await runOnProjectGraphs(projectId, async (g, ctx) => {
+          const p = projectId ? { params: { projectId: ctx.cypherProjectId } } : {};
+          const res = (await g.query(q, p)) as { data?: unknown[] };
           for (const row of res.data ?? []) rows.push(row);
         });
         return { data: rows as unknown[][] };

@@ -46,7 +46,9 @@ npm publish
 ### Workflow
 - **get_file_context** — Combina contenido + imports + exports. Paso 2: search → get_file_context → validate/apply.
 
-Variables: `FALKORDB_HOST`, `FALKORDB_PORT`, `FALKOR_SHARD_BY_PROJECT`, `FALKOR_SHARD_BY_DOMAIN`, `INGEST_URL` (enrutamiento vía `GET /projects/:id/graph-routing`; herramientas que leen Falkor abren el subgrafo por ruta cuando aplica).
+**Enrutamiento y whitelist de dominios:** Con `INGEST_URL`, el MCP llama a **`GET /projects/:id/graph-routing`** y usa **`cypherShardContexts`**: lista de `{ graphName, cypherProjectId }`. Cada consulta Cypher debe filtrar con el `projectId` que realmente tienen los nodos en ese grafo (propio proyecto + proyectos en dominios permitidos en **ProjectDomainDependency**). Sin esto, los grafos “hermanos” devolverían 0 filas. `forEachProjectShardGraph` y búsquedas que fusionan filas pasan el `cypherProjectId` correcto por shard.
+
+Variables: `FALKORDB_HOST`, `FALKORDB_PORT`, `FALKOR_SHARD_BY_PROJECT`, `FALKOR_SHARD_BY_DOMAIN`, `INGEST_URL` (obligatorio para routing completo y herramientas que listan proyectos).
 
 ### Resolución multi-root (sin depender solo del cwd)
 
@@ -66,7 +68,7 @@ Variables: `PORT` (8080), `FALKORDB_HOST`, `FALKORDB_PORT`, `INGEST_URL`, **`ARI
 Las herramientas **get_component_graph**, **get_legacy_impact** y **get_sync_status** pueden cachear respuestas cortas:
 
 - **Por defecto** (sin `MCP_REDIS_URL` ni `REDIS_URL`, o con `MCP_REDIS_DISABLED=1`): caché **en memoria** del proceso (TTL 30–120 s según herramienta).
-- **Redis:** define `MCP_REDIS_URL` o `REDIS_URL` para compartir caché entre instancias. La caché de informes **`get_project_analysis`** vive en **ingest** (ver `docs/plan-analyze-layer-cache.md`); el MCP no la duplica.
+- **Redis:** define `MCP_REDIS_URL` o `REDIS_URL` para compartir caché entre instancias. La caché de informes **`get_project_analysis`** vive en **ingest** (ver `docs/notebooklm/plan-analyze-layer-cache.md`); el MCP no la duplica.
 
 ## Scripts
 

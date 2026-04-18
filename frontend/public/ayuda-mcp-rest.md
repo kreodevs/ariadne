@@ -174,5 +174,5 @@ Todas usan el mismo transporte JSON-RPC y el mismo parseo de `result.content[].t
 
 ## 6. Referencias
 
-- [mcp_server_specs.md](mcp_server_specs.md) — Especificación completa del MCP (proyecto vs repo, herramientas, ingest).
+- [mcp_server_specs.md](/mcp_server_specs.md) — Especificación completa del MCP (proyecto vs repo, herramientas, ingest).
 - [ayuda-mcp.md](ayuda-mcp.md) — Uso del MCP desde el IDE (Cursor) y configuración.

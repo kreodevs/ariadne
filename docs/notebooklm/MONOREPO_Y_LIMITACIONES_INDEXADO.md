@@ -226,7 +226,7 @@ Si ves muchos `to = null` o imports que deberían resolverse y no aparecen, revi
 
 ## 7. Referencias
 
-- [db_schema.md](db_schema.md) — Nodos y relaciones del grafo
-- [mcp_server_specs.md](mcp_server_specs.md) — Herramientas MCP
+- [db_schema.md](notebooklm/db_schema.md) — Nodos Falkor y tablas PostgreSQL
+- [mcp_server_specs.md](notebooklm/mcp_server_specs.md) — Herramientas MCP
 - [chat/README.md](../services/ingest/src/chat/README.md) — Scope, monorepos, prefijos
 - [pipeline/README.md](../services/ingest/src/pipeline/README.md) — Proceso de indexado

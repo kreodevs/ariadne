@@ -28,6 +28,10 @@ export interface Project {
   id: string;
   name: string | null;
   description: string | null;
+  /** Dominio de gobierno (C4 / whitelist). */
+  domainId?: string | null;
+  domainName?: string | null;
+  domainColor?: string | null;
   createdAt: string;
   updatedAt: string;
   repositories: Array<{
@@ -41,6 +45,34 @@ export interface Project {
     /** Etiqueta multi-root para inferencia de alcance en chat (ingest). */
     role?: string | null;
   }>;
+}
+
+/** Dominio de arquitectura (PostgreSQL). */
+export interface Domain {
+  id: string;
+  name: string;
+  description: string | null;
+  color: string;
+  metadata: Record<string, unknown> | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ProjectDomainDependency {
+  id: string;
+  projectId: string;
+  dependsOnDomainId: string;
+  dependsOnDomainName?: string;
+  connectionType: string;
+  description: string | null;
+  createdAt: string;
+}
+
+export interface ArchitectureC4Response {
+  level: number;
+  dsl: string;
+  projectId: string;
+  shadowMode: boolean;
 }
 
 /** Tipo de job (full sync o incremental). */

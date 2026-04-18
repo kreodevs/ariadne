@@ -1,12 +1,12 @@
 # Ariadne / AriadneSpecs
 
-Arquitectura: **Ingest** (repos remotos + sync) + **FalkorDB** (grafo) + **Chat/Analysis** (NL→Cypher + diagnósticos) + **MCP** (herramientas para la IA).
+Arquitectura: **Ingest** (repos remotos + sync) + **PostgreSQL** (metadatos: repos, proyectos, **dominios de arquitectura**, whitelist proyecto→dominio) + **FalkorDB** (grafo particionado por proyecto/dominio; shadow SDD) + **Chat/Analysis** (NL→Cypher + diagnósticos) + **MCP** (herramientas para la IA) + **gobierno C4** (DSL PlantUML, preview en frontend).
 
 ## Deployment
 
 - **ariadne.kreoint.mx** — Frontend + API (un solo dominio; rutas `/repositories`, `/graph/*` enrutadas internamente)
 
-Ver [docs/DEPLOYMENT_DOKPLOY.md](docs/DEPLOYMENT_DOKPLOY.md).
+Ver [docs/notebooklm/DEPLOYMENT_DOKPLOY.md](docs/notebooklm/DEPLOYMENT_DOKPLOY.md).
 
 ## Servicios
 
@@ -14,11 +14,11 @@ Ver [docs/DEPLOYMENT_DOKPLOY.md](docs/DEPLOYMENT_DOKPLOY.md).
 - **ingest** — Sync repos, webhooks, shadow `POST /shadow`, índice FalkorDB (sin cartographer separado).
 - **redis** — Cola BullMQ (sync) y caché (puerto 6380).
 - **postgres** — Repos, sync_jobs, indexed_files, credentials (puerto 5432).
-- **ingest** — NestJS: repos Bitbucket/GitHub, full sync, resync, webhook, **Chat** (NL→Cypher), **Análisis** (diagnóstico, duplicados, reingeniería), embed-index automático (puerto 3002). Ver [docs/bitbucket_webhook.md](docs/bitbucket_webhook.md).
+- **ingest** — NestJS: repos Bitbucket/GitHub, full sync, resync, webhook, **Chat** (NL→Cypher), **Análisis** (diagnóstico, duplicados, reingeniería), embed-index automático (puerto 3002). Ver [docs/notebooklm/bitbucket_webhook.md](docs/notebooklm/bitbucket_webhook.md).
 - **api** — REST NestJS: impacto, componente, contrato, compare, shadow (puerto 3000).
 - **orchestrator** — NestJS + LangGraph: validación SDD (puerto 3001).
 - **mcp-ariadne** — MCP stdio: `get_component_graph`, `get_legacy_impact`, `get_contract_specs`, `semantic_search`, `get_file_content`, `validate_before_edit`, `get_project_analysis`.
-- **frontend** — React+Vite: repos, credenciales, detalle, **Chat con repo** (preguntas NL, diagnósticos, índice FalkorDB), resync (puerto 5173).
+- **frontend** — React+Vite: proyectos, repos, **dominios** (CRUD), detalle de proyecto (**pestaña Arquitectura**: dominio, dependencias cruzadas, **C4** vía Kroki), credenciales, **Chat con repo**, índice FalkorDB, resync (puerto 5173).
 
 ## Uso con Docker
 
@@ -33,16 +33,16 @@ Ver [docs/DEPLOYMENT_DOKPLOY.md](docs/DEPLOYMENT_DOKPLOY.md).
 
 ## Documentación
 
-- [ariadne-common](docs/ariadne-common.md) — Paquete compartido (FalkorDB/Cypher) entre ingest y MCP; uso y **deployment**.
-- [Arquitectura](docs/architecture.md)
-- [Motor de indexado](docs/indexing_engine.md)
-- [Chat y Análisis](docs/CHAT_Y_ANALISIS.md) — Flujo NL→Cypher, diagnósticos, antipatrones, métricas
-- [Especificación MCP](docs/mcp_server_specs.md)
-- [Esquema DB y Cypher](docs/db_schema.md)
+- [ariadne-common](packages/ariadne-common/README.md) — Paquete compartido (FalkorDB/Cypher) entre ingest y MCP; uso y **deployment**. (Notas largas: [docs/notebooklm/ariadne-common.md](docs/notebooklm/ariadne-common.md).)
+- [Arquitectura](docs/notebooklm/architecture.md)
+- [Motor de indexado](docs/notebooklm/indexing_engine.md)
+- [Chat y Análisis](docs/notebooklm/CHAT_Y_ANALISIS.md) — Flujo NL→Cypher, diagnósticos, antipatrones, métricas (el retriever usa **cypherShardContexts** del ingest cuando hay whitelist de dominios)
+- [Especificación MCP](docs/notebooklm/mcp_server_specs.md)
+- [Esquema DB y Cypher](docs/notebooklm/db_schema.md)
 - [Manual de uso](docs/manual/README.md) — Puesta en marcha, endpoints, troubleshooting
-- [Caché de análisis en ingest](docs/plan-analyze-layer-cache.md) — LRU, Redis, capa extrínseca CALL
-- [Capas del diagnóstico](docs/diagnostico-layer-dependencies.md) — intrínseca vs extrínseca
-- [Tests (Vitest / Playwright)](docs/TESTING.md)
+- [Caché de análisis en ingest](docs/notebooklm/plan-analyze-layer-cache.md) — LRU, Redis, capa extrínseca CALL
+- [Capas del diagnóstico](docs/notebooklm/diagnostico-layer-dependencies.md) — intrínseca vs extrínseca
+- [Tests (Vitest / Playwright)](docs/notebooklm/TESTING.md)
 
 ## Versionado (semver)
 

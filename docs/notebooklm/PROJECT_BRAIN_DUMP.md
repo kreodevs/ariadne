@@ -232,10 +232,10 @@ flowchart TB
 ## Referencias internas (lectura)
 
 - `README.md` — visión general y scripts Docker.
-- `docs/architecture.md` — stack objetivo y flujos SDD/shadow.
-- `docs/mcp_server_specs.md` — contrato MCP.
-- `docs/CHAT_Y_ANALISIS.md` — NL→Cypher y modos de análisis.
-- `docs/db_schema.md` — nodos y relaciones Falkor.
+- `docs/notebooklm/architecture.md` — stack objetivo y flujos SDD/shadow.
+- `docs/notebooklm/mcp_server_specs.md` — contrato MCP.
+- `docs/notebooklm/CHAT_Y_ANALISIS.md` — NL→Cypher y modos de análisis.
+- `docs/notebooklm/db_schema.md` — nodos Falkor y tablas PostgreSQL.
 - `AGENTS.md` / `.cursor/rules` — protocolo para usar el MCP sin alucinar nodos.
 
 ---

@@ -63,9 +63,14 @@ export function ProjectList() {
           <h1 className="text-2xl font-bold tracking-tight">Proyectos</h1>
           <p className="text-muted-foreground mt-1">Cada proyecto puede tener varios repositorios (multi-root).</p>
         </div>
-        <Button asChild className="w-full shrink-0 sm:w-auto touch-manipulation">
-          <Link to="/projects/new">Nuevo proyecto</Link>
-        </Button>
+        <div className="flex flex-wrap gap-2 w-full sm:w-auto justify-end">
+          <Button variant="outline" asChild className="touch-manipulation">
+            <Link to="/domains">Dominios</Link>
+          </Button>
+          <Button asChild className="touch-manipulation">
+            <Link to="/projects/new">Nuevo proyecto</Link>
+          </Button>
+        </div>
       </div>
 
       {projects.length === 0 ? (

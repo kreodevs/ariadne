@@ -17,7 +17,7 @@ Este manual describe cómo poner en marcha, usar y validar el monorepo Ariadne (
 | **Frontend** | UI para ingest: **proyectos** (multi-root), listado de repos, alta (Bitbucket/GitHub), credenciales, detalle, sync manual, jobs, **Chat** por proyecto o por repo (preguntas NL, diagnósticos), **resync** (desde repo o desde proyecto). React + Vite. |
 | **Cartographer** | Legacy: vigilancia de directorio local y `POST /shadow`; el ingest asume full sync + webhook. |
 
-Diagrama y detalle en [architecture.md](../architecture.md).
+Diagrama y detalle en [architecture.md](../../../docs/notebooklm/architecture.md).
 
 ## 2. Requisitos
 
@@ -99,11 +99,13 @@ Tras cada sync (normal o resync), se ejecuta automáticamente el indexado de emb
 
 **Chat y análisis:** `POST /repositories/:id/chat` con `{ message, history?, scope?, twoPhase?, responseMode? }` — preguntas NL por repo. `POST /projects/:projectId/chat` — chat sobre todos los repos del proyecto. **`POST /repositories/:id/analyze`** (`:id` = repo): modos `diagnostico`, `duplicados`, `reingenieria`, `codigo_muerto`, `seguridad`. **`POST /projects/:id/analyze`:** mismos modos; en proyecto **multi-root**, `idePath` / `repositoryId` opcionales; o `mode: 'agents'|'skill'`. Requiere `OPENAI_API_KEY`.
 **Métricas y anti-patrones:** El parser calcula complejidad ciclomática (McCabe), LOC, anidamiento (nestingDepth) y acoplamiento. El diagnóstico detecta: código spaguetti (nesting>4), God functions (acoplamiento>8), alto fan-in (shotgun surgery), imports circulares, componentes sobrecargados.
-- **Webhook Bitbucket:** `POST /webhooks/bitbucket`. Evento esperado: `repo:push`. Secret desde credencial en BD (kind=webhook_secret) o `BITBUCKET_WEBHOOK_SECRET`. Ver [bitbucket_webhook.md](../bitbucket_webhook.md).
+- **Webhook Bitbucket:** `POST /webhooks/bitbucket`. Evento esperado: `repo:push`. Secret desde credencial en BD (kind=webhook_secret) o `BITBUCKET_WEBHOOK_SECRET`. Ver [bitbucket_webhook.md](../notebooklm/bitbucket_webhook.md).
 - **Shadow (índice en grafo shadow):** `POST /shadow` con body `{ "files": [ { "path": "ruta/archivo.ts", "content": "código..." } ] }`.
+- **Dominios / C4:** `GET|POST|PATCH|DELETE /domains`, `GET /projects/:id/architecture/c4`, `GET /projects/:id/graph-routing`, dependencias `.../domain-dependencies`. Ver [db_schema.md](../../../docs/notebooklm/db_schema.md) (PostgreSQL).
 
 ### API (puerto 3000)
 
+- **Proxy ingest:** `/api/projects`, `/api/domains`, `/api/repositories`, … → ingest (`services/api/src/main.ts`).
 - **Impacto:** `GET /graph/impact/:nodeId` — dependientes del nodo (quién lo llama o lo renderiza).
 - **Componente:** `GET /graph/component/:name?depth=2` — dependencias del componente hasta `depth` (1–10).
 - **Contrato:** `GET /graph/contract/:componentName` — props del componente (HAS_PROP).
@@ -144,7 +146,7 @@ Para invocar el MCP desde una **aplicación (código)** en lugar de desde un IDE
 
 En `frontend/`: `npm run dev` (puerto 5173 por defecto). Asegura que `VITE_API_URL` apunte al ingest (por defecto `http://localhost:3002`; en producción la URL pública del ingest).
 
-- **Rutas:** `/` lista de repos; `/projects` lista de proyectos; `/projects/new` crear proyecto; `/projects/:id` detalle de proyecto (nombre editable, resync por repo, asociar repo existente, eliminar proyecto, enlace "Repositorio nuevo" con `?projectId=`); `/projects/:id/chat` Chat por proyecto; `/repos/new` alta (Bitbucket/GitHub, selector de credencial); `/repos/:id` detalle, Sync, Resync (desde repo), jobs; `/repos/:id/chat` Chat por repo; `/credentials` y `/credentials/new` gestión de credenciales.
+- **Rutas:** `/` proyectos; `/domains` dominios; `/projects/:id` General + **Arquitectura**; `/projects/:id/chat`; `/repos/...`; `/credentials/...`. `VITE_API_URL` recomendado: API `:3000` con `/api`.
 - **Build:** `npm run build`; **preview:** `npm run preview` para servir `dist/` localmente.
 
 ## 5. Validación
@@ -168,7 +170,7 @@ No hay tests E2E en el repo; la validación completa es manual.
 
 - [CONFIGURACION_Y_USO.md](CONFIGURACION_Y_USO.md) — Configuración detallada, credenciales, troubleshooting.
 - [docs/README.md](../README.md) — Índice de documentación.
-- [architecture.md](../architecture.md) — Stack y flujos del sistema.
-- [bitbucket_webhook.md](../bitbucket_webhook.md) — Configuración del webhook Bitbucket.
-- [db_schema.md](../db_schema.md) — Esquema del grafo FalkorDB (nodos, relaciones).
-- [indexing_engine.md](../indexing_engine.md) — Pipeline de indexación y fuentes.
+- [architecture.md](../../../docs/notebooklm/architecture.md) — Stack y flujos del sistema.
+- [bitbucket_webhook.md](../../../docs/notebooklm/bitbucket_webhook.md) — Webhook Bitbucket.
+- [db_schema.md](../../../docs/notebooklm/db_schema.md) — Grafo Falkor y tablas PostgreSQL (dominios, proyectos).
+- [indexing_engine.md](../../../docs/notebooklm/indexing_engine.md) — Pipeline de indexación y fuentes.

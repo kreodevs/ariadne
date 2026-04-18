@@ -7,10 +7,14 @@ import { Injectable } from '@nestjs/common';
 import { FalkorDB } from 'falkordb';
 import { getFalkorConfig, graphNameForProject, isProjectShardingEnabled } from '../pipeline/falkor';
 import { RepositoriesService } from '../repositories/repositories.service';
+import { ProjectsService } from '../projects/projects.service';
 
 @Injectable()
 export class ChatCypherService {
-  constructor(private readonly repos: RepositoriesService) {}
+  constructor(
+    private readonly repos: RepositoriesService,
+    private readonly projects: ProjectsService,
+  ) {}
 
   private async resolveProjectIdForRepo(repoId: string): Promise<string> {
     const ids = await this.repos.getProjectIdsForRepo(repoId);
@@ -61,97 +65,107 @@ export class ChatCypherService {
 
     const wn = repoIdFilter ? ' AND n.repoId = $repoIdFilter' : '';
     const wfn = repoIdFilter ? ' AND f.repoId = $repoIdFilter AND n.repoId = $repoIdFilter' : '';
-    const params: Record<string, string> = { projectId };
-    if (repoIdFilter) params.repoIdFilter = repoIdFilter;
+
+    const shardContexts = await this.projects.getCypherShardContexts(projectId, {
+      includeSiblingProjects: !repoIdFilter,
+    });
 
     try {
-      const graph = client.selectGraph(
-        graphNameForProject(isProjectShardingEnabled() ? projectId : undefined),
-      );
+      for (const shard of shardContexts.length > 0
+        ? shardContexts
+        : [{ graphName: graphNameForProject(isProjectShardingEnabled() ? projectId : undefined), cypherProjectId: projectId }]) {
+        const graph = client.selectGraph(shard.graphName);
+        const pid = shard.cypherProjectId;
+        const params: Record<string, string> = { projectId: pid };
+        if (repoIdFilter) params.repoIdFilter = repoIdFilter;
 
-      for (const label of labels) {
-        const countRes = await graph.query(
-          `MATCH (n:${label}) WHERE n.projectId = $projectId${wn} RETURN count(n) as c`,
-          { params },
-        );
-        const count = ((countRes as { data?: [{ c: number }] })?.data?.[0]?.c) ?? 0;
-        if (count > 0) {
-          counts[label] = count;
+        for (const label of labels) {
+          const countRes = await graph.query(
+            `MATCH (n:${label}) WHERE n.projectId = $projectId${wn} RETURN count(n) as c`,
+            { params },
+          );
+          const count = ((countRes as { data?: [{ c: number }] })?.data?.[0]?.c) ?? 0;
+          if (count > 0) {
+            counts[label] = (counts[label] ?? 0) + count;
 
-          const pathLabels = ['File', 'Component', 'Function', 'Model', 'Route', 'NestController', 'NestService', 'NestModule'];
-          const useStratified = !full && pathLabels.includes(label);
+            const pathLabels = ['File', 'Component', 'Function', 'Model', 'Route', 'NestController', 'NestService', 'NestModule'];
+            const useStratified = !full && pathLabels.includes(label);
 
-          if (useStratified) {
-            const seen = new Set<string>();
-            const merged: Record<string, unknown>[] = [];
-            for (const prefix of ChatCypherService.MONOREPO_PREFIXES) {
-              let q: string;
-              if (label === 'File') {
-                q = `MATCH (n:File) WHERE n.projectId = $projectId${wn} AND n.path STARTS WITH $prefix RETURN n.path as path ORDER BY n.path${limitPerPrefix}`;
-              } else if (label === 'Component') {
-                q = `MATCH (f:File)-[:CONTAINS]->(n:Component) WHERE n.projectId = $projectId AND f.projectId = $projectId${wfn} AND f.path STARTS WITH $prefix RETURN f.path as path, n.name as name ORDER BY f.path, n.name${limitPerPrefix}`;
-              } else if (label === 'Function') {
-                q = `MATCH (n:Function) WHERE n.projectId = $projectId${wn} AND n.path STARTS WITH $prefix RETURN n.path as path, n.name as name ORDER BY n.path, n.name${limitPerPrefix}`;
-              } else if (label === 'Model') {
-                q = `MATCH (n:Model) WHERE n.projectId = $projectId${wn} AND n.path STARTS WITH $prefix RETURN n.path as path, n.name as name ORDER BY n.path, n.name${limitPerPrefix}`;
-              } else if (label === 'Route') {
-                q = `MATCH (n:Route) WHERE n.projectId = $projectId${wn} AND n.path STARTS WITH $prefix RETURN n.path as path, n.componentName as componentName ORDER BY n.path${limitPerPrefix}`;
-              } else {
-                q = `MATCH (n:${label}) WHERE n.projectId = $projectId${wn} AND n.path STARTS WITH $prefix RETURN n.name as name, n.path as path ORDER BY n.path, n.name${limitPerPrefix}`;
-              }
-              try {
-                const res = await graph.query(q, { params: { ...params, prefix } });
-                const rows = (res as { data?: Record<string, unknown>[] })?.data ?? [];
-                for (const row of rows) {
-                  const key = (row.path ?? row.name ?? JSON.stringify(row)) as string;
-                  if (!seen.has(key)) {
-                    seen.add(key);
-                    merged.push(row);
-                  }
+            let stratifiedMerged: Record<string, unknown>[] = [];
+            if (useStratified) {
+              const seen = new Set<string>();
+              for (const prefix of ChatCypherService.MONOREPO_PREFIXES) {
+                let q: string;
+                if (label === 'File') {
+                  q = `MATCH (n:File) WHERE n.projectId = $projectId${wn} AND n.path STARTS WITH $prefix RETURN n.path as path ORDER BY n.path${limitPerPrefix}`;
+                } else if (label === 'Component') {
+                  q = `MATCH (f:File)-[:CONTAINS]->(n:Component) WHERE n.projectId = $projectId AND f.projectId = $projectId${wfn} AND f.path STARTS WITH $prefix RETURN f.path as path, n.name as name ORDER BY f.path, n.name${limitPerPrefix}`;
+                } else if (label === 'Function') {
+                  q = `MATCH (n:Function) WHERE n.projectId = $projectId${wn} AND n.path STARTS WITH $prefix RETURN n.path as path, n.name as name ORDER BY n.path, n.name${limitPerPrefix}`;
+                } else if (label === 'Model') {
+                  q = `MATCH (n:Model) WHERE n.projectId = $projectId${wn} AND n.path STARTS WITH $prefix RETURN n.path as path, n.name as name ORDER BY n.path, n.name${limitPerPrefix}`;
+                } else if (label === 'Route') {
+                  q = `MATCH (n:Route) WHERE n.projectId = $projectId${wn} AND n.path STARTS WITH $prefix RETURN n.path as path, n.componentName as componentName ORDER BY n.path${limitPerPrefix}`;
+                } else {
+                  q = `MATCH (n:${label}) WHERE n.projectId = $projectId${wn} AND n.path STARTS WITH $prefix RETURN n.name as name, n.path as path ORDER BY n.path, n.name${limitPerPrefix}`;
                 }
-              } catch {
-                /* prefix sin resultados, seguir */
+                try {
+                  const res = await graph.query(q, { params: { ...params, prefix } });
+                  const rows = (res as { data?: Record<string, unknown>[] })?.data ?? [];
+                  for (const row of rows) {
+                    const key = (row.path ?? row.name ?? JSON.stringify(row)) as string;
+                    if (!seen.has(key)) {
+                      seen.add(key);
+                      stratifiedMerged.push(row);
+                    }
+                  }
+                } catch {
+                  /* prefix sin resultados, seguir */
+                }
+              }
+              if (stratifiedMerged.length > 0) {
+                samples[label] = [...(samples[label] ?? []), ...stratifiedMerged];
               }
             }
-            if (merged.length > 0) {
-              samples[label] = merged;
+
+            const needDefaultSamples = !useStratified || stratifiedMerged.length === 0;
+            if (needDefaultSamples) {
+              let sampleQuery: string;
+              if (label === 'File') sampleQuery = `MATCH (n:File) WHERE n.projectId = $projectId${wn} RETURN n.path as path ORDER BY n.path${limit}`;
+              else if (label === 'Component') sampleQuery = `MATCH (f:File)-[:CONTAINS]->(n:Component) WHERE n.projectId = $projectId AND f.projectId = $projectId${wfn} RETURN f.path as path, n.name as name ORDER BY f.path, n.name${limit}`;
+              else if (label === 'Function') sampleQuery = `MATCH (n:Function) WHERE n.projectId = $projectId${wn} RETURN n.path as path, n.name as name, n.endpointCalls as endpointCalls ORDER BY n.path, n.name${limit}`;
+              else if (label === 'Model') sampleQuery = `MATCH (n:Model) WHERE n.projectId = $projectId${wn} RETURN n.path as path, n.name as name ORDER BY n.path, n.name${limit}`;
+              else if (label === 'Route') sampleQuery = `MATCH (n:Route) WHERE n.projectId = $projectId${wn} RETURN n.path as path, n.componentName as componentName ORDER BY n.path${limit}`;
+              else if (label === 'Hook') sampleQuery = `MATCH (n:Hook) WHERE n.projectId = $projectId${wn} RETURN n.name as name ORDER BY n.name${limit}`;
+              else if (label === 'Context') sampleQuery = `MATCH (f:File)-[:CONTAINS]->(n:Context) WHERE n.projectId = $projectId AND f.projectId = $projectId${wfn} RETURN n.name as name, f.path as path ORDER BY n.name, f.path${limit}`;
+              else if (label === 'DomainConcept') sampleQuery = `MATCH (n:DomainConcept) WHERE n.projectId = $projectId${wn} RETURN n.name as name, n.category as category, n.sourcePath as path ORDER BY n.category, n.name${limit}`;
+              else sampleQuery = `MATCH (n:${label}) WHERE n.projectId = $projectId${wn} RETURN n.name as name, n.path as path ORDER BY n.path, n.name${limit}`;
+
+              const sampleRes = await graph.query(sampleQuery, { params });
+              const chunk = (sampleRes as { data?: Record<string, unknown>[] })?.data ?? [];
+              const prevLen = (samples[label] ?? []).length;
+              samples[label] = [...(samples[label] ?? []), ...chunk];
+
+              if (
+                label === 'Component' &&
+                count > 0 &&
+                (samples[label] ?? []).length === prevLen
+              ) {
+                const fb = await graph.query(
+                  `MATCH (n:Component) WHERE n.projectId = $projectId${wn} RETURN n.name as name, '' as path ORDER BY n.name${limit}`,
+                  { params },
+                );
+                samples[label] = [...(samples[label] ?? []), ...((fb as { data?: Record<string, unknown>[] })?.data ?? [])];
+              }
             }
-          }
 
-          if (!samples[label] || (Array.isArray(samples[label]) && samples[label].length === 0)) {
-            let sampleQuery: string;
-            if (label === 'File') sampleQuery = `MATCH (n:File) WHERE n.projectId = $projectId${wn} RETURN n.path as path ORDER BY n.path${limit}`;
-            else if (label === 'Component') sampleQuery = `MATCH (f:File)-[:CONTAINS]->(n:Component) WHERE n.projectId = $projectId AND f.projectId = $projectId${wfn} RETURN f.path as path, n.name as name ORDER BY f.path, n.name${limit}`;
-            else if (label === 'Function') sampleQuery = `MATCH (n:Function) WHERE n.projectId = $projectId${wn} RETURN n.path as path, n.name as name, n.endpointCalls as endpointCalls ORDER BY n.path, n.name${limit}`;
-            else if (label === 'Model') sampleQuery = `MATCH (n:Model) WHERE n.projectId = $projectId${wn} RETURN n.path as path, n.name as name ORDER BY n.path, n.name${limit}`;
-            else if (label === 'Route') sampleQuery = `MATCH (n:Route) WHERE n.projectId = $projectId${wn} RETURN n.path as path, n.componentName as componentName ORDER BY n.path${limit}`;
-            else if (label === 'Hook') sampleQuery = `MATCH (n:Hook) WHERE n.projectId = $projectId${wn} RETURN n.name as name ORDER BY n.name${limit}`;
-            else if (label === 'Context') sampleQuery = `MATCH (f:File)-[:CONTAINS]->(n:Context) WHERE n.projectId = $projectId AND f.projectId = $projectId${wfn} RETURN n.name as name, f.path as path ORDER BY n.name, f.path${limit}`;
-            else if (label === 'DomainConcept') sampleQuery = `MATCH (n:DomainConcept) WHERE n.projectId = $projectId${wn} RETURN n.name as name, n.category as category, n.sourcePath as path ORDER BY n.category, n.name${limit}`;
-            else sampleQuery = `MATCH (n:${label}) WHERE n.projectId = $projectId${wn} RETURN n.name as name, n.path as path ORDER BY n.path, n.name${limit}`;
-
-            const sampleRes = await graph.query(sampleQuery, { params });
-            samples[label] = (sampleRes as { data?: Record<string, unknown>[] })?.data ?? [];
-
-            if (
-              label === 'Component' &&
-              count > 0 &&
-              (!samples[label] || (Array.isArray(samples[label]) && samples[label].length === 0))
-            ) {
-              const fb = await graph.query(
-                `MATCH (n:Component) WHERE n.projectId = $projectId${wn} RETURN n.name as name, '' as path ORDER BY n.name${limit}`,
-                { params },
-              );
-              samples[label] = (fb as { data?: Record<string, unknown>[] })?.data ?? [];
+            if (full && label === 'Hook') {
+              const byName = new Map<string, { name: string; path?: string }>();
+              for (const row of samples[label] as Array<{ name: string; path?: string }>) {
+                if (!byName.has(row.name)) byName.set(row.name, { name: row.name, path: row.path });
+              }
+              samples[label] = Array.from(byName.values()).sort((a, b) => a.name.localeCompare(b.name));
             }
-          }
-
-          if (full && label === 'Hook') {
-            const byName = new Map<string, { name: string; path?: string }>();
-            for (const row of samples[label] as Array<{ name: string; path?: string }>) {
-              if (!byName.has(row.name)) byName.set(row.name, { name: row.name, path: row.path });
-            }
-            samples[label] = Array.from(byName.values()).sort((a, b) => a.name.localeCompare(b.name));
           }
         }
       }
@@ -173,12 +187,31 @@ export class ChatCypherService {
       socket: { host: config.host, port: config.port },
     });
     try {
-      const graph = client.selectGraph(
-        graphNameForProject(isProjectShardingEnabled() ? projectId : undefined),
-      );
-      const params = { projectId, ...extraParams };
-      const res = await graph.query(cypher, { params });
-      return (res as { data?: Record<string, unknown>[] })?.data ?? [];
+      const contexts = await this.projects.getCypherShardContexts(projectId);
+      const shards =
+        contexts.length > 0
+          ? contexts
+          : [
+              {
+                graphName: graphNameForProject(isProjectShardingEnabled() ? projectId : undefined),
+                cypherProjectId: projectId,
+              },
+            ];
+      const merged: unknown[] = [];
+      const seen = new Set<string>();
+      for (const s of shards) {
+        const graph = client.selectGraph(s.graphName);
+        const params = { projectId: s.cypherProjectId, ...extraParams };
+        const res = await graph.query(cypher, { params });
+        const rows = (res as { data?: Record<string, unknown>[] })?.data ?? [];
+        for (const row of rows) {
+          const key = JSON.stringify(row);
+          if (seen.has(key)) continue;
+          seen.add(key);
+          merged.push(row);
+        }
+      }
+      return merged;
     } finally {
       await client.close();
     }

@@ -27,6 +27,7 @@ async function bootstrap() {
   const ingestProxy = createProxyMiddleware({
     pathFilter: (pathname) =>
       pathname.startsWith('/api/projects') ||
+      pathname.startsWith('/api/domains') ||
       pathname.startsWith('/api/repositories') ||
       pathname.startsWith('/api/credentials') ||
       pathname.startsWith('/api/providers') ||

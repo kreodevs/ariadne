@@ -13,7 +13,7 @@ Microservicio NestJS que reemplaza la ingesta basada en directorio local (chokid
 ## Stack
 
 - NestJS, TypeORM, PostgreSQL
-- Entidades: `repositories`, `sync_jobs`, `indexed_files`
+- Entidades: `repositories`, `sync_jobs`, `indexed_files`, **`domains`**, **`project_domain_dependencies`**, vínculo proyecto↔dominio
 - **Multi-proyecto:** Cada repositorio se indexa como un nodo `:Project` en FalkorDB (`projectId` = `repo.id`). Todos los nodos (File, Component, etc.) incluyen `projectId`. Relación `(Project)-[:CONTAINS]->(File)`.
 
 ## Análisis por proyecto (Fase 6 — `AnalyticsService`)
@@ -40,7 +40,9 @@ Ver [src/chat/README.md](src/chat/README.md) y [docs/comparativa/Plan_Implementa
 - `POST /repositories/:id/chat` — Chat NL→Cypher. Body: `{ message, history? }`. Requiere `OPENAI_API_KEY`. Ver [src/chat/README.md](src/chat/README.md).
 - `POST /repositories/:id/analyze` — Análisis estructurado. Body: `{ mode: 'diagnostico'|'duplicados'|'reingenieria'|'codigo_muerto'|'seguridad'|... }`. Diagnóstico: top riesgo, antipatrones; Duplicados: embeddings; Reingeniería: plan priorizado; Código muerto: detalle de uso por archivo; **seguridad:** escaneo heurístico de secretos + informe LLM (complementa Full Audit).
 - `GET /repositories/:id/graph-summary` — Conteos y muestras de nodos indexados.
-- `GET /projects/:id/graph-routing` — Metadatos Falkor para MCP/API: `shardMode` (`project` \| `domain`), `domainSegments` (último sync), `graphNodeSoftLimit`. Usado para abrir el subgrafo correcto (`AriadneSpecs:<uuid>:<segmento>`).
+- `GET /projects/:id/graph-routing` — Metadatos Falkor para MCP/API: `shardMode` (`project` \| `domain`), `domainSegments` (último sync), `graphNodeSoftLimit`, `extendedGraphShardNames` (grafos de proyectos en dominios whitelist), `cypherShardContexts` (`{ graphName, cypherProjectId }[]` para Cypher multi-proyecto). Usado para abrir el subgrafo correcto (`AriadneSpecs:<uuid>:<segmento>`).
+- `GET /domains`, `POST /domains` — Listado y alta de **dominios** (nombre, descripción, color hex, `metadata` JSONB). CRUD completo vía `DomainsController` (ver `src/domains/README.md`).
+- `GET /projects/:id/architecture/c4?level=1|2|3&sessionId=` — DSL **PlantUML C4** (contexto / contenedores / componentes); `sessionId` opcional activa diff contra el grafo shadow (Visual SDD).
 - `GET /projects/:id/resolve-repo-for-path?path=` — Heurística multi-root: devuelve `repoId` candidato desde `projectKey`/`repoSlug` en la ruta.
 - `GET /projects/:id/jobs/:jobId/analysis` — Mismo cuerpo que la ruta por repositorio; valida en `project_repositories` que el `repositoryId` del job esté en el proyecto (útil en multi-root cuando se conoce solo `projectId` + `jobId`)
 - `POST /projects/:id/analyze` — Además de `agents`/`skill`, acepta modos `diagnostico`, `duplicados`, etc. con `idePath` o `repositoryId` opcionales cuando hay varios repos en el proyecto (ver [src/chat/README.md](src/chat/README.md)).
@@ -69,7 +71,7 @@ Tras cada sync (normal o resync), se ejecuta automáticamente `embed-index` si h
 - `OPENAI_API_KEY` — Chat, diagnósticos y (si provider=openai) embeddings. **Obligatorio** para chat/analyze.
 - `CHAT_MODEL` — Modelo OpenAI para chat (default `gpt-4o-mini`). Diagnóstico/reingeniería truncan datos automáticamente para evitar context_length_exceeded (128k tokens).
 - `CHAT_TELEMETRY_LOG` — `1` o `true`: log JSON por request del pipeline unificado (tamaños, citas de paths, `pathGroundingRatio` vs retrieval).
-- `METRICS_ENABLED` — `0` o `false`: desactiva Prometheus (`GET /metrics` responde 503). Por defecto las métricas están activas (Fase 0 — ver [docs/OBSERVABILIDAD_FASE0.md](../../docs/OBSERVABILIDAD_FASE0.md)).
+- `METRICS_ENABLED` — `0` o `false`: desactiva Prometheus (`GET /metrics` responde 503). Por defecto las métricas están activas (Fase 0 — ver [docs/notebooklm/OBSERVABILIDAD_FASE0.md](../../docs/notebooklm/OBSERVABILIDAD_FASE0.md)).
 - `CHAT_TWO_PHASE` — `0` / `false` / `off`: desactiva el bloque JSON de retrieval antes del contexto bruto en el sintetizador (default: activo).
 - `CHAT_EVIDENCE_FIRST_MAX_CHARS` — tope de caracteres del contexto bruto hacia el sintetizador cuando el body del chat incluye `responseMode: 'evidence_first'` (default `18000`, mínimo efectivo `4000`, máximo `100000`).
 - `MODIFICATION_PLAN_MAX_FILES` — Tope de entradas en `get_modification_plan` (default 150, máx. 2000).
@@ -93,7 +95,7 @@ PORT=3002 npm run start
 
 ## Webhook Bitbucket
 
-Configuración del webhook en Bitbucket: ver [docs/bitbucket_webhook.md](../../docs/bitbucket_webhook.md) en la raíz del proyecto.
+Configuración del webhook en Bitbucket: ver [docs/notebooklm/bitbucket_webhook.md](../../docs/notebooklm/bitbucket_webhook.md) en la raíz del proyecto.
 
 ## Migraciones
 

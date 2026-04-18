@@ -11,13 +11,13 @@ Este manual describe cómo poner en marcha, usar y validar el monorepo Ariadne (
 | Componente | Función |
 |------------|--------|
 | **Ingest** | Registro de repos, credenciales cifradas en BD, full sync (cola Redis), webhook Bitbucket, índice shadow. NestJS + TypeORM + PostgreSQL + FalkorDB + Redis. |
-| **API** | REST OpenAPI: impacto, componente, contrato, compare, proxy shadow. NestJS + FalkorDB + Redis (caché). |
+| **API** | REST OpenAPI: `/graph/*` (Falkor); **proxy** a ingest para `/api/projects`, `/api/repositories`, `/api/credentials`, `/api/domains`, … (prefijo `/api` → ingest). NestJS + FalkorDB + Redis (caché). |
 | **Orchestrator** | Flujos LangGraph: refactor por `nodeId`, validación con props propuestas, pipeline completo (shadow + compare). NestJS. |
 | **MCP AriadneSpecs** | Servidor MCP por Streamable HTTP (puerto 8080): herramientas de grafo para la IA (get_component_graph, get_legacy_impact, etc.). |
-| **Frontend** | UI para ingest: listado de repos, alta (Bitbucket/GitHub), credenciales, detalle, sync manual, jobs, **Chat** (preguntas NL, diagnósticos), **resync**. React + Vite. |
+| **Frontend** | UI: proyectos, **dominios** (CRUD), detalle de proyecto (**Arquitectura**: dominio, whitelist, C4/Kroki), repos, credenciales, sync, jobs, **Chat**, **resync**. React + Vite. |
 | **Cartographer** | Legacy: vigilancia de directorio local y `POST /shadow`; el ingest asume full sync + webhook. |
 
-Diagrama y detalle en [architecture.md](../architecture.md).
+Diagrama y detalle en [architecture.md](../notebooklm/architecture.md).
 
 ## 2. Requisitos
 
@@ -73,7 +73,7 @@ Levantar FalkorDB, PostgreSQL y Redis por tu cuenta (binarios o contenedores sue
 - **API:** `PORT` (3000), `FALKORDB_HOST`, `FALKORDB_PORT`, `REDIS_URL`. Opcional: `INGEST_URL`, `CARTOGRAPHER_URL` para el proxy de shadow (default ingest, fallback cartographer).
 - **Orchestrator:** `PORT` (3001), `FALKORSPEC_API_URL` (default `http://api:3000` en Docker).
 - **MCP:** `FALKORDB_HOST`, `FALKORDB_PORT`.
-- **Frontend:** `VITE_API_URL` (default `http://localhost:3002`, URL del ingest).
+- **Frontend:** `VITE_API_URL` — suele apuntar a la **API** (`http://localhost:3000`) para usar el prefijo `/api` unificado; también puede apuntar al ingest directo (`:3002`) si llamas rutas sin proxy.
 
 ## 4. Uso por componente
 
@@ -95,11 +95,15 @@ Tras cada sync (normal o resync), se ejecuta automáticamente el indexado de emb
 
 **Chat y análisis:** `POST /repositories/:id/chat` con `{ message, history?, scope?, twoPhase?, responseMode? }` — preguntas NL → Cypher → FalkorDB. **`POST /repositories/:id/analyze`** (`:id` = repo): `{ mode: 'diagnostico'|'duplicados'|'reingenieria'|'codigo_muerto'|'seguridad' }`. **`POST /projects/:id/analyze`:** mismos modos de código; en proyecto con **varios repos**, añadir `idePath` y/o `repositoryId` (`roots[].id`); o `mode: 'agents'|'skill'` para informes AGENTS/SKILL. Requiere `OPENAI_API_KEY`.
 **Métricas y anti-patrones:** El parser calcula complejidad ciclomática (McCabe), LOC, anidamiento (nestingDepth) y acoplamiento. El diagnóstico detecta: código spaguetti (nesting>4), God functions (acoplamiento>8), alto fan-in (shotgun surgery), imports circulares, componentes sobrecargados.
-- **Webhook Bitbucket:** `POST /webhooks/bitbucket`. Evento esperado: `repo:push`. Secret desde credencial en BD (kind=webhook_secret) o `BITBUCKET_WEBHOOK_SECRET`. Ver [bitbucket_webhook.md](../bitbucket_webhook.md).
+- **Webhook Bitbucket:** `POST /webhooks/bitbucket`. Evento esperado: `repo:push`. Secret desde credencial en BD (kind=webhook_secret) o `BITBUCKET_WEBHOOK_SECRET`. Ver [bitbucket_webhook.md](../notebooklm/bitbucket_webhook.md).
 - **Shadow (índice en grafo shadow):** `POST /shadow` con body `{ "files": [ { "path": "ruta/archivo.ts", "content": "código..." } ] }`.
+- **Dominios (gobierno):** `GET|POST|PATCH|DELETE /domains` y `GET /domains/:id`. Depende de migración `DomainGovernance*`.
+- **Proyecto → arquitectura:** `GET /projects/:id/architecture/c4?level=1|2|3&sessionId=` — DSL PlantUML C4; `sessionId` opcional (diff vs grafo shadow). `GET /projects/:id/graph-routing` — `cypherShardContexts` para MCP/chat multi-grafo.
+- **Whitelist dominios:** `GET|POST|DELETE /projects/:id/domain-dependencies` — dependencias del proyecto hacia otros dominios (`connection_type`, `description`).
 
 ### API (puerto 3000)
 
+- **Proxy ingest:** Rutas bajo `/api/projects`, `/api/domains`, `/api/repositories`, … se reenvían al servicio ingest (ver `services/api/src/main.ts`). El frontend puede usar solo `http://localhost:3000/api/...` con OTP si aplica.
 - **Impacto:** `GET /graph/impact/:nodeId` — dependientes del nodo (quién lo llama o lo renderiza).
 - **Componente:** `GET /graph/component/:name?depth=2` — dependencias del componente hasta `depth` (1–10).
 - **Contrato:** `GET /graph/contract/:componentName` — props del componente (HAS_PROP).
@@ -131,9 +135,9 @@ Herramientas expuestas:
 
 ### Frontend
 
-En `frontend/`: `npm run dev` (puerto 5173 por defecto). Asegura que `VITE_API_URL` apunte al ingest (por defecto `http://localhost:3002`; en producción la URL pública del ingest).
+En `frontend/`: `npm run dev` (puerto 5173 por defecto). `VITE_API_URL` recomendado: **API** `http://localhost:3000` (rutas `/api/...` proxificadas al ingest) o ingest directo `:3002` según despliegue.
 
-- **Rutas:** `/` lista de repos; `/repos/new` alta (Bitbucket/GitHub, selector de credencial); `/repos/:id` detalle, Sync, Resync, jobs; `/repos/:id/chat` Chat (preguntas NL, diagnósticos, duplicados, reingeniería); `/credentials` y `/credentials/new` gestión de credenciales.
+- **Rutas:** `/` listado de **proyectos**; `/domains` administración de dominios; `/projects/:id` detalle (General + **Arquitectura**); `/projects/:id/chat` chat multi-repo; `/repos` repos; `/repos/new` alta; `/repos/:id` detalle, Sync, Resync, jobs; `/repos/:id/chat` chat por repo; `/credentials` credenciales.
 - **Build:** `npm run build`; **preview:** `npm run preview` para servir `dist/` localmente.
 
 ## 5. Validación
@@ -157,7 +161,7 @@ No hay tests E2E en el repo; la validación completa es manual.
 
 - [CONFIGURACION_Y_USO.md](CONFIGURACION_Y_USO.md) — Configuración detallada, credenciales, troubleshooting.
 - [docs/README.md](../README.md) — Índice de documentación.
-- [architecture.md](../architecture.md) — Stack y flujos del sistema.
-- [bitbucket_webhook.md](../bitbucket_webhook.md) — Configuración del webhook Bitbucket.
-- [db_schema.md](../db_schema.md) — Esquema del grafo FalkorDB (nodos, relaciones).
-- [indexing_engine.md](../indexing_engine.md) — Pipeline de indexación y fuentes.
+- [architecture.md](../notebooklm/architecture.md) — Stack y flujos del sistema.
+- [bitbucket_webhook.md](../notebooklm/bitbucket_webhook.md) — Configuración del webhook Bitbucket.
+- [db_schema.md](../notebooklm/db_schema.md) — Grafo FalkorDB (nodos, relaciones) y tablas PostgreSQL.
+- [indexing_engine.md](../notebooklm/indexing_engine.md) — Pipeline de indexación y fuentes.

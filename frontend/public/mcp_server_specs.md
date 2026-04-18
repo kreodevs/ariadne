@@ -2,7 +2,7 @@
 
 **Protocolo:** Model Context Protocol (MCP)
 
-**Origen de Datos:** FalkorDB (via Oracle/FalkorSpecs Core)
+**Origen de Datos:** FalkorDB (via Oracle/AriadneSpecs Core)
 
 ## 1. Arquitectura del Servidor MCP
 
@@ -22,24 +22,38 @@ Estas son las funciones que la IA podrá "invocar" para entender tu código lega
 
 - **Proyecto (Ariadne):** entidad multi-repo con su propio UUID. En `list_known_projects` es el campo `id` de cada elemento. Las herramientas que hablan con el ingest pueden recibir este ID (p. ej. chat por proyecto, file por proyecto).
 - **Repo (root):** un repositorio indexado; tiene su propio UUID. En `list_known_projects` cada `roots[].id` es un repo id. Un repo puede estar en varios proyectos (muchos a muchos) o ser standalone (sin proyecto).
-- **Uso de `projectId` en herramientas:** suele ser **ID de proyecto** o **ID de repo**. Para file/chat el MCP resuelve con fallback (`repositories` → `projects`). **`get_modification_plan`** es distinto: el ingest acepta en `POST /projects/:id/modification-plan` tanto el UUID del **proyecto** como el **`roots[].id` del repositorio**; en multi-root conviene pasar el del repo objetivo para no depender del primer root.
+- **Uso de `projectId` en herramientas:** puede ser **ID de proyecto** o **ID de repo**. El MCP resuelve automáticamente: para contenido de archivo intenta `GET /repositories/:id/file` y si 404 `GET /projects/:id/file`; para chat intenta `POST /projects/:id/chat` y si 404 `POST /repositories/:id/chat`. Así funciona tanto con el `id` del proyecto como con un `roots[].id`.
+- **Grafo Falkor (indexación):** los nodos llevan la propiedad `projectId` del índice usado en sync (proyecto o repo standalone). Para consultas MCP/API debe usarse el mismo UUID que en `.ariadne-project` o el que devuelve `list_known_projects`.
+
+### Sharding Falkor (`FALKOR_SHARD_BY_PROJECT`)
+
+Cuando el ingest/API despliegan **un grafo Redis/Falkor por `projectId`** (`AriadneSpecs:<uuid>` en lugar de un solo `AriadneSpecs`):
+
+- El **MCP** selecciona el grafo con `graphNameForProject(projectId)` tras resolver/inferir el proyecto.
+- **Inferencia sin `projectId`:** si está configurado `INGEST_URL`, el MCP puede obtener candidatos con `GET /projects` y `GET /repositories` y probar el shard hasta acotar el archivo; si no hay ingest, conviene **`.ariadne-project`** o **`projectId` explícito**.
+- **`semantic_search`:** ver [Tool: `semantic_search`](#tool-semantic_search). Con sharding activo exige **`projectId`** explícito (no infiere desde ruta).
+- **`find_similar_implementations`:** con sharding activo exige **`projectId`** o **`currentFilePath`** (inferencia vía ingest cuando aplica).
+- La **API Nest** (`/api/graph/component`, `/impact`, etc.) acepta query **`projectId`** para caché y shard; el **manual** del grafo con sharding requiere `?projectId=`.
 
 ### Tool: `list_known_projects`
 
 - **Descripción:** Lista los proyectos indexados (multi-root). Cada proyecto puede tener varios repos (roots). Ejecutar al inicio para mapear IDs a nombres.
 - **Argumentos:** Ninguno.
-- **Respuesta:** JSON con `[{ id, name, roots: [{ id, name, branch? }] }]`. `id` es el ID del **proyecto** (Ariadne). Cada `roots[].id` es el ID de un **repo**. Para **`get_modification_plan`** con varios roots, usa el `roots[].id` adecuado; para otras herramientas, proyecto o repo según el endpoint (file/chat con resolución automática).
+- **Respuesta:** JSON con `[{ id, name, roots: [{ id, name, branch? }] }]`. `id` es el ID del **proyecto** (Ariadne). Cada `roots[].id` es el ID de un **repo**. Usa cualquiera como `projectId` en el resto de herramientas; el MCP distingue automáticamente según el endpoint que responda.
 
 ### Tool A: `get_component_graph`
 
 - **Descripción:** Recupera el árbol de dependencias directo e indirecto de un componente.
 - **Argumentos:** `componentName: string`, `depth: number (default: 2)`, `projectId?: string` (opcional), `currentFilePath?: string` (opcional, para inferir proyecto).
-- **Consulta Interna (Cypher):**
+- **Consulta Interna (Cypher):** acorde a implementación, el `MATCH` del componente puede incluir `projectId` en el patrón y filtrar dependencias por proyecto; profundidad es literal en el path (`[*1..depth]`).
 
-```tsx
-MATCH (c:Component {name: $componentName})-[*1..$depth]->(dependency)
+```cypher
+MATCH (c:Component {name: $componentName, projectId: $projectId})-[*1..depth]->(dependency)
+WHERE (dependency.projectId = $projectId OR dependency.projectId IS NULL)
 RETURN c, dependency
 ```
+
+(Variante sin `projectId` en el nodo cuando el grafo no filtra por proyecto.)
 
 • **Propósito:** Evitar que la IA asuma que un componente es aislado.
 
@@ -58,13 +72,13 @@ RETURN c, dependency
 ### Tool C: `get_contract_specs`
 
 - **Descripción:** Extrae las props y firma del componente detectadas por el Scanner (nodos `:Prop`, relación `HAS_PROP`).
-- **Argumentos:** `componentName: string`.
+- **Argumentos:** `componentName: string`, `projectId?: string`, `currentFilePath?: string` (inferir proyecto).
 - **Consulta Interna (Cypher):**
   ```cypher
-  MATCH (c:Component {name: $componentName})-[:HAS_PROP]->(p:Prop) RETURN p.name, p.required
+  MATCH (c:Component {name: $componentName, projectId: $projectId})-[:HAS_PROP]->(p:Prop) RETURN p.name, p.required
   ```
 - **Propósito:** Forzar a la IA a usar los nombres de variables y tipos reales del grafo. La respuesta se formatea en Markdown (lista de props y si son requeridas).
-- **Implementación:** El servidor MCP usa transporte **Streamable HTTP** (puerto 8080, path /mcp); las herramientas se registran en `ListToolsRequestSchema` y se ejecutan en `CallToolRequestSchema` conectando a FalkorDB y/o al servicio ingest. Cuando se proporciona `projectId` o `currentFilePath`, las consultas Cypher filtran por `n.projectId` para evitar ambigüedad. Herramientas que llaman al ingest: `get_file_content` (repositories/file o projects/file), `ask_codebase` (projects/chat o repositories/chat), `get_file_context`, `get_project_standards`, `get_modification_plan` (projects/modification-plan), `get_project_analysis` (`POST /projects/:id/analyze` o `POST /repositories/:id/analyze` según proyecto vs repo; ver § Tool `get_project_analysis`).
+- **Implementación:** El servidor MCP usa transporte **Streamable HTTP** (puerto 8080, path /mcp); las herramientas se registran en `ListToolsRequestSchema` y se ejecutan en `CallToolRequestSchema` conectando a FalkorDB y/o al servicio ingest. Cuando se proporciona `projectId` o `currentFilePath`, las consultas Cypher filtran por `n.projectId` para evitar ambigüedad. Herramientas que llaman al ingest: `get_file_content` (repositories/file o projects/file), `ask_codebase` (projects/chat o repositories/chat), `get_file_context`, `get_project_standards`, `get_modification_plan` (projects/modification-plan), `get_project_analysis` (`POST /projects/:id/analyze` o `POST /repositories/:id/analyze` según si el id es proyecto Ariadne o `roots[].id`; ver [Tool: `get_project_analysis`](#tool-get_project_analysis)).
 
 ### Tool: `get_file_content`
 
@@ -72,28 +86,35 @@ RETURN c, dependency
 - **Argumentos:** `path: string`, `projectId?: string`, `currentFilePath?: string`, `ref?: string` (rama).
 - **Implementación ingest:** Intenta `GET /repositories/:id/file`; si 404, `GET /projects/:id/file`. Acepta ID de proyecto o de repo.
 
+### Tool: `semantic_search`
+
+- **Descripción:** Búsqueda por palabra clave (y vectorial contra nodos indexados si hay embed-index y `/embed` disponible) sobre el grafo Falkor.
+- **Argumentos:** `query: string` (requerido), `projectId?: string`, `limit?: number`. **No** admite **`scope`** ni **`currentFilePath`**. Para acotar a un repo concreto, pasa el UUID adecuado como `projectId` (p. ej. `roots[].id` de `list_known_projects`).
+- **Sin sharding (`FALKOR_SHARD_BY_PROJECT` apagado):** si omites `projectId`, las consultas no filtran por `projectId` en el grafo monolito: el alcance es **global** respecto a todos los nodos mezclados en ese grafo (no elige “el primer root” del workspace).
+- **Con sharding activo:** `projectId` **obligatorio**; el handler no infiere proyecto desde la ruta del IDE.
+- **Contraste con `ask_codebase`:** acotar por `repoIds` / prefijos / globs va en el parámetro **`scope`** de **`ask_codebase`** (ingest), no en `semantic_search`.
+
 ### Tool: `ask_codebase`
 
 - **Descripción:** Pregunta en lenguaje natural sobre el código del proyecto. Delega al chat del ingest (Coordinator → CodeAnalysis o KnowledgeExtraction).
-- **Argumentos:** `question: string`, `projectId?: string`, `currentFilePath?: string` (para inferir proyecto), **`scope?`** (`repoIds[]`, `includePathPrefixes[]`, `excludePathGlobs[]`), **`twoPhase?`** (boolean; sintetizador prioriza JSON de retrieval; ingest: `CHAT_TWO_PHASE`), **`responseMode?`:** `"default"` \| **`"evidence_first"`** (two-phase + más contexto al sintetizador, salida “evidencia primero”; ver ingest `CHAT_EVIDENCE_FIRST_MAX_CHARS`). Declarado en `tools/list` para `ask_codebase` junto con `additionalProperties: false`.
+- **Argumentos:** `question: string`, `projectId?: string`, `currentFilePath?: string` (para inferir proyecto), **`scope?`** (objeto opcional: `repoIds[]`, `includePathPrefixes[]`, `excludePathGlobs[]` — acota Cypher, búsqueda semántica y lectura de archivos en el ingest), **`twoPhase?`** (boolean; prioriza JSON de retrieval en el sintetizador; en ingest se alinea con `CHAT_TWO_PHASE`), **`responseMode?`:** `"default"` \| **`"evidence_first"`** — fuerza two-phase, aumenta el recorte de contexto hacia el sintetizador (`CHAT_EVIDENCE_FIRST_MAX_CHARS` en ingest) y aplica prompt SDD (“evidencia primero”, listados anclados). Expuesto en el MCP con `enum` en `tools/list`; con **`additionalProperties: false`**, solo se permiten las propiedades del esquema (incluido `responseMode`).
 - **Propósito:** Preguntas tipo "qué hace este proyecto", "cómo está implementado el login". Requiere INGEST_URL y OPENAI_API_KEY.
-- **Implementación ingest:** Intenta `POST /projects/:projectId/chat` (chat por proyecto, todos los repos); si 404, `POST /repositories/:projectId/chat` (chat por repo). Body: `message`, `history?`, `scope?`, `twoPhase?`, `responseMode?`.
+- **Implementación ingest:** Intenta `POST /projects/:projectId/chat` (chat por proyecto, todos los repos); si 404, `POST /repositories/:projectId/chat` (chat por repo). Body admite `message`, `history`, `scope`, `twoPhase`, `responseMode`.
 - **Listas exhaustivas:** Usar **`get_modification_plan`** para archivos a modificar y preguntas de afinación (flujo legacy/MaxPrime).
 
 ### Tool: `get_modification_plan` (contrato MaxPrime / flujo legacy)
 
 - **Descripción:** Devuelve un plan de modificación basado **solo** en el codebase indexado: `filesToModify` (path + repoId por archivo) y `questionsToRefine` (solo negocio).
-- **Argumentos:** `userDescription: string` (descripción de la modificación), `projectId?: string`, `currentFilePath?: string`, **`scope?`** (mismo objeto; filtra la lista final de archivos).
-- **Multi-root (consumidor):** El parámetro `projectId` debe ser el **`roots[].id` del repositorio** donde está el código a migrar (p. ej. frontend), no el `id` global del proyecto Ariadne, si quieres un ancla explícito. El ingest acepta UUID de **repositorio** o de **proyecto** en la misma ruta; si pasas solo el proyecto, el servicio usa el primer repo asociado (orden interno).
+- **Argumentos:** `userDescription: string` (descripción de la modificación), `projectId?: string`, `currentFilePath?: string`, **`scope?`** (mismo objeto que en `ask_codebase`; post-filtra `filesToModify` por repo/prefijo/glob).
 - **Respuesta:** `{ filesToModify: Array<{ path: string, repoId: string }>, questionsToRefine: string[] }`. Cada archivo incluye `repoId` (root); si hay varios repoId distintos, el cambio afecta a más de un repo (multi-root).
 - **Garantías:** filesToModify solo contiene rutas que existen en el grafo (projectId + repoId). questionsToRefine solo preguntas de negocio/funcionalidad.
-- **Implementación:** Llama a `POST /projects/:projectId/modification-plan` en el ingest (`userDescription`, `scope?`).
+- **Implementación:** Llama a `POST /projects/:projectId/modification-plan` en el ingest (body: `userDescription`, `scope?`).
 
 ### Tool: `get_project_analysis`
 
 - **Descripción:** Informes estructurados de deuda técnica (`diagnostico`), duplicados (`duplicados`; requiere embed-index), plan integrado (`reingenieria`), alcance de código muerto (`codigo_muerto`) y auditoría heurística de secretos/higiene (`seguridad`). Requiere **INGEST_URL** y **OPENAI_API_KEY** en el servidor de ingest.
 - **Argumentos:** `projectId?` (id de **proyecto** Ariadne o **`roots[].id`** de repo), `currentFilePath?` (multi-root: el MCP envía `idePath` al ingest cuando el `projectId` es el del proyecto y hay varios roots), `mode?` ∈ `diagnostico` \| `duplicados` \| `reingenieria` \| `codigo_muerto` \| `seguridad` (default `diagnostico`).
-- **Implementación ingest:** Si el UUID corresponde a un **proyecto** en BD → `POST /projects/:projectId/analyze` con `{ mode, idePath?, repositoryId? }`. Si corresponde a un **repositorio** → `POST /repositories/:id/analyze` con `{ mode }`. La resolución de repo en multi-root la hace el ingest (`AnalyticsService`).
+- **Implementación ingest:** Si el UUID corresponde a un **proyecto** en BD → `POST /projects/:projectId/analyze` con `{ mode, idePath?, repositoryId? }`. Si corresponde a un **repositorio** → `POST /repositories/:id/analyze` con `{ mode }`. La resolución de repo en multi-root es responsabilidad del ingest (`AnalyticsService`), no del cliente.
 
 ---
 
@@ -114,9 +135,9 @@ Para que la IA no rompa código al refactorizar, el MCP implementa operaciones s
 | `get_project_standards` | Recupera Prettier, ESLint, tsconfig para que el código sea indistinguible del existente. |
 | `get_file_context` | Combina contenido + imports + exports. Paso 2 del flujo: search → get_file_context → validate → apply. |
 
-**Contexto de proyecto:** Casi todas aceptan `projectId` y `currentFilePath` (si falta, inferencia por ruta). Para **file/chat**, proyecto o `roots[].id` con fallback en ingest. **`get_project_analysis`** usa proyecto o repo: ver Tool `get_project_analysis` arriba.
+**Contexto de proyecto:** Las herramientas basadas en grafo aceptan `projectId` y/o `currentFilePath`. Si no se pasa `projectId`, se infiere desde `currentFilePath` (monolito) o, con **sharding**, vía ingest + barrido de shards cuando `INGEST_URL` está definido. El `projectId` puede ser ID de proyecto (Ariadne) o ID de repo (`roots[].id`); las herramientas que llaman al ingest para file/chat resuelven automáticamente (fallback repo → project o project → repo según el caso).
 
-**Resumen ingest:** `get_file_content` / `get_file_context` / `get_project_standards`: intentan `GET /repositories/:id/file` y si 404 `GET /projects/:id/file`. `ask_codebase`: intenta `POST /projects/:id/chat` y si 404 `POST /repositories/:id/chat` (`scope`, `twoPhase`, `responseMode` opcionales). `get_modification_plan`: `POST /projects/:projectId/modification-plan` (`scope` opcional). `get_project_analysis`: `POST /projects/:id/analyze` (proyecto; body `mode` + opcional `idePath` / `repositoryId` en multi-root) o `POST /repositories/:id/analyze` (repo = `roots[].id`).
+**Resumen ingest:** `get_file_content` / `get_file_context` / `get_project_standards`: intentan `GET /repositories/:id/file` y si 404 `GET /projects/:id/file`. `ask_codebase`: intenta `POST /projects/:id/chat` y si 404 `POST /repositories/:id/chat` (body opcional: `scope`, `twoPhase`, `responseMode`). `get_modification_plan`: `POST /projects/:projectId/modification-plan` (body opcional: `scope`). `get_project_analysis`: `POST /projects/:id/analyze` (proyecto; body `mode` + opcional `idePath` / `repositoryId` en multi-root) o `POST /repositories/:id/analyze` (repo = `roots[].id`).
 
 ### Tool: `analyze_local_changes` (Pre-flight check)
 
@@ -130,9 +151,9 @@ Para que la IA no rompa código al refactorizar, el MCP implementa operaciones s
 
 ---
 
-## 3. Implementación del Servidor (Blueprint)
+## 3. Implementación del Servidor (Blueprint ilustrativo)
 
-Debes registrar los recursos para que la IA sepa "qué puede preguntar". Aquí tienes el esquema de implementación:
+El servidor real es **`services/mcp-ariadne`** (Streamable HTTP, herramientas `get_component_graph`, `get_legacy_impact`, etc.). El siguiente snippet es **solo patrón SDK**; no sustituye el código ni el nombre de herramientas reales.
 
 ```tsx
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
@@ -143,39 +164,32 @@ import {
 } from "@modelcontextprotocol/sdk/types.js";
 
 const server = new Server(
-  {
-    name: "FalkorSpecs-Oracle",
-    version: "1.0.0",
-  },
-  {
-    capabilities: { tools: {} },
-  },
+  { name: "AriadneSpecs-Oracle", version: "1.0.0" },
+  { capabilities: { tools: {} } },
 );
 
-// Registro de la herramienta principal
 server.setRequestHandler(ListToolsRequestSchema, async () => ({
   tools: [
     {
-      name: "get_component_architecture",
-      description: "Recupera la arquitectura y dependencias de FalkorSpecs",
+      name: "get_component_graph",
+      description: "Árbol de dependencias del componente (ver especificación §2)",
       inputSchema: {
         type: "object",
         properties: {
-          component: { type: "string" },
+          componentName: { type: "string" },
+          depth: { type: "number" },
+          projectId: { type: "string" },
         },
+        required: ["componentName"],
       },
     },
   ],
 }));
 
-// Manejador de llamadas de la IA
 server.setRequestHandler(CallToolRequestSchema, async (request) => {
-  if (request.params.name === "get_component_architecture") {
-    // Aquí conectas con tu base de datos FalkorDB
-    const context = await queryFalkorDB(request.params.arguments.component);
-    return {
-      content: [{ type: "text", text: JSON.stringify(context) }],
-    };
+  if (request.params.name === "get_component_graph") {
+    // Conectar a FalkorDB en el grafo del projectId (ver § Sharding)
+    return { content: [{ type: "text", text: "..." }] };
   }
 });
 ```
@@ -186,10 +200,12 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
 1. **Cursor/IA** detecta que estás en un archivo legacy.
 2. La IA llama a `get_legacy_impact` a través del MCP.
-3. **FalkorSpecs** responde: _"Este componente es usado por el Dashboard y recibe un prop 'user' que es obligatorio"_.
+3. **AriadneSpecs** responde: _"Este componente es usado por el Dashboard y recibe un prop 'user' que es obligatorio"_.
 4. La IA genera el código **restringida** por esa información, eliminando la posibilidad de inventar props o romper el Dashboard.
 
 ## 5. Configuración de Seguridad
 
 - **Solo Lectura:** El usuario de FalkorDB vinculado al MCP solo debe tener permisos de `READ`.
+
+- **Llamadas HTTPS desde aplicación:** Para implementar peticiones HTTP/HTTPS al MCP desde una app (fetch, curl, etc.), ver [MCP_HTTPS.md](MCP_HTTPS.md).
 - **Aislamiento de Dominio:** El MCP solo debe exponer archivos dentro del `ROOT` del proyecto definido en la configuración.

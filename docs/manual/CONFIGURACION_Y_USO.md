@@ -66,7 +66,7 @@ GOOGLE_API_KEY=xxx
 | `FALKORDB_HOST`    | Sí          | localhost              | FalkorDB host                           |
 | `FALKORDB_PORT`    | Sí          | 6379                   | FalkorDB puerto                         |
 | `REDIS_URL`        | Sí          | redis://localhost:6380 | Redis (caché)                           |
-| `INGEST_URL`       | No          | —                      | URL del ingest para proxy shadow        |
+| `INGEST_URL`       | No          | `http://localhost:3002` (Docker: `http://ingest:3002`) | URL del ingest: **proxy shadow** y reenvío de `/api/projects`, `/api/repositories`, `/api/credentials`, `/api/domains`, … (pathRewrite quita `/api`). |
 | `CARTOGRAPHER_URL` | No          | —                      | Fallback shadow si ingest no disponible |
 
 #### Orchestrator (puerto 3001)
@@ -83,14 +83,14 @@ GOOGLE_API_KEY=xxx
 | `PORT`           | No          | 8080                  | Puerto del servidor HTTP                            |
 | `FALKORDB_HOST`  | Sí          | localhost             | FalkorDB host                                       |
 | `FALKORDB_PORT`  | Sí          | 6379                  | FalkorDB puerto                                     |
-| `INGEST_URL`     | No          | http://localhost:3002 | Para `get_file_content` y `semantic_search` (embed) |
+| `INGEST_URL`     | No          | http://localhost:3002 | **Obligatorio** para routing completo: `get_file_content`, listados, **`GET /projects/:id/graph-routing`** (`cypherShardContexts`, whitelist de dominios). Sin esto, el MCP cae a heurísticas locales. |
 | `MCP_AUTH_TOKEN` | No          | —                     | Si está definido: exige Bearer token en peticiones  |
 
 #### Frontend (puerto 5173)
 
 | Variable       | Obligatoria | Default               | Descripción             |
 | -------------- | ----------- | --------------------- | ----------------------- |
-| `VITE_API_URL` | No          | http://localhost:3002 | URL del servicio ingest |
+| `VITE_API_URL` | No          | `http://localhost:3000` o `http://localhost:3002` | Base URL del backend: **API :3000** (recomendado: rutas `/api/*` unificadas + OTP) o **ingest :3002** directo. |
 
 ---
 
@@ -230,7 +230,7 @@ Para credenciales en BD, solo necesitas `CREDENTIALS_ENCRYPTION_KEY`; el resto s
 4. **Triggers:** Repository push.
 5. **Secret:** mismo valor que `BITBUCKET_WEBHOOK_SECRET` en el ingest.
 
-Ver [bitbucket_webhook.md](../bitbucket_webhook.md) para más detalle.
+Ver [bitbucket_webhook.md](../notebooklm/bitbucket_webhook.md) para más detalle.
 
 ---
 
@@ -310,7 +310,18 @@ curl -X POST http://localhost:3002/repositories \
 | Análisis proyecto | `POST /projects/:projectId/analyze`   | Modos de código como arriba + opcional `idePath` / `repositoryId` si hay multi-root; o `mode: 'agents' \| 'skill'`. |
 | Resumen grafo  | `GET /repositories/:id/graph-summary`    | Conteos y muestras de nodos indexados |
 
-Requieren `OPENAI_API_KEY`. Ver [CHAT_Y_ANALISIS.md](../CHAT_Y_ANALISIS.md) para detalles.
+Requieren `OPENAI_API_KEY`. Ver [CHAT_Y_ANALISIS.md](../notebooklm/CHAT_Y_ANALISIS.md) para detalles.
+
+#### Dominios, C4 y enrutamiento Falkor (ingest)
+
+| Recurso | Método | Descripción |
+| ------- | ------ | ----------- |
+| Dominios | `GET /domains`, `POST /domains`, `GET /domains/:id`, `PATCH /domains/:id`, `DELETE /domains/:id` | Gobierno de arquitectura (nombre, color, `metadata`). |
+| C4 PlantUML | `GET /projects/:id/architecture/c4?level=…&sessionId=` (`level` 1, 2 o 3) | DSL C4; `sessionId` opcional compara con grafo shadow. |
+| Enrutamiento | `GET /projects/:id/graph-routing` | `cypherShardContexts`, `extendedGraphShardNames`, `shardMode`, `domainSegments`. |
+| Whitelist | `GET /projects/:id/domain-dependencies`, `POST ...`, `DELETE .../:depId` | Proyecto → depende de dominio (`connection_type`, `description`). |
+
+Esquema SQL: [db_schema.md](../notebooklm/db_schema.md) (tablas `domains`, `project_domain_dependencies`, columna `projects.domain_id`).
 
 #### Monorepos: prefijos para muestreo estratificado
 
@@ -323,6 +334,8 @@ private static MONOREPO_PREFIXES = ['apps/admin', 'apps/api', 'apps/worker', 'ap
 Añade tus prefijos según la estructura de tu repo. Ver [services/ingest/src/chat/README.md](../../services/ingest/src/chat/README.md).
 
 ### 2.4 Consultas a la API (api service)
+
+**Prefijo `/api` → ingest:** Con `INGEST_URL` configurado, la API reenvía al ingest (sin el prefijo `/api`) las rutas `/api/projects`, `/api/domains`, `/api/repositories`, `/api/credentials`, `/api/providers`, `/api/webhooks`. El health del servicio API sigue siendo `GET /health` (sin `/api`). Ejemplo dominios: `GET http://localhost:3000/api/domains`.
 
 | Recurso    | Método                               | Descripción                        |
 | ---------- | ------------------------------------ | ---------------------------------- |
@@ -383,10 +396,15 @@ URL: `http://localhost:5173`
 
 | Ruta              | Descripción                                                            |
 | ----------------- | ---------------------------------------------------------------------- |
-| `/`               | Lista de repositorios                                                  |
+| `/`               | Lista de **proyectos** Ariadne                                         |
+| `/domains`        | CRUD de dominios de arquitectura                                       |
+| `/projects/:id`   | Detalle: General (repos, roles, sync) y **Arquitectura** (dominio, whitelist, C4) |
+| `/projects/:id/chat` | Chat NL multi-repo del proyecto                                    |
+| `/repos`          | Lista de repositorios                                                  |
 | `/repos/new`      | Alta de repositorio                                                    |
 | `/repos/:id`      | Detalle, Sync, Resync, tabla de jobs                                   |
 | `/repos/:id/chat` | Chat con el repo (preguntas NL, Diagnóstico, Duplicados, Reingeniería) |
+| `/credentials`    | Credenciales cifradas                                                  |
 
 ---
 
@@ -407,7 +425,7 @@ URL: `http://localhost:5173`
    Producción: `url`: `https://ariadne.kreoint.mx/mcp`. Con auth: añadir `"headers": { "Authorization": "Bearer <token>" }`.
 4. Herramientas: `get_component_graph`, `get_legacy_impact`, `get_contract_specs`, `validate_before_edit`, `semantic_search`, `get_project_analysis`, etc.
 
-**Documentación completa:** [INSTALACION_MCP_CURSOR.md](../INSTALACION_MCP_CURSOR.md) — instalación paso a paso, escenarios local/producción (ariadne.kreoint.mx), troubleshooting.
+**Documentación completa:** [INSTALACION_MCP_CURSOR.md](../notebooklm/INSTALACION_MCP_CURSOR.md) — instalación paso a paso, escenarios local/producción (ariadne.kreoint.mx), troubleshooting.
 
 ---
 
@@ -434,9 +452,9 @@ URL: `http://localhost:5173`
 
 ### 3.4 Múltiples repos (multi-proyecto)
 
-1. Registrar cada repo con su `provider`, `projectKey`, `repoSlug`.
-2. Cada uno se indexa como nodo `:Project` distinto en FalkorDB.
-3. Las consultas se filtran por `projectId` (UUID del repo).
+1. Crear un **proyecto Ariadne** (`projects` en PostgreSQL) y asociar repos en `project_repositories` (opcional `role` para frontend/backend).
+2. En FalkorDB, los nodos llevan `projectId` = **`projects.id`** del contexto de indexación; también `repoId` del repositorio.
+3. Las consultas Cypher deben filtrar por `projectId` (y `repoId` si aplica). Si el proyecto tiene **whitelist de dominios** (`project_domain_dependencies`), el ingest/MCP pueden consultar **varios grafos**; usa `cypherShardContexts` de `GET /projects/:id/graph-routing` para el par `(graphName, cypherProjectId)` correcto en cada shard.
 
 ---
 
@@ -455,7 +473,8 @@ URL: `http://localhost:5173`
 
 ## 5. Referencias
 
-- [architecture.md](../architecture.md) — Stack y arquitectura.
-- [indexing_engine.md](../indexing_engine.md) — Pipeline de indexación.
-- [ingestion_flow.md](../ingestion_flow.md) — Flujo de ingesta masiva.
-- [bitbucket_webhook.md](../bitbucket_webhook.md) — Webhook Bitbucket.
+- [architecture.md](../notebooklm/architecture.md) — Stack y arquitectura.
+- [db_schema.md](../notebooklm/db_schema.md) — Grafo Falkor y tablas PostgreSQL (incl. `domains`).
+- [indexing_engine.md](../notebooklm/indexing_engine.md) — Pipeline de indexación.
+- [ingestion_flow.md](../notebooklm/ingestion_flow.md) — Flujo de ingesta masiva.
+- [bitbucket_webhook.md](../notebooklm/bitbucket_webhook.md) — Webhook Bitbucket.

@@ -8,9 +8,12 @@ import {
   CreateDateColumn,
   UpdateDateColumn,
   OneToMany,
+  ManyToOne,
+  JoinColumn,
 } from 'typeorm';
 import type { FalkorShardMode } from 'ariadne-common';
 import { ProjectRepositoryEntity } from '../../repositories/entities/project-repository.entity';
+import { DomainEntity } from '../../domains/entities/domain.entity';
 
 @Entity('projects')
 export class ProjectEntity {
@@ -28,6 +31,13 @@ export class ProjectEntity {
 
   @Column({ name: 'falkor_domain_segments', type: 'jsonb', nullable: true })
   falkorDomainSegments!: string[] | null;
+
+  @Column({ name: 'domain_id', type: 'uuid', nullable: true })
+  domainId!: string | null;
+
+  @ManyToOne(() => DomainEntity, { onDelete: 'SET NULL', nullable: true })
+  @JoinColumn({ name: 'domain_id' })
+  domain!: DomainEntity | null;
 
   @OneToMany(() => ProjectRepositoryEntity, (pr) => pr.project)
   projectRepos!: ProjectRepositoryEntity[];

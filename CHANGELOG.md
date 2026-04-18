@@ -5,7 +5,16 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.0.0/).
 
 ## [Unreleased]
 
+### Changed
+
+- **Documentación:** referencias de ayuda (`CHAT_Y_ANALISIS`, `ingestion_flow`, `bitbucket_webhook`, `DEPLOYMENT_DOKPLOY`, `TESTING`, caché/diagnóstico, observabilidad, métricas chat, RELIC, etc.) consolidadas bajo **`docs/notebooklm/`**; `copy-docs.sh`, `DocViewer.tsx`, README raíz, manuales y servicios actualizados.
+- **Documentación:** `docs/db_schema.md` movido a **`docs/notebooklm/db_schema.md`**; enlaces y `frontend/scripts/copy-docs.sh` actualizados. Ayuda MCP/INSTALACION/arquitectura copian desde `docs/notebooklm/` cuando el archivo ya no está en la raíz de `docs/`.
+- **`docs/mcp_server_specs.md`** → **`docs/notebooklm/mcp_server_specs.md`**; enlaces en README, MONOREPO, `types.ts`, etc.; copia estática `public/mcp_server_specs.md` en `copy-docs.sh`; enlace absoluto `/mcp_server_specs.md` en INSTALACION_MCP_CURSOR.
+- **`docs/indexing_engine.md`** → **`docs/notebooklm/indexing_engine.md`**; README, manuales, `copy-docs.sh` y `DocViewer.tsx` actualizados.
+
 ### Added
+
+- **Gobierno de arquitectura (dominios, C4, whitelist proyecto→dominio):** entidades TypeORM `Domain`, `ProjectDomainDependency`, `Project.domainId`; ingest `DomainsService`, `C4DslGeneratorService`, `GET /projects/:id/architecture/c4`, `GET /projects/:id/graph-routing` con `cypherShardContexts`; chat/MCP ejecutan Cypher multi-shard con el `cypherProjectId` correcto; frontend `/domains` y pestaña Arquitectura en proyecto (`C4Previewer` / Kroki). Ver README de `services/ingest`, `services/api`, `services/mcp-ariadne`, `frontend`.
 
 - **Ingest — chat multi-root (Fase 3, primera entrega)**  
   - Inferencia de `repoId` desde mensaje + `project_repositories.role` (`resolve-chat-scope-from-message.util.ts`, `CHAT_INFER_SCOPE_FROM_ROLES`).  
@@ -13,7 +22,7 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.0.0/).
   - `ChatRequest`: `clientMeta`, `strictChatScope`; respuesta `[AMBIGUOUS_SCOPE]` cuando hay varios repos sin acotar.  
   - `ProjectsService.getRepositoryRolesContext` para el prompt del sintetizador.  
   - Telemetría `CHAT_TELEMETRY_LOG`: objeto `chat_scope_effective` (preflight, inferencia, alcance).  
-  - Documentación: `docs/metricas-alcance-chat.md`; README chat/projects actualizados.
+  - Documentación: `docs/notebooklm/metricas-alcance-chat.md`; README chat/projects actualizados.
   - Listados íntegros en chat (tablas Markdown, respuesta temprana; topes `CHAT_COMPONENT_FULL_MAX`, `CHAT_GRAPH_INVENTORY_FULL_MAX`).
   - `PATCH /projects/:id/repositories/:repoId` con `{ role }`; UI de rol en detalle de proyecto.
   - Script raíz `pnpm metrics:chat-telemetry` (`scripts/aggregate-chat-telemetry.mjs`).
@@ -41,12 +50,12 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.0.0/).
 
 - **Backlog §2 (producto / docs / CI / MCP)**  
   - MCP: caché de herramientas (`get_component_graph`, `get_legacy_impact`, `get_sync_status`) con **memoria por defecto**; Redis solo si `MCP_REDIS_URL` o `REDIS_URL` (o `MCP_REDIS_DISABLED=1` fuerza memoria). Documentado en `services/mcp-ariadne/README.md`.  
-  - Docs: `docs/plan-analyze-layer-cache.md`, `docs/diagnostico-layer-dependencies.md` (caché analyze / capas diagnóstico en ingest).  
+  - Docs: `docs/notebooklm/plan-analyze-layer-cache.md`, `docs/notebooklm/diagnostico-layer-dependencies.md` (caché analyze / capas diagnóstico en ingest).  
   - CI: `.github/workflows/ci-ingest-mcp.yml` (Vitest ingest + build MCP).  
   - Frontend **RepoDetail**: `JobAnalysisModal` usa `api.getJobAnalysisByProject` cuando el repo tiene `projectId` / `projectIds`.
   - Frontend **RepoList** (`/repos`): botón **Resync** por fila (`POST /repositories/:id/resync`) sin entrar al detalle.
   - **Indexado:** `sync-path-filter` omite carpetas e2e/playwright/cypress/`__tests__`/`__mocks__` y `*.e2e.*`; env **`INDEX_E2E=1`** para incluirlas; Vitest `sync-path-filter.spec.ts`.
-  - **Frontend:** Vitest (`utils.spec.ts`), Playwright (`e2e/smoke.spec.ts`), `VITE_E2E_AUTH_BYPASS` en `ProtectedRoute`; CI `ci-frontend.yml`; `docs/TESTING.md`.
+  - **Frontend:** Vitest (`utils.spec.ts`), Playwright (`e2e/smoke.spec.ts`), `VITE_E2E_AUTH_BYPASS` en `ProtectedRoute`; CI `ci-frontend.yml`; `docs/notebooklm/TESTING.md`.
 
 ## [1.2.0] — 2026-04-14
 

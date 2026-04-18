@@ -22,4 +22,4 @@ Referencia rápida de capas y variables. El **MCP** no replica esta caché: `get
 - `services/ingest/src/chat/analyze-cache.util.ts`
 - `services/ingest/src/chat/analyze-distributed-cache.service.ts`
 - `services/ingest/src/chat/chat.service.ts` (flujo `analyze` y `reportMeta`)
-- `docs/diagnostico-layer-dependencies.md` — capas intrínseca / extrínseca del diagnóstico
+- [`diagnostico-layer-dependencies.md`](./diagnostico-layer-dependencies.md) — capas intrínseca / extrínseca del diagnóstico

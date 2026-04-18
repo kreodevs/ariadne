@@ -13,6 +13,7 @@ Documentación del sistema de chat con repositorios, diagnósticos, métricas de
 | `POST /repositories/:id/analyze` | Análisis estructurado sobre **un repo** (`:id` = `roots[].id`). Body: `{ mode }` con `mode` ∈ `diagnostico` \| `duplicados` \| `reingenieria` \| `codigo_muerto` \| `seguridad` (mismo pipeline que por proyecto una vez resuelto el repo). |
 | `POST /projects/:projectId/analyze` | Mismo handler unificado: `mode`: `agents` \| `skill` (AGENTS.md / SKILL.md) **o** modos de código anteriores. Para modos de código en proyecto **multi-root**, body opcional: `idePath` (ruta IDE absoluta o bajo un root) y/o `repositoryId` para fijar el root; si hay varios repos y faltan ambos → **400**. Resolución en `AnalyticsService` → `ChatService.analyze`. |
 | `GET /repositories/:id/graph-summary` | Conteos y muestras de nodos indexados |
+| `GET /projects/:id/graph-routing` | Enrutamiento Falkor; **`cypherShardContexts`** (`graphName`, `cypherProjectId`) cuando el proyecto tiene whitelist de dominios — el retriever/`execute_cypher` unen consultas sobre varios grafos con el `projectId` correcto por nodo. |
 
 **Requisitos:** `OPENAI_API_KEY` para chat y diagnósticos. Embeddings: `EMBEDDING_PROVIDER` + API key para modo duplicados.
 
@@ -23,7 +24,7 @@ Documentación del sistema de chat con repositorios, diagnósticos, métricas de
 Todas las preguntas pasan por el mismo pipeline. No hay clasificación code vs knowledge.
 
 1. **Fase Retriever** — ReAct con tools (máx 4 turnos):
-   - `execute_cypher`: busca archivos, componentes, funciones, DomainConcept en FalkorDB.
+   - `execute_cypher`: busca archivos, componentes, funciones, DomainConcept en FalkorDB; con dominios permitidos recorre los pares de **`getCypherShardContexts`** (varios grafos / `projectId` por shard).
    - `semantic_search`: búsqueda vectorial (RAG) sobre Function, Component, Document, StorybookDoc y MarkdownDoc si hay embed-index.
    - `get_graph_summary`: conteos y muestras del grafo.
    - `get_file_content`: lee el código de los paths relevantes.

@@ -1,3 +1,11 @@
+### 0. Nomenclatura: dominio en Falkor vs dominio en PostgreSQL
+
+- **`:DomainConcept`** (FalkorDB): conceptos de dominio del **código** (tipos, enums, contextos React). Ver sección 1 más abajo.
+- **Tabla `domains`** (PostgreSQL): **dominio de arquitectura / gobierno C4** (nombre, color, metadata). No es el mismo concepto que `:DomainConcept`.
+- **`project_domain_dependencies`**: whitelist de un **proyecto Ariadne** hacia otros **dominios** (integración REST/gRPC/Event entre ecosistemas). Alimenta `GET /projects/:id/graph-routing` → `cypherShardContexts` para consultar varios grafos Falkor con el `projectId` correcto en cada nodo.
+
+---
+
 ### 1. Definición de Nodos (Entidades)
 
 Cada nodo representa un artefacto real en tu código legacy:
@@ -161,4 +169,82 @@ async function saveDependency(caller, callee) {
 
 ### 5. Tablas PostgreSQL (ingest)
 
-El microservicio de ingesta usa PostgreSQL para: `repositories` (con `credentialsRef`, `lastCommitSha`), **`project_repositories`** (repo_id, project_id: un repo puede estar en varios proyectos), `sync_jobs`, `indexed_files`, `credentials` (tokens/secrets cifrados). Ver [manual/CONFIGURACION_Y_USO.md](manual/CONFIGURACION_Y_USO.md).
+El microservicio **ingest** persiste metadatos en PostgreSQL (TypeORM, migraciones en `services/ingest/src/migrations/`). Resumen de tablas relevantes; tipos alineados con las entidades TypeORM.
+
+#### 5.1 `repositories`
+
+Repositorio remoto Bitbucket/GitHub.
+
+| Columna | Tipo | Notas |
+|---------|------|--------|
+| `id` | uuid PK | |
+| `provider` | varchar(64) | `bitbucket`, `github`, … |
+| `project_key` | varchar(256) | Workspace / owner |
+| `repo_slug` | varchar(256) | |
+| `default_branch` | varchar(256) | default `main` |
+| `credentials_ref` | varchar(512) nullable | FK lógica a `credentials.id` |
+| `last_commit_sha` | varchar(64) nullable | Webhook bridge |
+| `last_sync_at` | timestamptz nullable | |
+| … | | Ver entidad `RepositoryEntity` |
+
+#### 5.2 `projects`
+
+Proyecto Ariadne multi-root (agrupa N repos). `projectId` en nodos Falkor indexados bajo ese proyecto = **`projects.id`**.
+
+| Columna | Tipo | Notas |
+|---------|------|--------|
+| `id` | uuid PK | |
+| `name` | varchar(512) nullable | |
+| `description` | text nullable | |
+| `falkor_shard_mode` | varchar(16) | `project` \| `domain` (partición Falkor) |
+| `falkor_domain_segments` | jsonb nullable | Segmentos conocidos (último sync) |
+| `domain_id` | uuid nullable FK | → `domains.id`, **ON DELETE SET NULL** |
+| `created_at`, `updated_at` | timestamptz | |
+
+#### 5.3 `domains` (gobierno C4)
+
+| Columna | Tipo | Notas |
+|---------|------|--------|
+| `id` | uuid PK | |
+| `name` | varchar(256) NOT NULL | |
+| `description` | text nullable | |
+| `color` | varchar(16) NOT NULL default `#6366f1` | Hex UI / PlantUML |
+| `metadata` | jsonb nullable | |
+| `created_at`, `updated_at` | timestamptz | |
+
+#### 5.4 `project_domain_dependencies`
+
+Dependencia declarada: **proyecto** → **dominio** (otro ecosistema con el que se integra). `connection_type`: p. ej. `REST`, `gRPC`, `Event`, `GraphQL`.
+
+| Columna | Tipo | Notas |
+|---------|------|--------|
+| `id` | uuid PK | |
+| `project_id` | uuid FK | → `projects.id` **ON DELETE CASCADE** |
+| `depends_on_domain_id` | uuid FK | → `domains.id` **ON DELETE CASCADE** |
+| `connection_type` | varchar(32) NOT NULL default `REST` | |
+| `description` | text nullable | |
+| `created_at` | timestamptz | |
+| **UNIQUE** | | `(project_id, depends_on_domain_id)` |
+
+Índices: `project_id`, `depends_on_domain_id`.
+
+#### 5.5 `project_repositories`
+
+Asocia repos a proyectos; rol opcional para chat multi-root.
+
+| Columna | Tipo | Notas |
+|---------|------|--------|
+| `repo_id` | uuid PK (compuesta) | → `repositories.id` |
+| `project_id` | uuid PK (compuesta) | → `projects.id` |
+| `role` | varchar(128) nullable | p. ej. `frontend` / `backend` |
+
+#### 5.6 Otras tablas (referencia)
+
+- **`sync_jobs`**, **`indexed_files`**, **`credentials`** (tokens cifrados), **`embedding_space`**, etc. — ver entidades en `services/ingest/src/`.
+
+#### 5.7 Relación con FalkorDB (enrutamiento)
+
+- **`GET /projects/:id/graph-routing`** devuelve `cypherShardContexts`: lista de `{ graphName, cypherProjectId }`. Los grafos de proyectos cuyo `domain_id` está en la whitelist (`depends_on_domain_id`) se añaden para consultas Cypher/RAG; cada par debe usarse con `WHERE n.projectId = $projectId` usando el **`cypherProjectId`** correspondiente a ese grafo.
+- Listado de nombres de grafo sin duplicar: `extendedGraphShardNames` (solo shards “extra” de otros proyectos).
+
+Ver [manual/CONFIGURACION_Y_USO.md](../manual/CONFIGURACION_Y_USO.md) y [manual/README.md](../manual/README.md).

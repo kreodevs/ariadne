@@ -55,11 +55,17 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(dto),
     }),
-  updateProject: (id: string, dto: { name?: string | null; description?: string | null }) =>
-    request<{ id: string; name: string | null; description: string | null; createdAt: string; updatedAt: string }>(`/projects/${id}`, {
-      method: 'PATCH',
-      body: JSON.stringify(dto),
-    }),
+  updateProject: (
+    id: string,
+    dto: { name?: string | null; description?: string | null; domainId?: string | null },
+  ) =>
+    request<{ id: string; name: string | null; description: string | null; createdAt: string; updatedAt: string }>(
+      `/projects/${id}`,
+      {
+        method: 'PATCH',
+        body: JSON.stringify(dto),
+      },
+    ),
   setProjectRepositoryRole: (projectId: string, repoId: string, role: string | null) =>
     request<{ projectId: string; repoId: string; role: string | null }>(
       `/projects/${projectId}/repositories/${repoId}`,
@@ -71,6 +77,54 @@ export const api = {
     }),
   deleteProject: (id: string) =>
     request<void>(`/projects/${id}`, { method: 'DELETE' }),
+
+  getDomains: () => request<import('./types').Domain[]>('/domains'),
+  createDomain: (dto: {
+    name: string;
+    description?: string | null;
+    color?: string;
+    metadata?: Record<string, unknown> | null;
+  }) =>
+    request<import('./types').Domain>('/domains', { method: 'POST', body: JSON.stringify(dto) }),
+  updateDomain: (
+    id: string,
+    dto: Partial<{
+      name: string;
+      description: string | null;
+      color: string;
+      metadata: Record<string, unknown> | null;
+    }>,
+  ) =>
+    request<import('./types').Domain>(`/domains/${id}`, { method: 'PATCH', body: JSON.stringify(dto) }),
+  deleteDomain: (id: string) => request<void>(`/domains/${id}`, { method: 'DELETE' }),
+
+  getProjectArchitectureC4: (projectId: string, opts?: { level?: number; sessionId?: string | null }) => {
+    const q = new URLSearchParams();
+    if (opts?.level != null) q.set('level', String(opts.level));
+    if (opts?.sessionId?.trim()) q.set('sessionId', opts.sessionId.trim());
+    const qs = q.toString();
+    return request<import('./types').ArchitectureC4Response>(
+      `/projects/${encodeURIComponent(projectId)}/architecture/c4${qs ? `?${qs}` : ''}`,
+    );
+  },
+
+  listProjectDomainDependencies: (projectId: string) =>
+    request<import('./types').ProjectDomainDependency[]>(
+      `/projects/${encodeURIComponent(projectId)}/domain-dependencies`,
+    ),
+  addProjectDomainDependency: (
+    projectId: string,
+    dto: { dependsOnDomainId: string; connectionType?: string; description?: string | null },
+  ) =>
+    request<import('./types').ProjectDomainDependency>(
+      `/projects/${encodeURIComponent(projectId)}/domain-dependencies`,
+      { method: 'POST', body: JSON.stringify(dto) },
+    ),
+  removeProjectDomainDependency: (projectId: string, depId: string) =>
+    request<void>(
+      `/projects/${encodeURIComponent(projectId)}/domain-dependencies/${encodeURIComponent(depId)}`,
+      { method: 'DELETE' },
+    ),
 
   getRepositories: (projectId?: string) =>
     request<import('./types').Repository[]>(

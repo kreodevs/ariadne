@@ -5,6 +5,8 @@ import { Body, Controller, Delete, Get, Param, Patch, Post, Query } from '@nestj
 import { ProjectsService } from './projects.service';
 import { FileContentService } from '../repositories/file-content.service';
 import { JobAnalysisService } from '../repositories/job-analysis.service';
+import { C4DslGeneratorService } from '../architecture/c4-dsl-generator.service';
+import { DomainsService } from '../domains/domains.service';
 
 @Controller('projects')
 export class ProjectsController {
@@ -12,11 +14,44 @@ export class ProjectsController {
     private readonly service: ProjectsService,
     private readonly fileContent: FileContentService,
     private readonly jobAnalysis: JobAnalysisService,
+    private readonly c4Dsl: C4DslGeneratorService,
+    private readonly domains: DomainsService,
   ) {}
 
   @Get()
   findAll() {
     return this.service.findAll();
+  }
+
+  /** DSL PlantUML C4 (niveles 1–3) y diff opcional con shadow graph. */
+  @Get(':id/architecture/c4')
+  getArchitectureC4(
+    @Param('id') id: string,
+    @Query('level') level?: string,
+    @Query('sessionId') sessionId?: string,
+  ) {
+    const lv = Math.min(3, Math.max(1, parseInt(level ?? '1', 10) || 1)) as 1 | 2 | 3;
+    return this.c4Dsl.generate(id, { level: lv, sessionId: sessionId?.trim() || undefined });
+  }
+
+  @Get(':id/domain-dependencies')
+  listDomainDependencies(@Param('id') id: string) {
+    return this.domains.listProjectDependencies(id);
+  }
+
+  @Post(':id/domain-dependencies')
+  addDomainDependency(
+    @Param('id') id: string,
+    @Body()
+    body: { dependsOnDomainId: string; connectionType?: string; description?: string | null },
+  ) {
+    return this.domains.addProjectDependency(id, body);
+  }
+
+  @Delete(':id/domain-dependencies/:depId')
+  async removeDomainDependency(@Param('id') id: string, @Param('depId') depId: string) {
+    await this.domains.removeProjectDependency(id, depId);
+    return { ok: true };
   }
 
   /** Contenido de un archivo buscando en todos los repos del proyecto (multi-root). MCP y chat por proyecto. */
@@ -63,7 +98,10 @@ export class ProjectsController {
   }
 
   @Patch(':id')
-  update(@Param('id') id: string, @Body() body: { name?: string | null; description?: string | null }) {
+  update(
+    @Param('id') id: string,
+    @Body() body: { name?: string | null; description?: string | null; domainId?: string | null },
+  ) {
     return this.service.update(id, body);
   }
 

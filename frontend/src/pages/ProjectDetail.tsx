@@ -28,6 +28,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { StatusBadge } from '@/components/StatusBadge';
 import { Input } from '@/components/ui/input';
 import { Pencil, RefreshCw } from 'lucide-react';
+import { ArchitecturePanel } from './ProjectDetail/ArchitecturePanel';
 
 /** Modal para asociar un repo existente al proyecto. Extraído para reducir anidamiento en ProjectDetail. */
 function AssociateRepoDialog({
@@ -185,6 +186,7 @@ export function ProjectDetail() {
   const [regeneratingProjectId, setRegeneratingProjectId] = useState(false);
   const [resyncForProjectRepoId, setResyncForProjectRepoId] = useState<string | null>(null);
   const [roleSavingRepoId, setRoleSavingRepoId] = useState<string | null>(null);
+  const [detailTab, setDetailTab] = useState<'general' | 'architecture'>('general');
 
   const fetchProject = useCallback(() => {
     if (!id) return;
@@ -400,6 +402,31 @@ export function ProjectDetail() {
 
   return (
     <div className="space-y-6">
+      <div className="flex flex-wrap gap-2">
+        <Button
+          type="button"
+          variant={detailTab === 'general' ? 'default' : 'outline'}
+          size="sm"
+          onClick={() => setDetailTab('general')}
+        >
+          General
+        </Button>
+        <Button
+          type="button"
+          variant={detailTab === 'architecture' ? 'default' : 'outline'}
+          size="sm"
+          onClick={() => setDetailTab('architecture')}
+        >
+          Arquitectura
+        </Button>
+      </div>
+
+      {detailTab === 'architecture' && id ? (
+        <ArchitecturePanel project={project} projectId={id} onProjectUpdated={fetchProject} />
+      ) : null}
+
+      {detailTab === 'general' ? (
+    <div className="space-y-6">
       <div className="flex flex-row items-end justify-between">
         <div>
           <div className="flex items-center gap-2">
@@ -593,6 +620,8 @@ export function ProjectDetail() {
           )}
         </CardContent>
       </Card>
+    </div>
+      ) : null}
     </div>
   );
 }

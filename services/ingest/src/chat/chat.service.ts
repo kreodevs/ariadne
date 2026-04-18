@@ -325,7 +325,7 @@ export interface FullAuditResult {
 /**
  * Servicio de chat NL→Cypher y análisis de deuda técnica.
  * Usa OpenAI para generar Cypher y diagnósticos; FalkorDB para ejecutar queries.
- * @see docs/CHAT_Y_ANALISIS.md
+ * @see docs/notebooklm/CHAT_Y_ANALISIS.md
  */
 @Injectable()
 export class ChatService {

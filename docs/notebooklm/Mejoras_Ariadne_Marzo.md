@@ -158,7 +158,7 @@ F0 métricas → F1 CI PR → F2 vector + expansión grafo
 
 ## Referencias internas (código / docs)
 
-- MCP y herramientas: `services/mcp-ariadne`, `docs/MCP_HTTPS.md`, `docs/mcp_server_specs.md`
+- MCP y herramientas: `services/mcp-ariadne`, `docs/notebooklm/MCP_HTTPS.md`, `docs/notebooklm/mcp_server_specs.md`
 - Ingest / chat / embeddings: `services/ingest`
 - Orquestador: `services/orchestrator`
 - Grafo y sharding: `packages/ariadne-common`, `services/api`

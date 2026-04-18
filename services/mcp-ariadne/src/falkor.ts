@@ -16,11 +16,20 @@ import {
 export { GRAPH_NAME, getFalkorConfig };
 export type { FalkorShardMode };
 
+export type CypherShardContext = {
+  graphName: string;
+  cypherProjectId: string;
+};
+
 export type ProjectGraphRouting = {
   projectId: string;
   shardMode: FalkorShardMode;
   domainSegments: string[];
   graphNodeSoftLimit: number;
+  /** Grafos Falkor de proyectos en dominios whitelist (gobierno de arquitectura). */
+  extendedGraphShardNames?: string[];
+  /** Par grafo + projectId en nodos (ingest). Preferido frente a solo nombres. */
+  cypherShardContexts?: CypherShardContext[];
 };
 
 let client: Awaited<ReturnType<typeof FalkorDB.connect>> | null = null;
@@ -86,29 +95,48 @@ export async function getProjectShardGraphNames(projectId: string): Promise<stri
   const routing = await fetchProjectGraphRouting(projectId);
   const mode: FalkorShardMode = routing?.shardMode ?? effectiveShardMode(null);
   const segments = routing?.domainSegments ?? [];
-  return listGraphNamesForProjectRouting(
+  const base = listGraphNamesForProjectRouting(
     projectId,
     mode === "domain" ? "domain" : "project",
     segments,
   );
+  const extra = routing?.extendedGraphShardNames;
+  if (Array.isArray(extra) && extra.length > 0) {
+    return [...new Set([...base, ...extra])];
+  }
+  return base;
 }
 
 /**
- * Itera todos los subgrafos candidatos (mono + dominios) hasta que fn devuelve true (early exit).
+ * Itera todos los subgrafos candidatos (mono + dominios + whitelist) hasta que fn devuelve true (early exit).
+ * `cypherProjectId` es el que debe usarse en `WHERE n.projectId = $projectId` al consultar ese grafo.
  */
 export async function forEachProjectShardGraph(
   projectId: string,
-  fn: (graph: ReturnType<Awaited<ReturnType<typeof getClient>>["selectGraph"]>) => Promise<boolean | void>,
+  fn: (
+    graph: ReturnType<Awaited<ReturnType<typeof getClient>>["selectGraph"]>,
+    ctx: { cypherProjectId: string },
+  ) => Promise<boolean | void>,
 ): Promise<void> {
   const c = await getClient();
+  const routing = await fetchProjectGraphRouting(projectId);
+  const contexts = routing?.cypherShardContexts;
+  if (Array.isArray(contexts) && contexts.length > 0) {
+    for (const ctx of contexts) {
+      const g = c.selectGraph(ctx.graphName);
+      const stop = await fn(g, { cypherProjectId: ctx.cypherProjectId });
+      if (stop === true) return;
+    }
+    return;
+  }
   if (!isProjectShardingEnabled()) {
-    await fn(c.selectGraph(GRAPH_NAME));
+    await fn(c.selectGraph(GRAPH_NAME), { cypherProjectId: projectId });
     return;
   }
   const names = await getProjectShardGraphNames(projectId);
   for (const name of names) {
     const g = c.selectGraph(name);
-    const stop = await fn(g);
+    const stop = await fn(g, { cypherProjectId: projectId });
     if (stop === true) return;
   }
 }

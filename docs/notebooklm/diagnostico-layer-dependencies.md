@@ -6,7 +6,7 @@ En el modo `diagnostico` (y derivados que reutilizan el mismo prep), el informe 
 
 - Consultas Cypher y agregados sobre nodos y relaciones en el **foco** del análisis (repo / prefijos / exclusiones del `scope`).
 - Métricas locales: riesgo compuesto, anti-patrones (`detectAntipatterns`), acoplamiento, etc.
-- No depende de la caché extrínseca; sí puede alimentar la **caché global del informe** (ver `docs/plan-analyze-layer-cache.md`).
+- No depende de la caché extrínseca; sí puede alimentar la **caché global del informe** (ver [`plan-analyze-layer-cache.md`](./plan-analyze-layer-cache.md)).
 
 ## Extrínseca (CALL)
 

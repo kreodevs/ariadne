@@ -9,6 +9,8 @@ import { FalkorDB } from 'falkordb';
 import { ProjectEntity } from './entities/project.entity';
 import { RepositoryEntity } from '../repositories/entities/repository.entity';
 import { ProjectRepositoryEntity } from '../repositories/entities/project-repository.entity';
+import { ProjectDomainDependencyEntity } from '../domains/entities/project-domain-dependency.entity';
+import { DomainEntity } from '../domains/entities/domain.entity';
 import {
   getFalkorConfig,
   graphNameForProject,
@@ -25,10 +27,19 @@ import {
   type WorkspacePathRepoResolution,
 } from './path-repo-resolution.util';
 
+/** Par (grafo Falkor, projectId en nodos) para Cypher multi-shard y whitelist de dominios. */
+export interface CypherShardContext {
+  graphName: string;
+  cypherProjectId: string;
+}
+
 export interface ProjectWithRepos {
   id: string;
   name: string | null;
   description: string | null;
+  domainId: string | null;
+  domainName: string | null;
+  domainColor: string | null;
   createdAt: string;
   updatedAt: string;
   repositories: Array<{
@@ -52,6 +63,10 @@ export class ProjectsService {
     private readonly projectRepoRepo: Repository<ProjectRepositoryEntity>,
     @InjectRepository(RepositoryEntity)
     private readonly repoRepo: Repository<RepositoryEntity>,
+    @InjectRepository(ProjectDomainDependencyEntity)
+    private readonly projectDomainDepRepo: Repository<ProjectDomainDependencyEntity>,
+    @InjectRepository(DomainEntity)
+    private readonly domainRepo: Repository<DomainEntity>,
   ) {}
 
   async findAll(): Promise<ProjectWithRepos[]> {
@@ -82,10 +97,19 @@ export class ProjectsService {
           })
         : [];
     const repoMap = new Map(repos.map((r) => [r.id, r]));
+    const domIds = [...new Set(projects.map((p) => p.domainId).filter(Boolean))] as string[];
+    const domRows =
+      domIds.length > 0
+        ? await this.domainRepo.find({ where: { id: In(domIds) }, select: ['id', 'name', 'color'] })
+        : [];
+    const domMeta = new Map(domRows.map((d) => [d.id, { name: d.name, color: d.color }] as const));
     return projects.map((p) => ({
       id: p.id,
       name: p.name,
       description: p.description ?? null,
+      domainId: p.domainId ?? null,
+      domainName: p.domainId ? domMeta.get(p.domainId)?.name ?? null : null,
+      domainColor: p.domainId ? domMeta.get(p.domainId)?.color ?? null : null,
       createdAt: p.createdAt.toISOString(),
       updatedAt: p.updatedAt.toISOString(),
       repositories: (repoIdsByProject.get(p.id) ?? [])
@@ -205,22 +229,109 @@ export class ProjectsService {
     shardMode: FalkorShardMode;
     domainSegments: string[];
     graphNodeSoftLimit: number;
+    /** Grafos Falkor adicionales (proyectos en dominios de la whitelist). */
+    extendedGraphShardNames: string[];
+    /** Cada consulta Cypher debe usar `cypherProjectId` al abrir `graphName` (whitelist). */
+    cypherShardContexts: CypherShardContext[];
   }> {
     const project = await this.projectRepo.findOne({ where: { id } });
     if (!project) throw new NotFoundException(`Project ${id} not found`);
     const shardMode = effectiveShardMode(project.falkorShardMode);
     const domainSegments = Array.isArray(project.falkorDomainSegments) ? project.falkorDomainSegments : [];
+    const cypherShardContexts = await this.getCypherShardContexts(id);
+    const extendedGraphShardNames = [
+      ...new Set(
+        cypherShardContexts
+          .filter((c) => c.cypherProjectId !== id)
+          .map((c) => c.graphName),
+      ),
+    ];
     return {
       projectId: id,
       shardMode,
       domainSegments,
       graphNodeSoftLimit: getGraphNodeSoftLimit(),
+      extendedGraphShardNames,
+      cypherShardContexts,
     };
+  }
+
+  /**
+   * Grafos a consultar y el `projectId` que llevan los nodos en cada uno (propio + whitelist de dominios).
+   */
+  async getCypherShardContexts(
+    projectId: string,
+    opts?: { includeSiblingProjects?: boolean },
+  ): Promise<CypherShardContext[]> {
+    const includeSiblings = opts?.includeSiblingProjects !== false;
+    const out: CypherShardContext[] = [];
+    const seen = new Set<string>();
+    const add = (graphName: string, cypherProjectId: string) => {
+      const k = `${graphName}\0${cypherProjectId}`;
+      if (seen.has(k)) return;
+      seen.add(k);
+      out.push({ graphName, cypherProjectId });
+    };
+
+    for (const g of await this.graphShardNamesForProjectId(projectId)) {
+      add(g, projectId);
+    }
+
+    if (!includeSiblings) return out;
+
+    const deps = await this.projectDomainDepRepo.find({
+      where: { projectId },
+      select: ['dependsOnDomainId'],
+    });
+    const domainIds = [...new Set(deps.map((d) => d.dependsOnDomainId))];
+    if (domainIds.length === 0) return out;
+
+    const siblings = await this.projectRepo.find({
+      where: { domainId: In(domainIds) },
+      select: ['id'],
+    });
+    for (const s of siblings) {
+      if (s.id === projectId) continue;
+      for (const g of await this.graphShardNamesForProjectId(s.id)) {
+        add(g, s.id);
+      }
+    }
+    return out;
+  }
+
+  /**
+   * Nombres de grafo únicos (propio + dominios whitelist).
+   */
+  async getExtendedGraphShardNames(projectId: string): Promise<string[]> {
+    const ctx = await this.getCypherShardContexts(projectId);
+    return [...new Set(ctx.map((c) => c.graphName))];
+  }
+
+  private async graphShardNamesForProjectId(pid: string): Promise<string[]> {
+    const project = await this.projectRepo.findOne({ where: { id: pid } });
+    if (!project) return [];
+    const shardMode = effectiveShardMode(project.falkorShardMode);
+    const segments = Array.isArray(project.falkorDomainSegments) ? project.falkorDomainSegments : [];
+    return listGraphNamesForProjectRouting(
+      pid,
+      shardMode === 'domain' ? 'domain' : 'project',
+      segments,
+    );
   }
 
   async findOne(id: string): Promise<ProjectWithRepos> {
     const project = await this.projectRepo.findOne({ where: { id } });
     if (!project) throw new NotFoundException(`Project ${id} not found`);
+    let domainName: string | null = null;
+    let domainColor: string | null = null;
+    if (project.domainId) {
+      const d = await this.domainRepo.findOne({
+        where: { id: project.domainId },
+        select: ['name', 'color'],
+      });
+      domainName = d?.name ?? null;
+      domainColor = d?.color ?? null;
+    }
     const prs = await this.projectRepoRepo.find({
       where: { projectId: id },
       select: ['repoId', 'role'],
@@ -238,6 +349,9 @@ export class ProjectsService {
       id: project.id,
       name: project.name,
       description: project.description ?? null,
+      domainId: project.domainId ?? null,
+      domainName,
+      domainColor,
       createdAt: project.createdAt.toISOString(),
       updatedAt: project.updatedAt.toISOString(),
       repositories: repositories.map((r) => ({
@@ -261,11 +375,23 @@ export class ProjectsService {
     return this.projectRepo.save(entity);
   }
 
-  async update(id: string, dto: { name?: string | null; description?: string | null }): Promise<ProjectEntity> {
+  async update(
+    id: string,
+    dto: { name?: string | null; description?: string | null; domainId?: string | null },
+  ): Promise<ProjectEntity> {
     await this.findOne(id);
-    const updates: { name?: string | null; description?: string | null } = {};
+    const updates: { name?: string | null; description?: string | null; domainId?: string | null } = {};
     if (dto.name !== undefined) updates.name = dto.name?.trim() || null;
     if (dto.description !== undefined) updates.description = dto.description?.trim() || null;
+    if (dto.domainId !== undefined) {
+      if (dto.domainId === null || dto.domainId === '') {
+        updates.domainId = null;
+      } else {
+        const d = await this.domainRepo.findOne({ where: { id: dto.domainId }, select: ['id'] });
+        if (!d) throw new NotFoundException(`Domain ${dto.domainId} not found`);
+        updates.domainId = dto.domainId;
+      }
+    }
     if (Object.keys(updates).length > 0) {
       await this.projectRepo.update(id, updates);
     }
@@ -292,6 +418,9 @@ export class ProjectsService {
       where: { projectId },
       select: ['repoId'],
     });
+    const domainDeps = await this.projectDomainDepRepo.find({
+      where: { projectId },
+    });
 
     await this.projectRepo.insert({
       id: newProjectId,
@@ -299,6 +428,7 @@ export class ProjectsService {
       description: project.description ?? null,
       falkorShardMode: project.falkorShardMode,
       falkorDomainSegments: project.falkorDomainSegments,
+      domainId: project.domainId ?? null,
       createdAt: new Date(),
       updatedAt: new Date(),
     });
@@ -307,7 +437,18 @@ export class ProjectsService {
         this.projectRepoRepo.create({ repoId: pr.repoId, projectId: newProjectId }),
       );
     }
+    for (const dd of domainDeps) {
+      await this.projectDomainDepRepo.save(
+        this.projectDomainDepRepo.create({
+          projectId: newProjectId,
+          dependsOnDomainId: dd.dependsOnDomainId,
+          connectionType: dd.connectionType,
+          description: dd.description,
+        }),
+      );
+    }
     await this.projectRepoRepo.delete({ projectId });
+    await this.projectDomainDepRepo.delete({ projectId });
     await this.projectRepo.delete(projectId);
 
     const config = getFalkorConfig();
