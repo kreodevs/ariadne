@@ -10,6 +10,19 @@ Microservicio NestJS que reemplaza la ingesta basada en directorio local (chokid
 4. **Cola Redis/BullMQ:** Sync se encola; worker procesa en background.
 5. **Orphan cleanup:** Archivos borrados se eliminan del grafo.
 
+## Migraciones PostgreSQL (automáticas)
+
+En **cada arranque** (`node dist/main.js`), `runMigrations()` ejecuta `DataSource.runMigrations()` **antes** de levantar Nest. No necesitas `typeorm migration:run` en el servidor si el deploy arranca el contenedor ingest con la imagen que incluye `dist/migrations/*.js` (salida de `npm run build` en el Dockerfile).
+
+**Requisitos:**
+
+- Postgres accesible con `PGHOST` / `PG*` antes de que el proceso escuche (en Docker/Dokploy: `depends_on` + healthcheck de la BD).
+- Imagen nueva tras cada cambio de migración en el repo.
+
+**Logs:** verás `Migraciones ejecutadas: …` si hay pendientes, o `ninguna pendiente` si la tabla `migrations` ya está al día.
+
+**Emergencia:** `INGEST_SKIP_MIGRATIONS=1` omite migraciones al arrancar (solo si sabes lo que haces; riesgo de esquema desalineado con el código).
+
 ## Stack
 
 - NestJS, TypeORM, PostgreSQL
@@ -55,6 +68,7 @@ Tras cada sync (normal o resync), se ejecuta automáticamente `embed-index` si h
 
 - `PORT` — Puerto HTTP (default 3002)
 - `PGHOST`, `PGPORT`, `PGUSER`, `PGPASSWORD`, `PGDATABASE` — PostgreSQL
+- `INGEST_SKIP_MIGRATIONS` — Si es `1`/`true`/`yes`, **no** ejecuta migraciones al arrancar (solo emergencia; ver sección Migraciones)
 - `FALKORDB_HOST`, `FALKORDB_PORT` — FalkorDB (sync en `FalkorSpecs`; shadow en `FalkorSpecsShadow:<sesión>` por request)
 - `FALKOR_FLUSH_ALL_ONCE` — Si es `1`/`true`/`yes`, en el **primer** arranque del ingest (tras migraciones) ejecuta **Redis FLUSHALL** sobre Falkor y guarda la marca `falkor_flushall_once` en la tabla `ingest_runtime_flags`. Reinicios posteriores **no** repiten el vaciado aunque el env siga puesto. Para otro reset en el futuro: `DELETE FROM ingest_runtime_flags WHERE flag_key = 'falkor_flushall_once';` y vuelve a definir el env en un deploy.
 - `FALKOR_SHARD_BY_PROJECT` — Un grafo Redis por `projectId` (`AriadneSpecs:<uuid>`).

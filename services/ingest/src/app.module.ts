@@ -11,6 +11,7 @@ import { ProjectEntity } from './projects/entities/project.entity';
 import { ProjectRepositoryEntity } from './repositories/entities/project-repository.entity';
 import { DomainEntity } from './domains/entities/domain.entity';
 import { ProjectDomainDependencyEntity } from './domains/entities/project-domain-dependency.entity';
+import { DomainDomainVisibilityEntity } from './domains/entities/domain-domain-visibility.entity';
 import { EmbeddingSpaceEntity } from './embedding/entities/embedding-space.entity';
 import { BitbucketModule } from './bitbucket/bitbucket.module';
 import { ChatModule } from './chat/chat.module';
@@ -45,6 +46,7 @@ import { MetricsModule } from './metrics/metrics.module';
         CredentialEntity,
         DomainEntity,
         ProjectDomainDependencyEntity,
+        DomainDomainVisibilityEntity,
       ],
       synchronize: process.env.NODE_ENV !== 'production',
       logging: process.env.NODE_ENV === 'development',

@@ -108,6 +108,19 @@ export class EmbedIndexService {
     let indexed = 0;
     let errors = 0;
 
+    if (graphNames.length > 0) {
+      const probeGraph = client.selectGraph(graphNames[0]);
+      const vectorsOk = await this.falkorSupportsVecf32(probeGraph, dim);
+      if (!vectorsOk) {
+        console.warn(
+          '[embed-index] FalkorDB no expone vecf32 (soporte vector). Se omite embed-index; el sync de código sigue siendo válido. ' +
+            'Opciones: actualizar FalkorDB a una versión con vectores, o SYNC_SKIP_EMBED_INDEX=1 para no intentar embed tras cada sync.',
+        );
+        await client.close();
+        return { indexed: 0, errors: 0 };
+      }
+    }
+
     for (const gName of graphNames) {
       const graph = client.selectGraph(gName);
       try {
@@ -128,6 +141,21 @@ export class EmbedIndexService {
 
     await client.close();
     return { indexed, errors };
+  }
+
+  /** Comprueba que el motor Cypher tenga `vecf32` (FalkorDB con módulo vector); evita N errores idénticos por nodo. */
+  private async falkorSupportsVecf32(
+    graph: ReturnType<FalkorDbClient['selectGraph']>,
+    dim: number,
+  ): Promise<boolean> {
+    if (!Number.isFinite(dim) || dim < 1) return false;
+    const vec = new Array(dim).fill(0);
+    try {
+      await graph.query(`RETURN vecf32($vec) AS v`, { params: { vec } });
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   private async embedOneGraph(

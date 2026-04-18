@@ -85,9 +85,14 @@ async function runFalkorFlushAllOnceIfRequested(): Promise<void> {
 
 /**
  * Ejecuta migraciones TypeORM pendientes antes de arrancar (necesario en prod con synchronize=false).
- * @returns {Promise<void>}
+ * Se llama en **cada** bootstrap: al desplegar una imagen nueva con `.js` en `dist/migrations/`, Postgres queda al día sin paso manual.
+ * Desactivar solo en emergencia: `INGEST_SKIP_MIGRATIONS=1` (riesgo de esquema desalineado).
  */
 async function runMigrations(): Promise<void> {
+  if (isTruthyEnv(process.env.INGEST_SKIP_MIGRATIONS)) {
+    console.warn('[ingest] INGEST_SKIP_MIGRATIONS activo: no se ejecutan migraciones al arrancar.');
+    return;
+  }
   const ds = new DataSource({
     type: 'postgres',
     host: process.env.PGHOST ?? 'localhost',
@@ -100,9 +105,11 @@ async function runMigrations(): Promise<void> {
   });
   await ds.initialize();
   try {
-    const pending = await ds.runMigrations();
-    if (pending.length > 0) {
-      console.log(`[ingest] Migraciones ejecutadas: ${pending.map((m) => m.name).join(', ')}`);
+    const executed = await ds.runMigrations();
+    if (executed.length > 0) {
+      console.log(`[ingest] Migraciones ejecutadas: ${executed.map((m) => m.name).join(', ')}`);
+    } else {
+      console.log('[ingest] Migraciones PostgreSQL: ninguna pendiente (tabla migrations al día).');
     }
   } finally {
     await ds.destroy();
