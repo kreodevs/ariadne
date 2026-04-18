@@ -6,6 +6,8 @@ import { api } from '@/api';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Badge } from '@/components/ui/badge';
+import { cn } from '@/lib/utils';
 
 const LEVELS = [
   { value: 1 as const, label: 'Contexto' },
@@ -21,6 +23,7 @@ export function C4Previewer({
   onShadowModeChange,
   sessionId,
   onSessionIdChange,
+  layout = 'default',
 }: {
   projectId: string;
   level: 1 | 2 | 3;
@@ -29,6 +32,8 @@ export function C4Previewer({
   onShadowModeChange: (v: boolean) => void;
   sessionId: string;
   onSessionIdChange: (v: string) => void;
+  /** default: DSL colapsable; split: diagrama + editor DSL lado a lado (pantallas grandes). */
+  layout?: 'default' | 'split';
 }) {
   const [dsl, setDsl] = useState('');
   const [loading, setLoading] = useState(false);
@@ -84,8 +89,8 @@ export function C4Previewer({
     };
   }, []);
 
-  return (
-    <div className="space-y-4">
+  const controls = (
+    <>
       <div className="flex flex-wrap gap-2 items-center">
         {LEVELS.map((lv) => (
           <Button
@@ -106,7 +111,7 @@ export function C4Previewer({
             id="shadow-mode"
             checked={shadowMode}
             onChange={(e) => onShadowModeChange(e.target.checked)}
-            className="rounded border-input"
+            className="rounded border-[var(--input-border)]"
           />
           <Label htmlFor="shadow-mode" className="text-sm font-normal cursor-pointer">
             Shadow mode (Visual SDD)
@@ -125,26 +130,100 @@ export function C4Previewer({
           </div>
         ) : null}
       </div>
-
-      {loading ? (
-        <p className="text-sm text-muted-foreground">Generando diagrama…</p>
-      ) : krokiError ? (
-        <div className="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-900 dark:text-amber-100">
-          Kroki no disponible desde el navegador ({krokiError}). DSL abajo — úsalo en{' '}
-          <a href="https://kroki.io" className="underline" target="_blank" rel="noreferrer">
-            kroki.io
-          </a>
-          .
-        </div>
-      ) : imgUrl ? (
-        <div className="rounded-lg border border-[var(--border)] bg-[var(--card)] p-2 overflow-auto">
-          <img src={imgUrl} alt="Diagrama C4" className="max-w-full h-auto mx-auto" />
+      {shadowMode ? (
+        <div
+          className="flex flex-wrap items-center gap-3 rounded-lg border border-[var(--border)] bg-[var(--secondary)]/40 px-3 py-2 text-xs text-[var(--foreground-muted)]"
+          role="note"
+        >
+          <span className="font-medium text-[var(--foreground)]">Leyenda SDD (impacto)</span>
+          <span
+            className="inline-flex items-center gap-1.5"
+            title="Grafo publicado / baseline aceptado"
+          >
+            <span className="size-2.5 rounded-full bg-[var(--success)] shadow-[0_0_8px_rgba(34,197,94,0.6)]" />
+            Publicado
+          </span>
+          <span
+            className="inline-flex items-center gap-1.5"
+            title="Cambios propuestos en shadow (diff visual en diagrama cuando el backend los marca)"
+          >
+            <span className="size-2.5 rounded-full bg-[var(--warning)] shadow-[0_0_8px_rgba(234,179,8,0.5)]" />
+            Shadow / diff
+          </span>
+          <span className="inline-flex items-center gap-1.5" title="Conflicto o violación de contrato detectada">
+            <span className="size-2.5 rounded-full bg-[var(--destructive)] shadow-[0_0_8px_rgba(239,68,68,0.5)]" />
+            Conflicto
+          </span>
         </div>
       ) : null}
+    </>
+  );
 
+  const diagramBlock =
+    loading ? (
+      <p className="text-sm text-[var(--foreground-muted)]">Generando diagrama…</p>
+    ) : krokiError ? (
+      <div className="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-100">
+        Kroki no disponible desde el navegador ({krokiError}). DSL al lado — úsalo en{' '}
+        <a href="https://kroki.io" className="underline" target="_blank" rel="noreferrer">
+          kroki.io
+        </a>
+        .
+      </div>
+    ) : imgUrl ? (
+      <div className="rounded-lg border border-[var(--border)] bg-[var(--card)] p-2 overflow-auto min-h-[200px]">
+        <img src={imgUrl} alt="Diagrama C4" className="max-w-full h-auto mx-auto" />
+      </div>
+    ) : null;
+
+  const dslPanel = (
+    <div
+      className={cn(
+        'flex min-h-0 flex-col rounded-lg border border-[var(--border)] bg-[#0c1222]',
+        layout === 'split' ? 'min-h-[320px] lg:min-h-[480px]' : '',
+      )}
+    >
+      <div className="flex items-center justify-between border-b border-[var(--border)] px-3 py-2">
+        <span className="text-[11px] font-semibold uppercase tracking-wider text-[var(--foreground-muted)]">
+          DSL PlantUML
+        </span>
+        <Badge variant="outline" className="font-mono text-[10px]">
+          .puml
+        </Badge>
+      </div>
+      <pre className="flex-1 overflow-auto p-4 text-left text-xs leading-relaxed font-mono text-sky-100/95 whitespace-pre-wrap">
+        {dsl || '…'}
+      </pre>
+    </div>
+  );
+
+  if (layout === 'split') {
+    return (
+      <div className="space-y-4">
+        {controls}
+        <div className="grid min-h-0 gap-6 lg:grid-cols-2 lg:gap-8">
+          <div className="min-w-0 space-y-2">
+            <p className="text-xs font-medium uppercase tracking-wide text-[var(--foreground-muted)]">Vista</p>
+            {diagramBlock}
+          </div>
+          <div className="min-w-0 space-y-2">
+            <p className="text-xs font-medium uppercase tracking-wide text-[var(--foreground-muted)]">Código</p>
+            {dslPanel}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      {controls}
+      {diagramBlock}
       <details className="text-xs">
-        <summary className="cursor-pointer text-muted-foreground">DSL PlantUML</summary>
-        <pre className="mt-2 p-3 rounded-md bg-muted overflow-auto max-h-64 font-mono whitespace-pre-wrap">{dsl}</pre>
+        <summary className="cursor-pointer text-[var(--foreground-muted)]">DSL PlantUML</summary>
+        <pre className="mt-2 max-h-64 overflow-auto rounded-md bg-[var(--muted)] p-3 font-mono whitespace-pre-wrap">
+          {dsl}
+        </pre>
       </details>
     </div>
   );

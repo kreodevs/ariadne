@@ -1,7 +1,7 @@
 /**
  * @fileoverview App principal: rutas y layout. Auth OTP, repos, chat, credenciales.
  */
-import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { Layout } from './components/Layout';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { Login } from './pages/Login';
@@ -23,6 +23,8 @@ import { ErrorPage } from './pages/ErrorPage';
 import { ComponentGraphExplorer } from './pages/ComponentGraph';
 import { DomainsList } from './pages/DomainsList';
 import { ActiveJobsQueue } from './pages/ActiveJobsQueue';
+import { Dashboard } from './pages/Dashboard';
+import { C4ViewerPage } from './pages/C4ViewerPage';
 
 /** Componente raíz con enrutamiento. */
 function App() {
@@ -31,34 +33,31 @@ function App() {
       <Routes>
         <Route path="/login" element={<Login />} />
         <Route path="/error" element={<ErrorPage />} />
-        <Route
-          path="*"
-          element={
-            <Layout>
-              <ProtectedRoute>
-                <Routes>
-                  <Route path="/" element={<ProjectList />} />
-                  <Route path="/projects/new" element={<CreateProject />} />
-                  <Route path="/projects/:id/chat" element={<ProjectChat />} />
-                  <Route path="/projects/:id" element={<ProjectDetail />} />
-                  <Route path="/repos" element={<RepoList />} />
-                  <Route path="/jobs" element={<ActiveJobsQueue />} />
-                  <Route path="/repos/new" element={<CreateRepo />} />
-                  <Route path="/repos/:id/edit" element={<EditRepo />} />
-                  <Route path="/repos/:id/chat" element={<RepoChat />} />
-                  <Route path="/repos/:id/index" element={<RepoIndex />} />
-                  <Route path="/repos/:id" element={<RepoDetail />} />
-                  <Route path="/credentials" element={<CredentialsList />} />
-                  <Route path="/credentials/new" element={<CreateCredential />} />
-                  <Route path="/credentials/:id/edit" element={<EditCredential />} />
-                  <Route path="/graph-explorer" element={<ComponentGraphExplorer />} />
-                  <Route path="/domains" element={<DomainsList />} />
-                  <Route path="/ayuda/*" element={<Ayuda />} />
-                </Routes>
-              </ProtectedRoute>
-            </Layout>
-          }
-        />
+        <Route path="/*" element={<Layout />}>
+          {/* `/` → `/dashboard` sin pasar por auth; las rutas protegidas exigen JWT al entrar en cada vista */}
+          <Route index element={<Navigate to="/dashboard" replace />} />
+          <Route element={<ProtectedRoute />}>
+            <Route path="dashboard" element={<Dashboard />} />
+            <Route path="c4" element={<C4ViewerPage />} />
+            <Route path="projects/new" element={<CreateProject />} />
+            <Route path="projects/:id/chat" element={<ProjectChat />} />
+            <Route path="projects/:id" element={<ProjectDetail />} />
+            <Route path="projects" element={<ProjectList />} />
+            <Route path="repos" element={<RepoList />} />
+            <Route path="jobs" element={<ActiveJobsQueue />} />
+            <Route path="repos/new" element={<CreateRepo />} />
+            <Route path="repos/:id/edit" element={<EditRepo />} />
+            <Route path="repos/:id/chat" element={<RepoChat />} />
+            <Route path="repos/:id/index" element={<RepoIndex />} />
+            <Route path="repos/:id" element={<RepoDetail />} />
+            <Route path="credentials" element={<CredentialsList />} />
+            <Route path="credentials/new" element={<CreateCredential />} />
+            <Route path="credentials/:id/edit" element={<EditCredential />} />
+            <Route path="graph-explorer" element={<ComponentGraphExplorer />} />
+            <Route path="domains" element={<DomainsList />} />
+            <Route path="ayuda/*" element={<Ayuda />} />
+          </Route>
+        </Route>
       </Routes>
     </BrowserRouter>
   );

@@ -201,7 +201,7 @@ export function ProjectChat() {
     return (
       <div className="space-y-4">
         <Button variant="ghost" size="sm" asChild>
-          <Link to="/">← Proyectos</Link>
+          <Link to="/projects">← Proyectos</Link>
         </Button>
         <Alert variant="destructive">
           <AlertTitle>Error</AlertTitle>
@@ -214,7 +214,7 @@ export function ProjectChat() {
     return (
       <div className="space-y-6">
         <Button variant="ghost" size="sm" asChild>
-          <Link to="/">← Proyectos</Link>
+          <Link to="/projects">← Proyectos</Link>
         </Button>
         <Card>
           <CardHeader>
@@ -233,7 +233,7 @@ export function ProjectChat() {
       <div className="flex shrink-0 flex-col gap-2 pb-3 sm:flex-row sm:flex-wrap sm:items-center sm:gap-2 sm:pb-4">
         <div className="flex flex-wrap items-center gap-2">
           <Button variant="ghost" size="sm" className="touch-manipulation" asChild>
-            <Link to="/">← Proyectos</Link>
+            <Link to="/projects">← Proyectos</Link>
           </Button>
           <Button variant="ghost" size="sm" className="touch-manipulation" asChild>
             <Link to={`/projects/${projectId}`}>Detalle del proyecto</Link>

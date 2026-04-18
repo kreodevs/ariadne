@@ -1,18 +1,23 @@
 # Páginas
 
-Vistas principales de la aplicación Ariadne.
+Vistas principales de la aplicación Ariadne (shell SaaS: sidebar + header con breadcrumbs).
+
+## Dashboard y C4
+
+- **Dashboard.tsx** — KPIs desde API: número de proyectos, repositorios, dominios y **salud de ingesta** (% repos en `ready`). Accesos rápidos a C4, grafo y cola. Ruta: `/dashboard` (landing tras login; **`/` redirige aquí**).
+- **C4ViewerPage.tsx** — Visor C4 dedicado: selector de proyecto + **C4Previewer** en layout **split** (diagrama Kroki + panel DSL estilo editor). Misma API que la pestaña Arquitectura del proyecto. Ruta: `/c4`.
 
 ## Proyectos (multi-root)
 
 - **DomainsList.tsx** — CRUD de **dominios** de arquitectura (nombre, color, descripción). Los proyectos se asignan a un dominio y la whitelist entre dominios se configura en el detalle del proyecto (pestaña Arquitectura). Ruta: `/domains`; también enlazado desde el sidebar.
-- **ProjectList.tsx** — Lista de proyectos; cada proyecto puede tener varios repos. Muestra el ID del proyecto (MCP) en cada card, clic para copiar. Botón "Nuevo proyecto" → alta de proyecto. Botón **Dominios** → `/domains`.
+- **ProjectList.tsx** — Lista de proyectos en **cards** con barra de salud de ingesta (repos `ready`/total), badge de dominio si aplica, ID MCP. Títulos de página `text-4xl`. Ruta **`/projects`** (no `/`; la raíz redirige al dashboard). Botón **Dominios** → `/domains`.
 - **CreateProject.tsx** — Alta de proyecto (nombre y descripción opcionales). Tras crear redirige a `/projects/:id` donde se pueden añadir repos. Ruta: `/projects/new`.
 - **ProjectDetail.tsx** — Detalle de proyecto: nombre, descripción (editable), ID (MCP) con copiar y botón **Regenerar ID** (crea nuevo UUID sin perder datos), tabla de repos (columna **Rol (chat)** editable, persiste vía API para inferencia multi-root), acciones por repo.
 - **ProjectChat.tsx** — Chat a nivel proyecto: consulta el grafo de **todos** los repos. Con **varios repos**, opción **chat amplio** (`strictChatScope: false`) para evitar `[AMBIGUOUS_SCOPE]` cuando no hay scope ni inferencia por rol. Análisis de código (diagnóstico, duplicados, …) por repo con **selector de root** si hay varios repos, **alcance opcional** en análisis y badges **`reportMeta`**. AGENTS/SKILL a nivel proyecto. Ruta: `/projects/:id/chat`.
 
-## Repositorios
+## Repositorios (The Forge)
 
-- **RepoList.tsx** — Lista de todos los repositorios; acciones **Ver**, **Editar**, **Resync** (reindexación completa sin entrar al detalle), **Eliminar**.
+- **RepoList.tsx** — Lista de repositorios con **DataTable** (TanStack: ordenación y filtro global). Título de vista **The Forge**. Acciones **Ver**, **Editar**, **Resync**, **Eliminar** (sin cambiar API).
 - **ActiveJobsQueue.tsx** — Cola global de jobs de sync (`queued` / `running`) en todos los repos; `GET /repositories/jobs/active`, auto-refresh cada 5s. Ruta: `/jobs`.
 - **RepoDetail.tsx** — Detalle de un repo (sync, jobs, análisis).
 - **RepoChat.tsx** — Chat por repositorio + panel de análisis (diagnóstico, duplicados, reingeniería, código muerto, **seguridad** heurística, AGENTS, SKILL, Full Audit). **Alcance opcional** y badges de caché / foco vía `reportMeta`. Ruta: `/repos/:id/chat`.

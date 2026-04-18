@@ -75,7 +75,7 @@ export function DomainsList() {
           Gobierno de arquitectura C4: agrupa proyectos y colorea diagramas / whitelist entre dominios.
         </p>
         <Button variant="link" className="px-0 h-auto" asChild>
-          <Link to="/">← Volver a proyectos</Link>
+          <Link to="/projects">← Volver a proyectos</Link>
         </Button>
       </div>
 

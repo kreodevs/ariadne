@@ -1,19 +1,15 @@
 /**
- * Protege rutas exigiendo autenticación OTP (JWT válido).
+ * Protege rutas exigiendo autenticación OTP (JWT válido). Usar como ruta layout con `<Outlet />`.
  */
 import { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Outlet } from 'react-router-dom';
 import { getToken, isTokenExpired } from '../utils/auth';
 
-interface ProtectedRouteProps {
-  children: React.ReactNode;
-}
-
 /**
- * Envuelve children y exige token JWT válido. Redirige a /login si no hay sesión.
+ * Envuelve rutas hijas y exige token JWT válido. Redirige a /login si no hay sesión.
  * Solo pruebas e2e: `VITE_E2E_AUTH_BYPASS=true` (nunca en producción).
  */
-export function ProtectedRoute({ children }: ProtectedRouteProps) {
+export function ProtectedRoute() {
   const navigate = useNavigate();
   const [ready, setReady] = useState(false);
   const [authenticated, setAuthenticated] = useState(false);
@@ -58,5 +54,5 @@ export function ProtectedRoute({ children }: ProtectedRouteProps) {
     return null;
   }
 
-  return <>{children}</>;
+  return <Outlet />;
 }

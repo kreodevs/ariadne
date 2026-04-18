@@ -29,7 +29,7 @@ type SearchResult = {
 }
 
 const SHORTCUTS: Omit<SearchResult, "id">[] = [
-  { kind: "shortcut", label: "Proyectos", detail: "Lista multi-root", to: "/", icon: LayoutDashboard },
+  { kind: "shortcut", label: "Proyectos", detail: "Lista multi-root", to: "/projects", icon: LayoutDashboard },
   { kind: "shortcut", label: "Repositorios", detail: "Índice y sync", to: "/repos", icon: FolderGit2 },
   { kind: "shortcut", label: "Explorador de grafo", detail: "Componentes y dependencias", to: "/graph-explorer", icon: Share2 },
   { kind: "shortcut", label: "Credenciales", detail: "GitHub / Bitbucket", to: "/credentials", icon: Key },

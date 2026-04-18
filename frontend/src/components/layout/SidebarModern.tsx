@@ -30,6 +30,8 @@ export interface SidebarModernProps {
   defaultCollapsed?: boolean
   onCollapsedChange?: (collapsed: boolean) => void
   brand?: React.ReactNode
+  /** Ruta del logo (default /dashboard). */
+  brandHref?: string
   user?: { name: string; email: string; avatar?: string }
   className?: string
 }
@@ -43,6 +45,7 @@ export const SidebarModern = forwardRef<HTMLElement, SidebarModernProps>(
       defaultCollapsed = false,
       onCollapsedChange,
       brand,
+      brandHref = "/dashboard",
       user,
       className,
     },
@@ -82,7 +85,7 @@ export const SidebarModern = forwardRef<HTMLElement, SidebarModernProps>(
         )}
       >
         <div className="h-20 flex items-center px-6 mb-4 overflow-hidden shrink-0">
-          <Link to="/" className="flex items-center gap-3">
+          <Link to={brandHref} className="flex items-center gap-3">
             <div className="w-8 h-8 rounded-lg bg-[var(--primary)] flex items-center justify-center text-[var(--primary-foreground)] font-black text-xl shrink-0">
               A
             </div>

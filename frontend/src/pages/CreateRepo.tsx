@@ -444,7 +444,7 @@ export function CreateRepo() {
                 {submitting ? 'Creando...' : 'Crear'}
               </Button>
               <Button type="button" variant="outline" asChild>
-                <Link to="/">Cancelar</Link>
+                <Link to="/projects">Cancelar</Link>
               </Button>
             </div>
           </form>

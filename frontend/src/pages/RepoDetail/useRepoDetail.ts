@@ -205,7 +205,7 @@ export function useRepoDetail() {
     setDeleting(true);
     try {
       await api.deleteRepository(id);
-      navigate('/');
+      navigate('/projects');
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {

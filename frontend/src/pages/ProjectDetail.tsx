@@ -327,7 +327,7 @@ export function ProjectDetail() {
     setDeletingProject(true);
     try {
       await api.deleteProject(id);
-      navigate('/', { replace: true });
+      navigate('/projects', { replace: true });
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Error al eliminar');
     } finally {

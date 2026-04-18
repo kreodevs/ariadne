@@ -23,6 +23,17 @@ export type ComponentGraphNodeData = {
 
 export type ComponentGraphRFNode = Node<ComponentGraphNodeData, 'componentGraph'>;
 
+/** Borde izquierdo por tipo de nodo (Controlador, Ruta, DB, Modelo, …). */
+function kindAccentClass(kind: string): string {
+  const k = kind.toLowerCase();
+  if (k.includes('controller') || k.includes('route')) return 'border-l-sky-500';
+  if (k.includes('service') || k.includes('module') || k.includes('nest')) return 'border-l-violet-500';
+  if (k.includes('model') || k.includes('entity')) return 'border-l-emerald-500';
+  if (k.includes('db') || k.includes('database') || k.includes('redis')) return 'border-l-amber-500';
+  if (k.includes('hook') || k.includes('util')) return 'border-l-cyan-500';
+  return 'border-l-slate-500';
+}
+
 const roleCopy: Record<NodeFlowRole, { title: string; tone: string }> = {
   focal: { title: 'Foco', tone: 'text-[var(--primary)]' },
   dependency: { title: 'Dependencia', tone: 'text-sky-400 dark:text-sky-300' },
@@ -48,12 +59,15 @@ function GraphFlowNodeInner({ data, selected }: NodeProps<ComponentGraphRFNode>)
   const { label, kind, subtitle, isFocal, role, stats, expandable } = data;
   const rc = roleCopy[role];
 
+  const accent = kindAccentClass(kind);
+
   return (
     <div
       className={[
-        'rounded-xl border px-3 py-2.5 min-w-[168px] max-w-[260px] shadow-md transition-[box-shadow,transform]',
+        'rounded-xl border border-[var(--border)] border-l-[3px] px-3 py-2.5 min-w-[168px] max-w-[260px] shadow-md transition-[box-shadow,transform]',
+        accent,
         expandable ? 'cursor-pointer' : '',
-        'bg-[var(--card)] border-[var(--border)] text-[var(--foreground)]',
+        'bg-[var(--card)] text-[var(--foreground)]',
         isFocal
           ? 'ring-2 ring-[var(--primary)] ring-offset-2 ring-offset-[var(--background)] scale-[1.02]'
           : '',

@@ -57,7 +57,7 @@ export function Login() {
       const result = await verifyOtp(email.trim(), code.trim());
       if (result.valid && result.token) {
         setToken(result.token);
-        navigate('/', { replace: true });
+        navigate('/dashboard', { replace: true });
       } else {
         setError('Código incorrecto o expirado');
       }
@@ -77,7 +77,7 @@ export function Login() {
 
   const token = getToken();
   if (token && !isTokenExpired(token)) {
-    navigate('/', { replace: true });
+    navigate('/dashboard', { replace: true });
     return null;
   }
 

@@ -38,7 +38,7 @@ export function CreateProject() {
     <div className="space-y-6">
       <div className="flex items-center gap-2">
         <Button variant="ghost" size="sm" asChild>
-          <Link to="/">← Proyectos</Link>
+          <Link to="/projects">← Proyectos</Link>
         </Button>
       </div>
 
@@ -88,7 +88,7 @@ export function CreateProject() {
                 {loading ? 'Creando…' : 'Crear proyecto'}
               </Button>
               <Button type="button" variant="outline" asChild>
-                <Link to="/">Cancelar</Link>
+                <Link to="/projects">Cancelar</Link>
               </Button>
             </div>
           </form>

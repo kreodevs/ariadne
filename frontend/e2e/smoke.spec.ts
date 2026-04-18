@@ -23,16 +23,33 @@ test.beforeEach(async ({ page }) => {
       body: JSON.stringify([]),
     });
   });
+  await page.route('**/api/domains**', (route) => {
+    if (route.request().method() !== 'GET') {
+      void route.continue();
+      return;
+    }
+    void route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify([]),
+    });
+  });
 });
 
 test.describe('smoke (auth bypass + API mock)', () => {
-  test('muestra Proyectos en /', async ({ page }) => {
+  test('redirige / a /dashboard', async ({ page }) => {
     await page.goto('/');
+    await expect(page).toHaveURL(/\/dashboard$/);
+    await expect(page.getByRole('heading', { name: 'Dashboard' })).toBeVisible();
+  });
+
+  test('muestra Proyectos en /projects', async ({ page }) => {
+    await page.goto('/projects');
     await expect(page.getByRole('heading', { name: 'Proyectos' })).toBeVisible();
   });
 
-  test('muestra Repositorios en /repos', async ({ page }) => {
+  test('muestra The Forge en /repos', async ({ page }) => {
     await page.goto('/repos');
-    await expect(page.getByRole('heading', { name: 'Repositorios' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'The Forge' })).toBeVisible();
   });
 });

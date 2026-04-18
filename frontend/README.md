@@ -7,8 +7,8 @@ Proyecto en la raíz del repo (`frontend/`), independiente de `services/`. UI pa
 - Componentes, páginas y utilidades documentados con **JSDoc**.
 - `src/api.ts` — cliente API para Ingest.
 - `src/types.ts` — tipos e interfaces.
-- `src/components/` — Layout (Kreo AppLayout + SidebarModern), StatusBadge, Kreo UI (Button, Card, Input, Select, Badge, Alert, Skeleton, Table, Dialog).
-- `src/pages/` — Listado de **proyectos**, **ProjectDetail** (General + **Arquitectura**: dominio, whitelist, `C4Previewer`), **DomainsList**, RepoList, RepoDetail, RepoChat, RepoIndex, CreateRepo, EditRepo, CredentialsList, CreateCredential, EditCredential, **Ayuda**.
+- `src/components/` — **Layout** (sidenav colapsable, **AppShellHeader**: breadcrumbs + búsqueda + selector de workspace), `SidebarModern`, **DataTable** (TanStack Table), StatusBadge, UI Shadcn (Button, Card, Input, Select, Badge, Alert, Skeleton, Table, Dialog).
+- `src/pages/` — **Dashboard** (`/dashboard`), listado de **proyectos** (`/`), **C4ViewerPage** (`/c4`), **ProjectDetail** (General + **Arquitectura** con `C4Previewer`), **DomainsList**, **RepoList** (The Forge, tabla filtrable), RepoDetail, RepoChat, RepoIndex, CreateRepo, EditRepo, CredentialsList, CreateCredential, EditCredential, **Ayuda**.
 - **Tests:** `pnpm run test:unit` (Vitest), `pnpm run test:e2e` (Playwright; instalar Chromium con `pnpm exec playwright install chromium`). Ver `docs/notebooklm/TESTING.md` y `e2e/smoke.spec.ts`.
 
 ## Stack
@@ -16,7 +16,7 @@ Proyecto en la raíz del repo (`frontend/`), independiente de `services/`. UI pa
 - React 19 + TypeScript + Vite
 - React Router
 - Tailwind CSS
-- Kreo UI (tema corporate/luxury: Card, Button, Table, Input, Select, Badge, Alert, Skeleton, Dialog, SidebarModern)
+- Tema **Slate + acento azul** (`src/styles/vars.css`), tipografía Inter; Shadcn-style components; TanStack Table en listados densos.
 
 ## Configuración
 
@@ -32,7 +32,10 @@ Proyecto en la raíz del repo (`frontend/`), independiente de `services/`. UI pa
 ## Rutas
 
 - `/login` — Login con OTP: email → código de 6 dígitos.
-- `/` — Listado de proyectos (`GET /projects`).
+- `/` — Redirige a `/dashboard`.
+- `/dashboard` — Resumen KPI (proyectos, repos, dominios, salud de ingesta) desde `GET /projects`, `GET /repositories`, `GET /domains`.
+- `/projects` — Listado de proyectos (`GET /projects`).
+- `/c4` — Visor C4 dedicado: selector de proyecto + `C4Previewer` en layout split (diagrama + DSL).
 - `/domains` — CRUD de **dominios** de arquitectura (`GET/POST /domains` vía API → ingest).
 - `/projects/:id` — Detalle del proyecto: pestaña **General** (repos, roles, sync) y **Arquitectura** (asignación a dominio, dependencias cruzadas, diagrama C4 con Kroki y modo shadow opcional).
 - `/repos/new` — Formulario de alta (`POST /repositories`). Provider → Credencial → Workspace/Owner → Proyecto (select) → Repo slug (editable) → Branch (select) → Webhook secret (Bitbucket, opcional). Carga workspaces, repos y branches desde la API con credencial.

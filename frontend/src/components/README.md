@@ -26,5 +26,5 @@ Componentes basados en el registro Kreo con tema corporate/luxury (negro, carbó
 
 - **MarkdownBlock** — Renderiza markdown con ReactMarkdown + remarkGfm (tablas, encabezados). Usado en diagnósticos y reingeniería.
 - **StatusBadge** — Badge de estado para jobs/repos (pending, running, completed, error).
-- **ProtectedRoute** — Wrapper para rutas que requieren autenticación.
+- **ProtectedRoute** — Layout de ruta que renderiza `<Outlet />` cuando hay JWT válido (e2e: `VITE_E2E_AUTH_BYPASS=true`).
 - **DocViewer** — Visor de documentación markdown.
