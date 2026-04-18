@@ -135,6 +135,10 @@ function parseGraphNodeCell(cell: unknown): GraphNodeDto | null {
     props = { ...o };
     delete props.labels;
     delete props.label;
+    const nested = o.properties;
+    if (nested != null && typeof nested === 'object' && !Array.isArray(nested)) {
+      Object.assign(props, nested as Record<string, unknown>);
+    }
   } else {
     return null;
   }
@@ -207,6 +211,38 @@ function addGraphEdge(
   edges.push({ source, target, kind });
 }
 
+/**
+ * Falkor a veces devuelve `headers: []` y cada fila como `{ c: node, dependency: node }` o envuelta en `[[{...}]]`.
+ * Sin esto, el código asumía `[a,b]` posicional y `arr[1]` quedaba undefined → sin aristas en getComponentGraph.
+ */
+function extractFalkorTwoColumnRow(
+  row: unknown,
+  colA: string,
+  colB: string,
+  headers: string[],
+): [unknown, unknown] {
+  const ia = headers.length ? headers.indexOf(colA) : -1;
+  const ib = headers.length ? headers.indexOf(colB) : -1;
+  let r: unknown = row;
+  if (Array.isArray(r) && r.length === 1) {
+    const only = r[0];
+    if (only != null && typeof only === 'object' && !Array.isArray(only)) {
+      const o = only as Record<string, unknown>;
+      if (colA in o || colB in o) r = only;
+    }
+  }
+  if (r != null && typeof r === 'object' && !Array.isArray(r)) {
+    const o = r as Record<string, unknown>;
+    if (colA in o || colB in o) {
+      return [o[colA], o[colB]];
+    }
+  }
+  const arr = Array.isArray(r) ? r : [r];
+  const a = ia >= 0 ? arr[ia] : arr[0];
+  const b = ib >= 0 ? arr[ib] : arr[1];
+  return [a, b];
+}
+
 @Injectable()
 export class GraphService {
   constructor(
@@ -245,15 +281,11 @@ export class GraphService {
 
   private mapImpactQueryRows(result: FalkorResult): { name: unknown; labels: unknown }[] {
     const data = result.data ?? [];
-    const headers = result.headers ?? ['name', 'labels'];
-    const nameIdx = headers.indexOf('name');
-    const labelsIdx = headers.indexOf('labels');
+    const headers =
+      result.headers && result.headers.length ? result.headers : ['name', 'labels'];
     return data.map((row: unknown) => {
-      const arr = Array.isArray(row) ? row : [row];
-      return {
-        name: nameIdx >= 0 ? arr[nameIdx] : arr[0],
-        labels: labelsIdx >= 0 ? arr[labelsIdx] : arr[1],
-      };
+      const [name, labels] = extractFalkorTwoColumnRow(row, 'name', 'labels', headers);
+      return { name, labels };
     });
   }
 
@@ -299,14 +331,13 @@ export class GraphService {
       ...(hookRows.data ?? []),
       ...(importsRows.data ?? []),
     ];
-    const headers = rendersRows.headers ?? ['c', 'dependency'];
-    const cIdx = headers.indexOf('c');
-    const depIdx = headers.indexOf('dependency');
+    const headers =
+      rendersRows.headers && rendersRows.headers.length
+        ? rendersRows.headers
+        : ['c', 'dependency'];
 
     for (const row of data as unknown[]) {
-      const arr = Array.isArray(row) ? row : [row];
-      const centerCell = cIdx >= 0 && arr[cIdx] != null ? arr[cIdx] : arr[0];
-      const dep = depIdx >= 0 && arr[depIdx] != null ? arr[depIdx] : arr[1];
+      const [centerCell, dep] = extractFalkorTwoColumnRow(row, 'c', 'dependency', headers);
       const centerNode = parseGraphNodeCell(centerCell);
       if (centerNode) {
         accum.nodes.set(centerNode.id, centerNode);
@@ -345,13 +376,10 @@ export class GraphService {
       ? `MATCH (parent:Component {projectId: $projectId})-[:RENDERS]->(c:Component {name: $componentName, projectId: $projectId}) WHERE parent.projectId = $projectId AND c.projectId = $projectId RETURN parent, c`
       : `MATCH (parent:Component)-[:RENDERS]->(c:Component {name: $componentName}) RETURN parent, c`;
     const parentRes = (await graph.query(parentQ, { params: parentParams })) as FalkorResult;
-    const ph = parentRes.headers ?? ['parent', 'c'];
-    const pIdx = ph.indexOf('parent');
-    const cIdxParent = ph.indexOf('c');
+    const ph =
+      parentRes.headers && parentRes.headers.length ? parentRes.headers : ['parent', 'c'];
     for (const row of parentRes.data ?? []) {
-      const arr = Array.isArray(row) ? row : [row];
-      const parentCell = pIdx >= 0 && arr[pIdx] != null ? arr[pIdx] : arr[0];
-      const focalCell = cIdxParent >= 0 && arr[cIdxParent] != null ? arr[cIdxParent] : arr[1];
+      const [parentCell, focalCell] = extractFalkorTwoColumnRow(row, 'parent', 'c', ph);
       const pr = parseGraphNodeCell(parentCell);
       const focal = parseGraphNodeCell(focalCell);
       if (!pr || !focal) continue;

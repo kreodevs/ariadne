@@ -65,8 +65,8 @@ export class CacheService implements OnModuleDestroy {
   componentKey(name: string, depth: number, projectId?: string, scopePath?: string): string {
     const tail = scopePath ? `:${encodeURIComponent(scopePath).slice(0, 200)}` : '';
     return projectId
-      ? `component:${projectId}:${name}:${depth}${tail}`
-      : `component:${name}:${depth}${tail}`;
+      ? `component:v3:${projectId}:${name}:${depth}${tail}`
+      : `component:v3:${name}:${depth}${tail}`;
   }
 
   /** Genera la clave de cache para contrato (props) de un componente. */
