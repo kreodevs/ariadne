@@ -7,6 +7,7 @@
 | Doc | Descripción |
 |-----|-------------|
 | **INSTALACION_MCP_CURSOR.md** | Instalación del MCP para Cursor (esta carpeta). |
+| **MCP_HTTPS.md** | Cliente HTTP(S) al MCP (Streamable HTTP, auth `MCP_AUTH_TOKEN`, nota API Nest en el servidor). |
 | **MCP_AYUDA.md** | Ayuda resumida MCP (esta carpeta); copia al frontend como `ayuda-mcp.md`. |
 | **../manual/README.md** | Manual de uso y validación (carpeta `docs/manual/`). |
 | **../manual/CONFIGURACION_Y_USO.md** | Configuración detallada (`docs/manual/`). |
@@ -19,7 +20,7 @@
 | **indexing_engine.md** | Pipeline de indexación (esta carpeta). |
 | **ingestion_flow.md** | Flujo de ingesta masiva (esta carpeta). |
 | **db_schema.md** | Grafo FalkorDB (nodos, relaciones) y tablas PostgreSQL (dominios, dependencias). |
-| **mcp_server_specs.md** | Especificación del servidor MCP (esta carpeta). |
+| **mcp_server_specs.md** | Especificación del servidor MCP: herramientas, API Nest (`/api/graph/*` + JWT), fallback Falkor (esta carpeta). |
 
 ## Funcionalidades
 

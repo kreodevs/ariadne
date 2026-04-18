@@ -2,6 +2,11 @@
 
 Guía para **implementar llamadas HTTP/HTTPS** desde una aplicación al servidor MCP AriadneSpecs. El MCP usa el protocolo **Streamable HTTP** (JSON-RPC 2.0 sobre POST). Esta documentación describe el contrato que debe implementar el cliente.
 
+**Importante (dos redes distintas):**
+
+1. **Tu app → MCP** (`POST https://<host>/mcp`): autenticación opcional con **`MCP_AUTH_TOKEN`** en el servidor MCP (`Authorization: Bearer` o `X-M2M-Token`). Eso solo protege el endpoint MCP.
+2. **MCP → API Nest** (`ARIADNE_API_URL`, típ. `https://<host-api>` con prefijo `/api`): el **proceso** del servidor MCP, si tiene configurado **`ARIADNE_API_BEARER`** / **`ARIADNE_API_JWT`**, llama a `GET /api/graph/component`, `/api/graph/impact`, `/api/graph/c4-model`, etc. Ese JWT es **OTP del API Nest**; no lo envía el cliente HTTP del MCP salvo que operes el mismo binario con otra app. Si el MCP no tiene token válido hacia Nest, herramientas como `get_component_graph` / `get_legacy_impact` hacen **fallback Falkor** (resultado puede no coincidir con el explorador). Ver [mcp_server_specs.md](mcp_server_specs.md) § API Nest vs Falkor.
+
 ---
 
 ## 1. Endpoint y método
@@ -43,13 +48,21 @@ Accept: application/json, text/event-stream
 MCP-Protocol-Version: 2025-03-26
 ```
 
-Si el servidor tiene `MCP_AUTH_TOKEN` configurado:
+### 3.1 Auth del endpoint MCP (cliente → servidor)
+
+Si el despliegue define **`MCP_AUTH_TOKEN`**, cada petición al **path `/mcp`** debe incluir ese token (no confundir con el JWT del API Nest):
 
 ```
-Authorization: Bearer <token>
+Authorization: Bearer <MCP_AUTH_TOKEN>
 ```
 
-Alternativa de auth: `X-M2M-Token: <token>`
+Alternativa equivalente: `X-M2M-Token: <MCP_AUTH_TOKEN>`.
+
+Sin `MCP_AUTH_TOKEN` en el servidor, el MCP acepta peticiones sin `Authorization`.
+
+### 3.2 API Nest (solo entorno del proceso MCP)
+
+Variables típicas en el **mismo** host/contenedor que ejecuta el MCP: **`ARIADNE_API_URL`** (default `http://localhost:3000`), **`ARIADNE_API_BEARER`** o **`ARIADNE_API_JWT`**. El cliente HTTPS que documenta este archivo **no** las envía: las lee solo el servidor MCP al hacer `fetch` interno a `/api/graph/*`. Para paridad con el explorador, el operador debe configurarlas en el despliegue.
 
 ---
 
@@ -117,7 +130,7 @@ Obtener la lista de herramientas disponibles y sus esquemas.
       },
       {
         "name": "get_legacy_impact",
-        "description": "Analiza qué componentes o funciones se verían afectados...",
+        "description": "Dependientes del nodo; preferencia API Nest GET /api/graph/impact; fallback Falkor...",
         "inputSchema": {
           "type": "object",
           "properties": {
@@ -199,12 +212,15 @@ Si hay error en la ejecución de la herramienta:
 
 Los nombres de argumentos deben coincidir con el esquema devuelto por `tools/list` (ver [mcp_server_specs.md](mcp_server_specs.md) para descripción funcional).
 
+**Grafo vía API Nest:** `get_component_graph`, `get_legacy_impact` y `get_c4_model` intentan primero el API Nest (`GraphService`) si el proceso MCP tiene JWT hacia `ARIADNE_API_URL`; el Markdown indica fuente o fallback. No es configurable por cabecera desde el cliente HTTP del §1.
+
 | Herramienta                     | Argumentos requeridos   | Argumentos opcionales                                                                 |
 | ------------------------------- | ----------------------- | ------------------------------------------------------------------------------------- |
 | `list_known_projects`           | —                       | —                                                                                     |
 | `get_legacy_impact`             | `nodeName`              | `projectId`, `currentFilePath`                                                       |
 | `get_contract_specs`            | `componentName`         | `projectId`, `currentFilePath`                                                       |
 | `get_component_graph`           | `componentName`         | `depth`, `projectId`, `currentFilePath`                                                |
+| `get_c4_model`                  | `projectId`             | — (requiere API Nest + JWT en el servidor MCP)                                        |
 | `get_file_content`              | `path` + (`projectId` **o** `currentFilePath`) | `ref`                                                                              |
 | `semantic_search`             | `query`; con sharding también **`projectId`** | `limit`; **`projectId`** opcional sin sharding (acota al UUID proyecto o `roots[].id`). **No** admite `scope` ni `currentFilePath`. |
 | `validate_before_edit`        | `nodeName`              | `projectId`, `currentFilePath`                                                       |
@@ -239,7 +255,7 @@ Si el servidor MCP corre con **partición por proyecto** en FalkorDB (un grafo l
 - Con sharding activo no hay búsqueda multi-shard genérica: **`find_similar_implementations`** exige **`projectId`** o **`currentFilePath`** (inferencia con ingest/shards).
 - Detalle técnico: el MCP abre el grafo con `graphNameForProject(projectId)`; si hace falta inferir el proyecto desde path con sharding, puede barrer candidatos obtenidos del ingest (`/projects`, `/repositories`).
 
-La API REST Nest (`GET /api/graph/*`) también acepta query **`projectId`** cuando el índice está partido; ver despliegue (compose / env).
+La API REST Nest (`GET /api/graph/*`) acepta query **`projectId`** (y en algunos endpoints **`scopePath`**) para caché y selección de shard; el middleware OTP exige **`Authorization: Bearer`** salvo rutas públicas (`/api/health`, OpenAPI, OTP). El MCP reenvía el JWT configurado en **`ARIADNE_API_BEARER`** / **`ARIADNE_API_JWT`**.
 
 ---
 
@@ -249,7 +265,8 @@ La API REST Nest (`GET /api/graph/*`) también acepta query **`projectId`** cuan
 
 ```typescript
 const MCP_URL = "https://ariadne.kreoint.mx/mcp";
-const AUTH_TOKEN = process.env.MCP_AUTH_TOKEN; // opcional
+/** Token para el endpoint `/mcp` (MCP_AUTH_TOKEN en el servidor). No es el JWT del API Nest. */
+const MCP_CLIENT_TOKEN = process.env.MCP_AUTH_TOKEN;
 
 async function callMcpTool(name: string, args: Record<string, unknown>) {
   const res = await fetch(MCP_URL, {
@@ -258,7 +275,7 @@ async function callMcpTool(name: string, args: Record<string, unknown>) {
       "Content-Type": "application/json",
       Accept: "application/json, text/event-stream",
       "MCP-Protocol-Version": "2025-03-26",
-      ...(AUTH_TOKEN && { Authorization: `Bearer ${AUTH_TOKEN}` }),
+      ...(MCP_CLIENT_TOKEN && { Authorization: `Bearer ${MCP_CLIENT_TOKEN}` }),
     },
     body: JSON.stringify({
       jsonrpc: "2.0",
@@ -332,7 +349,7 @@ function extractToolResult(response: {
 | 200    | OK — Respuesta JSON-RPC en body                                           |
 | 202    | Accepted — Notificación aceptada (sin body)                               |
 | 400    | Bad Request — JSON malformado o método inválido                           |
-| 401    | Unauthorized — Falta o token incorrecto (si MCP_AUTH_TOKEN está definido) |
+| 401    | Unauthorized — Falta o token incorrecto hacia **`/mcp`** (si `MCP_AUTH_TOKEN` está definido en el servidor). Los fallos de JWT hacia el API Nest suelen devolver **200** con Markdown de error o fallback en el `result` de la tool, no necesariamente HTTP 401 al cliente MCP. |
 | 404    | Not Found — Ruta incorrecta (verificar que sea `/mcp`)                    |
 | 500    | Internal Server Error — Error del servidor                                |
 
@@ -363,6 +380,6 @@ Estos datos **no están siempre en el grafo** (Prisma no se indexa; .env nunca).
 
 ## 12. Referencias
 
-- [Especificación MCP — Herramientas](mcp_server_specs.md) — Lista completa de herramientas y descripción.
+- [Especificación MCP — Herramientas](mcp_server_specs.md) — Lista completa, API Nest vs Falkor, `get_c4_model`.
 - [Transports — Streamable HTTP](https://modelcontextprotocol.io/docs/concepts/transports#streamable-http) — Protocolo oficial.
 - [Monorepos y limitaciones](MONOREPO_Y_LIMITACIONES_INDEXADO.md) — Prisma, scope, path aliases.
