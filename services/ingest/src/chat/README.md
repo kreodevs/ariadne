@@ -93,6 +93,24 @@ Añade tus prefijos según la estructura de tu repo.
 
 - Orquesta diagnóstico + duplicados → plan priorizado (documentar, refactorizar, estándares, pruebas)
 
+## MDD (`mdd-document.builder` / The Forge)
+
+Volcado **casi completo** por defecto (OpenAPI ops, Model, NestService, `evidence_paths`, texto de consulta en `summary`). Acota con env si Falkor o el payload JSON son demasiado grandes:
+
+| Variable | Uso |
+|----------|-----|
+| `MDD_MAX_OPENAPI_OPERATIONS` | Límite Cypher `OpenApiOperation` (default 100000) |
+| `MDD_MAX_NEST_CONTROLLERS` | `NestController` fallback AST (default 10000) |
+| `MDD_MAX_MODELS` | Nodos `Model` (default 50000) |
+| `MDD_MAX_NEST_SERVICES` | `NestService` en business_logic (default 20000) |
+| `MDD_MAX_EVIDENCE_PATHS` | Recorte final de `evidence_paths` (default 50000) |
+| `MDD_SUMMARY_MESSAGE_CHARS` | Prefijo de consulta en `summary` (default 16000) |
+| `MDD_MAX_OPENAPI_FILE_CANDIDATES` | Ficheros `File` con `openApiTruth` (default 25) |
+| `MDD_FALLBACK_GRAPH_FILE_PATHS` | Muestra de paths File si el retriever va vacío (default 2000) |
+| `MDD_FALLBACK_FILE_SNIPPET_CHARS` | Lectura de manifiestos en fallback (default 100000) |
+
+Implementación: `mdd-limits.ts`.
+
 ## Seguridad (mode=seguridad)
 
 - Reutiliza el escaneo heurístico de `FULL_AUDIT_SECRET_PATTERNS` sobre una muestra ampliada de archivos `.ts/.tsx/.js/.json/.env` del índice → `details.leakedSecrets` + informe markdown vía LLM.

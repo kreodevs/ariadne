@@ -19,6 +19,7 @@ import {
   ingestProjectExists,
   toAbsoluteIdePath,
 } from "./mcp-scope-enrichment.js";
+import { mcpLimits } from "./mcp-tool-limits.js";
 
 const MCP_PATH = "/mcp";
 
@@ -323,7 +324,7 @@ function createMcpServer(): Server {
         properties: {
           query: { type: "string", description: "Términos de búsqueda (ej. login, form, auth)" },
           projectId: { type: "string", description: "ID del proyecto (opcional, limita el ámbito)" },
-          limit: { type: "number", description: "Máximo de resultados (default 15)" },
+          limit: { type: "number", description: "Máximo de resultados (default env MCP_SEMANTIC_SEARCH_DEFAULT o 200; tope MCP_SEMANTIC_SEARCH_MAX)" },
         },
         required: ["query"],
         additionalProperties: false,
@@ -1538,7 +1539,7 @@ async function fetchFileFromIngest(
   if (name === "semantic_search") {
     const query = ((args?.query as string) ?? "").trim();
     const projectId = args?.projectId as string | undefined;
-    const limit = Math.min(50, Math.max(1, (args?.limit as number) ?? 15));
+    const limit = Math.min(mcpLimits.semanticSearchMax, Math.max(1, (args?.limit as number) ?? mcpLimits.semanticSearchDefault));
     if (!query) {
       return {
         content: [{ type: "text", text: "**Error:** El parámetro `query` es requerido." }],
@@ -1571,7 +1572,7 @@ async function fetchFileFromIngest(
         const valid = Array.isArray(embedding) && embedding.every((v) => typeof v === "number" && Number.isFinite(v));
         if (valid && embedding!.length > 0) {
           const vecStr = `[${embedding!.join(",")}]`;
-          const k = Math.min(Math.max(limit, 20), 100);
+          const k = Math.min(Math.max(limit, 20), mcpLimits.semanticVectorKMax);
           const funcVecQ = `CALL db.idx.vector.queryNodes('Function', '${vecProp}', ${k}, vecf32(${vecStr})) YIELD node, score RETURN node.name AS name, node.path AS path, node.projectId AS projectId, score`;
           const compVecQ = `CALL db.idx.vector.queryNodes('Component', '${vecProp}', ${k}, vecf32(${vecStr})) YIELD node, score RETURN node.name AS name, node.projectId AS projectId, score`;
           const docVecQ = `CALL db.idx.vector.queryNodes('Document', '${vecProp}', ${k}, vecf32(${vecStr})) YIELD node, score RETURN node.path AS path, node.heading AS heading, node.chunkIndex AS chunkIndex, node.projectId AS projectId, score`;
@@ -1680,16 +1681,17 @@ async function fetchFileFromIngest(
     const countAfterVector = results.length;
     /** Vector puede ejecutarse pero devolver 0 filas (proyecto, índice vacío o filtro projectId). */
     if (!usedVector || results.length === 0) {
+      const kwLim = mcpLimits.semanticKeywordSubqueryLimit;
       const projFilter = projectId ? " WHERE n.projectId = $projectId" : "";
-      const compQ = `MATCH (n:Component)${projFilter} RETURN n.name AS name LIMIT 100`;
-      const funcQ = `MATCH (n:Function)${projFilter} RETURN n.name AS name, n.path AS path LIMIT 100`;
-      const fileQ = `MATCH (n:File)${projFilter} RETURN n.path AS path LIMIT 100`;
-      const modelQ = `MATCH (n:Model)${projFilter} RETURN n.name AS name, n.path AS path LIMIT 100`;
-      const nestQ = `MATCH (n) WHERE n:NestController OR n:NestService OR n:NestModule${projectId ? " AND n.projectId = $projectId" : ""} RETURN labels(n)[0] AS typ, n.name AS name, n.path AS path, n.route AS route LIMIT 100`;
-      const routeQ = `MATCH (n:Route)${projFilter} RETURN n.path AS path, n.componentName AS componentName LIMIT 100`;
-      const domainQ = `MATCH (n:DomainConcept)${projFilter} RETURN n.name AS name, n.category AS category LIMIT 100`;
-      const sbQ = `MATCH (n:StorybookDoc)${projFilter} RETURN n.title AS title, n.sourcePath AS path LIMIT 100`;
-      const mdQ = `MATCH (n:MarkdownDoc)${projFilter} RETURN n.title AS title, n.sourcePath AS path LIMIT 100`;
+      const compQ = `MATCH (n:Component)${projFilter} RETURN n.name AS name LIMIT ${kwLim}`;
+      const funcQ = `MATCH (n:Function)${projFilter} RETURN n.name AS name, n.path AS path LIMIT ${kwLim}`;
+      const fileQ = `MATCH (n:File)${projFilter} RETURN n.path AS path LIMIT ${kwLim}`;
+      const modelQ = `MATCH (n:Model)${projFilter} RETURN n.name AS name, n.path AS path LIMIT ${kwLim}`;
+      const nestQ = `MATCH (n) WHERE n:NestController OR n:NestService OR n:NestModule${projectId ? " AND n.projectId = $projectId" : ""} RETURN labels(n)[0] AS typ, n.name AS name, n.path AS path, n.route AS route LIMIT ${kwLim}`;
+      const routeQ = `MATCH (n:Route)${projFilter} RETURN n.path AS path, n.componentName AS componentName LIMIT ${kwLim}`;
+      const domainQ = `MATCH (n:DomainConcept)${projFilter} RETURN n.name AS name, n.category AS category LIMIT ${kwLim}`;
+      const sbQ = `MATCH (n:StorybookDoc)${projFilter} RETURN n.title AS title, n.sourcePath AS path LIMIT ${kwLim}`;
+      const mdQ = `MATCH (n:MarkdownDoc)${projFilter} RETURN n.title AS title, n.sourcePath AS path LIMIT ${kwLim}`;
       const mergeRows = async (q: string) => {
         const rows: unknown[] = [];
         await runOnProjectGraphs(projectId, async (g, ctx) => {
@@ -1833,7 +1835,7 @@ async function fetchFileFromIngest(
       }
       const data = (await res.json()) as any;
       const statusIcon = data.status === "up_to_date" ? "✅" : data.status === "syncing" ? "⏳" : "⚠️";
-      const text = `${statusIcon} **Estatus:** \`${data.status}\`\n- **Última Sincronización:** ${data.lastSync ? new Date(data.lastSync).toLocaleString() : "Nunca"}\n\n**Jobs Recientes:**\n${(data.details || []).slice(0, 5).map((j: any) => `- [${j.type}] ${j.status === "completed" ? "✅" : "❌"} (${new Date(j.createdAt).toLocaleDateString()})`).join("\n")}`;
+      const text = `${statusIcon} **Estatus:** \`${data.status}\`\n- **Última Sincronización:** ${data.lastSync ? new Date(data.lastSync).toLocaleString() : "Nunca"}\n\n**Jobs Recientes:**\n${(data.details || []).slice(0, mcpLimits.syncStatusRecentJobsMax).map((j: any) => `- [${j.type}] ${j.status === "completed" ? "✅" : "❌"} (${new Date(j.createdAt).toLocaleDateString()})`).join("\n")}`;
       
       await cache.set(cacheKey, text, 30);
       return { content: [{ type: "text", text: `### Estado de Sincronización\n\n${text}` }] };
@@ -1859,7 +1861,7 @@ async function fetchFileFromIngest(
         WITH n, size((n)-[:CALLS]->()) AS outDegree, size((n)<-[:CALLS]-()) AS inDegree
         WHERE outDegree = 0 AND inDegree = 0
         RETURN n.name AS nodeName, n.path AS filePath
-        LIMIT 50
+        LIMIT ${mcpLimits.debtReportIsolatedLimit}
       `;
       const res = await graph.query(q, { params: { projectId } });
       const isolated = res.data as Array<Record<string, any>> || [];
@@ -1888,7 +1890,7 @@ async function fetchFileFromIngest(
         WITH f.contentHash AS cHash, collect(f.path) AS files, count(f) AS count
         WHERE count > 1
         RETURN cHash, files, count
-        ORDER BY count DESC LIMIT 10
+        ORDER BY count DESC LIMIT ${mcpLimits.findDuplicatesGroupLimit}
       `;
       const res = await graph.query(q, { params: { projectId } });
       const duplicates = res.data as Array<Record<string, any>> || [];
@@ -2160,7 +2162,7 @@ async function fetchFileFromIngest(
     const funcParams: Record<string, string> = { nodeName: resolvedName };
     if (projectId) funcParams.projectId = projectId;
     const funcProjFilter = projectId ? " AND f.projectId = $projectId" : "";
-    const funcQ = `MATCH (f:Function) WHERE f.name = $nodeName${funcProjFilter} RETURN f.path AS path, f.description AS description, f.endpointCalls AS endpointCalls LIMIT 5`;
+    const funcQ = `MATCH (f:Function) WHERE f.name = $nodeName${funcProjFilter} RETURN f.path AS path, f.description AS description, f.endpointCalls AS endpointCalls LIMIT ${mcpLimits.implementationFunctionsLimit}`;
     const funcRes = (await graph.query(funcQ, { params: funcParams })) as { data?: unknown[][] };
     const funcData = asObjRows(funcRes.data);
     const lines: string[] = [
@@ -2209,7 +2211,7 @@ async function fetchFileFromIngest(
         const endpointStr = endpointCalls.length
           ? ` — endpoints: ${endpointCalls.map((e) => `${e.method}${e.line ? `:L${e.line}` : ""}`).join(", ")}`
           : "";
-        lines.push(`- **${path ?? "(sin path)"}**${description ? ` — ${String(description).slice(0, 60)}` : ""}${endpointStr}`);
+        lines.push(`- **${path ?? "(sin path)"}**${description ? ` — ${String(description).slice(0, mcpLimits.implementationInlineDescChars)}` : ""}${endpointStr}`);
       }
     }
     lines.push("", "---", "**Antes de editar:** usa las props/firmas reales del grafo y considera el impacto en los dependientes.");
@@ -2234,10 +2236,11 @@ async function fetchFileFromIngest(
     // Cargamos config local para resolución de paths
     const config = loadAriadneProjectConfig();
 
-    const compQ = `MATCH (f:File)-[:CONTAINS]->(n:Component {name: $symbolName${compProj}}) RETURN f.path AS path, n.name AS name, 'Component' AS kind, n.repoId AS repoId LIMIT 5`;
-    const compFallbackQ = `MATCH (n:Component {name: $symbolName}) WHERE 1=1${compProjWhere} OPTIONAL MATCH (f:File)-[:CONTAINS]->(n) WITH coalesce(f.path, '(sin path)') AS path, n.name AS name, n.repoId AS repoId RETURN path, name, 'Component' AS kind, repoId LIMIT 5`;
-    const funcQ = `MATCH (n:Function) WHERE n.name = $symbolName${projFilter} RETURN n.path AS path, n.name AS name, n.startLine AS startLine, n.endLine AS endLine, 'Function' AS kind, n.repoId AS repoId LIMIT 5`;
-    const modelQ = `MATCH (n:Model) WHERE n.name = $symbolName${projFilter} RETURN n.path AS path, n.name AS name, 'Model' AS kind, n.repoId AS repoId LIMIT 5`;
+    const defLim = mcpLimits.definitionsPerKindLimit;
+    const compQ = `MATCH (f:File)-[:CONTAINS]->(n:Component {name: $symbolName${compProj}}) RETURN f.path AS path, n.name AS name, 'Component' AS kind, n.repoId AS repoId LIMIT ${defLim}`;
+    const compFallbackQ = `MATCH (n:Component {name: $symbolName}) WHERE 1=1${compProjWhere} OPTIONAL MATCH (f:File)-[:CONTAINS]->(n) WITH coalesce(f.path, '(sin path)') AS path, n.name AS name, n.repoId AS repoId RETURN path, name, 'Component' AS kind, repoId LIMIT ${defLim}`;
+    const funcQ = `MATCH (n:Function) WHERE n.name = $symbolName${projFilter} RETURN n.path AS path, n.name AS name, n.startLine AS startLine, n.endLine AS endLine, 'Function' AS kind, n.repoId AS repoId LIMIT ${defLim}`;
+    const modelQ = `MATCH (n:Model) WHERE n.name = $symbolName${projFilter} RETURN n.path AS path, n.name AS name, 'Model' AS kind, n.repoId AS repoId LIMIT ${defLim}`;
     
     const [compRes, funcRes, modelRes] = await Promise.all([
       graph.query(compQ, { params }) as Promise<{ data?: unknown[][] }>,
@@ -2359,7 +2362,7 @@ async function fetchFileFromIngest(
     if (projectId) params.projectId = projectId;
     const propsQ = `MATCH (c:Component {name: $symbolName${matchProj}})-[:HAS_PROP]->(p:Prop) RETURN p.name AS name, p.required AS required`;
     const descQ = `MATCH (c:Component {name: $symbolName${matchProj}}) RETURN c.description AS description`;
-    const funcQ = `MATCH (f:Function) WHERE f.name = $symbolName${projectId ? " AND f.projectId = $projectId" : ""} RETURN f.path AS path, f.description AS description, f.startLine AS startLine, f.endLine AS endLine, f.complexity AS complexity, f.endpointCalls AS endpointCalls LIMIT 3`;
+    const funcQ = `MATCH (f:Function) WHERE f.name = $symbolName${projectId ? " AND f.projectId = $projectId" : ""} RETURN f.path AS path, f.description AS description, f.startLine AS startLine, f.endLine AS endLine, f.complexity AS complexity, f.endpointCalls AS endpointCalls LIMIT ${mcpLimits.implementationFunctionsLimit}`;
     const [propsRes, descRes, funcRes] = await Promise.all([
       graph.query(propsQ, { params }) as Promise<{ data?: unknown[][] }>,
       graph.query(descQ, { params }) as Promise<{ data?: unknown[][] }>,
@@ -2368,7 +2371,7 @@ async function fetchFileFromIngest(
     const lines = [`## Implementación: ${symbolName}`, ""];
     const descRows = asObjRows(descRes.data);
     const descRow = descRows[0];
-    if (descRow && _rv<string>(descRow, "description")) lines.push(`**Descripción:** ${String(_rv(descRow, "description")).slice(0, 200)}`, "");
+    if (descRow && _rv<string>(descRow, "description")) lines.push(`**Descripción:** ${String(_rv(descRow, "description")).slice(0, mcpLimits.implementationDescChars)}`, "");
     const props = asObjRows(propsRes.data);
     if (props.length > 0) {
       lines.push("**Props (contrato):**", ...props.map((r) => `- ${_rv(r, "name")} (${_rv(r, "required") ? "requerido" : "opcional"})`), "");
@@ -2391,7 +2394,7 @@ async function fetchFileFromIngest(
           if (Array.isArray(ec) && ec.length) endpoints = ` endpoints=${ec.map((e: { method?: string }) => e.method).join(",")}`;
         } catch { /* ignore */ }
         lines.push(`- \`${path ?? "(sin path)"}\`${loc}${comp}${endpoints}`);
-        if (description) lines.push(`  ${String(description).slice(0, 80)}`);
+        if (description) lines.push(`  ${String(description).slice(0, mcpLimits.implementationInlineDescChars)}`);
       }
     }
     return { content: [{ type: "text", text: lines.join("\n") }] };
@@ -2454,7 +2457,7 @@ async function fetchFileFromIngest(
       }
     }
     const unreachableComps = [...allComponents].filter((c) => !reachable.has(c));
-    const uncalledFuncsQ = `MATCH (fn:Function {projectId: $projectId}) WHERE NOT (fn)<-[:CALLS]-() RETURN fn.name AS name, fn.path AS path LIMIT 50`;
+    const uncalledFuncsQ = `MATCH (fn:Function {projectId: $projectId}) WHERE NOT (fn)<-[:CALLS]-() RETURN fn.name AS name, fn.path AS path LIMIT ${mcpLimits.traceUncalledFuncsQueryLimit}`;
     const uncalledRes = (await graph.query(uncalledFuncsQ, { params })) as { data?: unknown[][] };
     const unreachableFuncs = ((uncalledRes.data ?? [])).map((r) => {
       const n = _rv<string>(r, "name");
@@ -2467,10 +2470,10 @@ async function fetchFileFromIngest(
       "**Puntos de entrada:** Rutas + index/main/App",
       "",
       "**Componentes sin referencias desde entrada:**",
-      ...(unreachableComps.length ? unreachableComps.map((c) => `- ${c}`).slice(0, 30) : ["(ninguno)"]),
+      ...(unreachableComps.length ? unreachableComps.map((c) => `- ${c}`).slice(0, mcpLimits.traceUnreachableComponentsMax) : ["(ninguno)"]),
       "",
       "**Funciones sin referencias:** (muestra)",
-      ...(unreachableFuncs.length ? unreachableFuncs.slice(0, 20).map((f) => `- ${f}`) : ["(ninguna detectada)"]),
+      ...(unreachableFuncs.length ? unreachableFuncs.slice(0, mcpLimits.traceUnreachableFuncsMax).map((f) => `- ${f}`) : ["(ninguna detectada)"]),
     ];
     return { content: [{ type: "text", text: lines.join("\n") }] };
   }
@@ -2523,7 +2526,7 @@ async function fetchFileFromIngest(
     const lines = [
       "## Exports sin uso activo",
       "",
-      ...(unused.length ? unused.slice(0, 25).map((u) => `- ${u}`) : ["No se detectaron exports obvios sin uso."]),
+      ...(unused.length ? unused.slice(0, mcpLimits.unusedExportsMax).map((u) => `- ${u}`) : ["No se detectaron exports obvios sin uso."]),
     ];
     return { content: [{ type: "text", text: lines.join("\n") }] };
   }
@@ -2568,10 +2571,10 @@ async function fetchFileFromIngest(
       `## Ámbitos afectados: ${nodeName}`,
       "",
       "**Nodos dependientes:**",
-      ...(affectedNodes.length ? [...new Set(affectedNodes)].map((n) => `- ${n}`).slice(0, 40) : ["(ninguno)"]),
+      ...(affectedNodes.length ? [...new Set(affectedNodes)].map((n) => `- ${n}`).slice(0, mcpLimits.affectedNodesMax) : ["(ninguno)"]),
       "",
       "**Archivos afectados:**",
-      ...(affectedFiles.size ? [...affectedFiles].map((f) => `- ${f}`).slice(0, 20) : ["(ninguno)"]),
+      ...(affectedFiles.size ? [...affectedFiles].map((f) => `- ${f}`).slice(0, mcpLimits.affectedFilesMax) : ["(ninguno)"]),
       ...(includeTestFiles ? ["", "💡 Revisar también archivos *.test.* y *.spec.* en directorios afectados."] : []),
     ];
     return { content: [{ type: "text", text: lines.join("\n") }] };
@@ -2631,7 +2634,7 @@ async function fetchFileFromIngest(
   if (name === "find_similar_implementations") {
     const query = (args?.query as string) ?? "";
     const projectId = args?.projectId as string | undefined;
-    const limit = Math.min(30, Math.max(1, (args?.limit as number) ?? 10));
+    const limit = Math.min(mcpLimits.findSimilarMax, Math.max(1, (args?.limit as number) ?? mcpLimits.findSimilarDefault));
     const currentFilePath = args?.currentFilePath as string | undefined;
     let resolvedProjectId = projectId;
     if (!resolvedProjectId && currentFilePath) {
@@ -2670,7 +2673,7 @@ async function fetchFileFromIngest(
         const valid = Array.isArray(embedding) && embedding.every((v) => typeof v === "number" && Number.isFinite(v));
         if (valid && embedding!.length > 0) {
           const vecStr = `[${embedding!.join(",")}]`;
-          const k = Math.min(Math.max(limit * 2, 20), 100);
+          const k = Math.min(Math.max(limit * 2, 20), mcpLimits.findSimilarVectorKMax);
           const funcVecQ = `CALL db.idx.vector.queryNodes('Function', '${vecProp}', ${k}, vecf32(${vecStr})) YIELD node, score RETURN node.name AS name, node.path AS path, node.projectId AS projectId, score`;
           const compVecQ = `CALL db.idx.vector.queryNodes('Component', '${vecProp}', ${k}, vecf32(${vecStr})) YIELD node, score RETURN node.name AS name, node.projectId AS projectId, score`;
           try {
@@ -2709,8 +2712,9 @@ async function fetchFileFromIngest(
       const qLower = query.toLowerCase();
       const projFilter = resolvedProjectId ? " WHERE n.projectId = $projectId" : "";
       const compParams = resolvedProjectId ? { params: { projectId: resolvedProjectId } } : {};
-      const compQ = `MATCH (n:Component)${projFilter} RETURN n.name AS name LIMIT 100`;
-      const funcQ = `MATCH (n:Function)${projFilter} RETURN n.name AS name, n.path AS path LIMIT 100`;
+      const fsk = mcpLimits.findSimilarKeywordLimit;
+      const compQ = `MATCH (n:Component)${projFilter} RETURN n.name AS name LIMIT ${fsk}`;
+      const funcQ = `MATCH (n:Function)${projFilter} RETURN n.name AS name, n.path AS path LIMIT ${fsk}`;
       const [compRes, funcRes] = await Promise.all([
         graph.query(compQ, compParams) as Promise<{ data?: unknown[][] }>,
         graph.query(funcQ, compParams) as Promise<{ data?: unknown[][] }>,
@@ -2754,7 +2758,7 @@ async function fetchFileFromIngest(
       try {
         const result = await fetchFileFromIngest(ingestUrl, resolvedProjectId, configPath);
         if ("content" in result && result.content) {
-          lines.push(`### ${configPath}`, "```", result.content.slice(0, 1500), "```", "");
+          lines.push(`### ${configPath}`, "```", result.content.slice(0, mcpLimits.standardsFileSnippetChars), "```", "");
         }
       } catch { /* skip */ }
     }
@@ -2815,7 +2819,7 @@ async function fetchFileFromIngest(
       "",
       "**Contenido:**",
       "```",
-      content.slice(0, 4000),
+      content.slice(0, mcpLimits.fileContextMaxChars),
       "```",
     ];
     return { content: [{ type: "text", text: lines.join("\n") }] };

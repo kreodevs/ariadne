@@ -115,6 +115,7 @@ import {
   type ProjectRepoRoleCandidate,
 } from './resolve-chat-scope-from-message.util';
 import { buildMddEvidenceDocument } from './mdd-document.builder';
+import { getMddPhysicalEvidenceLimits } from './mdd-limits';
 import type { MddEvidenceDocument } from './mdd-document.types';
 
 /** Mensaje del historial de chat (usuario o asistente). */
@@ -3135,6 +3136,7 @@ PROHIBIDO: instrucciones genéricas tipo "revisa los controladores", "asegúrate
   ): Promise<{ gathered: string; results: unknown[] }> {
     const results: unknown[] = [];
     const chunks: string[] = [];
+    const fbLim = getMddPhysicalEvidenceLimits();
     let fileCount = 0;
     try {
       const cnt = (await this.cypher.executeCypher(
@@ -3150,7 +3152,7 @@ PROHIBIDO: instrucciones genéricas tipo "revisa los controladores", "asegúrate
       try {
         const paths = (await this.cypher.executeCypher(
           projectId,
-          `MATCH (f:File {projectId: $projectId}) RETURN f.path AS path LIMIT 40`,
+          `MATCH (f:File {projectId: $projectId}) RETURN f.path AS path LIMIT ${fbLim.graphFilePaths}`,
           {},
         )) as Array<{ path?: string }>;
         for (const p of paths) {
@@ -3177,7 +3179,7 @@ PROHIBIDO: instrucciones genéricas tipo "revisa los controladores", "asegúrate
         ? await this.fileContent.getFileContentSafeByProject(projectId, rel)
         : await this.fileContent.getFileContentSafe(repositoryId, rel);
       if (content && content.length > 0) {
-        chunks.push(`--- ${rel} ---\n${content.slice(0, 8000)}`);
+        chunks.push(`--- ${rel} ---\n${content.slice(0, fbLim.fileSnippetChars)}`);
         results.push({ path: rel, source: 'mandatory_file_read' });
       }
     }

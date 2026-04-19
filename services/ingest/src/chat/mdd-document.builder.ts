@@ -2,6 +2,7 @@
  * Construye el JSON MDD de 7 secciones desde Falkor + archivos físicos (sin inventar paths).
  */
 import type { MddEvidenceDocument } from './mdd-document.types';
+import { getMddBuilderLimits } from './mdd-limits';
 
 function uniq(paths: string[]): string[] {
   return [...new Set(paths.filter((p) => typeof p === 'string' && p.length > 0))];
@@ -59,6 +60,7 @@ export async function buildMddEvidenceDocument(params: {
 }): Promise<MddEvidenceDocument> {
   const { projectId, message, gatheredContext, collectedResults, executeCypher, getFileSnippet } =
     params;
+  const L = getMddBuilderLimits();
 
   let manifestDepKeys: string[] = [];
   try {
@@ -80,7 +82,7 @@ export async function buildMddEvidenceDocument(params: {
   try {
     const oa = (await executeCypher(
       projectId,
-      `MATCH (f:File {projectId: $projectId}) WHERE f.openApiTruth = true RETURN f.path AS path LIMIT 5`,
+      `MATCH (f:File {projectId: $projectId}) WHERE f.openApiTruth = true RETURN f.path AS path LIMIT ${L.openApiFileCandidates}`,
       { projectId },
     )) as Array<{ path?: string }>;
     openapiPath = oa[0]?.path ?? null;
@@ -94,7 +96,7 @@ export async function buildMddEvidenceDocument(params: {
     const ops = (await executeCypher(
       projectId,
       `MATCH (op:OpenApiOperation {projectId: $projectId})
-       RETURN op.pathTemplate AS route, op.method AS method LIMIT 800`,
+       RETURN op.pathTemplate AS route, op.method AS method LIMIT ${L.openApiOperations}`,
       { projectId },
     )) as Array<{ route?: string; method?: string }>;
     const byRoute = new Map<string, Set<string>>();
@@ -116,7 +118,7 @@ export async function buildMddEvidenceDocument(params: {
       const ctr = (await executeCypher(
         projectId,
         `MATCH (c:NestController {projectId: $projectId})
-         RETURN coalesce(c.route,'') AS prefix, c.name AS name LIMIT 80`,
+         RETURN coalesce(c.route,'') AS prefix, c.name AS name LIMIT ${L.nestControllers}`,
         { projectId },
       )) as Array<{ prefix?: string | null; name?: string }>;
       for (const row of ctr) {
@@ -134,7 +136,7 @@ export async function buildMddEvidenceDocument(params: {
     const models = (await executeCypher(
       projectId,
       `MATCH (m:Model {projectId: $projectId})
-       RETURN m.name AS name, m.source AS source, m.fieldSummary AS fs LIMIT 400`,
+       RETURN m.name AS name, m.source AS source, m.fieldSummary AS fs LIMIT ${L.models}`,
       { projectId },
     )) as Array<{ name?: string; source?: string; fs?: string | null }>;
     for (const row of models) {
@@ -160,7 +162,7 @@ export async function buildMddEvidenceDocument(params: {
     const svcs = (await executeCypher(
       projectId,
       `MATCH (f:File)-[:CONTAINS]->(s:NestService {projectId: $projectId})
-       RETURN s.name AS service, f.path AS path LIMIT 120`,
+       RETURN s.name AS service, f.path AS path LIMIT ${L.nestServices}`,
       { projectId },
     )) as Array<{ service?: string; path?: string }>;
     for (const row of svcs) {
@@ -196,7 +198,7 @@ export async function buildMddEvidenceDocument(params: {
     openapiPath && apiFromSwagger.length ? 'high' : openapiPath ? 'medium' : 'low';
 
   const summary = [
-    `Consulta: ${message.slice(0, 240)}`,
+    `Consulta: ${message.slice(0, L.summaryMessageChars)}`,
     `Evidencia anclada a ${evidence_paths.length} ruta(s) verificada(s) en el repositorio indexado.`,
     openapiPath ? `Contrato OpenAPI priorizado: \`${openapiPath}\`.` : 'Sin spec OpenAPI indexado; rutas vía AST si aplica.',
     entities.length ? `${entities.length} modelo(s) en grafo (Prisma/TypeORM).` : 'Sin nodos Model en grafo para este alcance.',
@@ -231,6 +233,6 @@ export async function buildMddEvidenceDocument(params: {
       complexity,
       anti_patterns: apiFromSwagger.length === 0 && apiFromAst.length > 50 ? ['ast_fallback_large_surface'] : [],
     },
-    evidence_paths: uniq(evidence_paths).slice(0, 200),
+    evidence_paths: uniq(evidence_paths).slice(0, L.evidencePaths),
   };
 }

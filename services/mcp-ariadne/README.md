@@ -52,6 +52,25 @@ npm publish
 
 Variables: `FALKORDB_HOST`, `FALKORDB_PORT`, `FALKOR_SHARD_BY_PROJECT`, `FALKOR_SHARD_BY_DOMAIN`, `INGEST_URL` (obligatorio para routing completo y herramientas que listan proyectos).
 
+### Límites de salida (defaults altos — información completa)
+
+Las herramientas ya no recortan agresivamente listados y snippets; puedes **bajar** estos valores si saturan el contexto del LLM o el tiempo de Falkor. Ver `src/mcp-tool-limits.ts`.
+
+| Prefijo env | Ejemplos |
+|-------------|----------|
+| `MCP_SEMANTIC_SEARCH_*` | `DEFAULT`, `MAX`, `VECTOR_K_MAX`, `KEYWORD_SUBQUERY_LIMIT` |
+| `MCP_FILE_CONTEXT_MAX_CHARS` | Contenido en **get_file_context** |
+| `MCP_STANDARDS_FILE_SNIPPET_CHARS` | Snippets en **get_project_standards** |
+| `MCP_AFFECTED_NODES_MAX`, `MCP_AFFECTED_FILES_MAX` | **get_affected_scopes** |
+| `MCP_UNUSED_EXPORTS_MAX` | **check_export_usage** |
+| `MCP_IMPLEMENTATION_*` | Descripciones y `FUNCTIONS_LIMIT` (**get_implementation_details**, **validate_before_edit**) |
+| `MCP_DEFINITIONS_PER_KIND_LIMIT` | **get_definitions** |
+| `MCP_TRACE_*` | **trace_reachability** (listas + query funciones no llamadas) |
+| `MCP_FIND_SIMILAR_*` | **find_similar_implementations** |
+| `MCP_DEBT_REPORT_ISOLATED_LIMIT` | **get_debt_report** |
+| `MCP_FIND_DUPLICATES_GROUP_LIMIT` | **find_duplicates** |
+| `MCP_SYNC_STATUS_RECENT_JOBS_MAX` | Jobs recientes en **get_sync_status** |
+
 ### Resolución multi-root (sin depender solo del cwd)
 
 - **`mcp-scope-enrichment.ts`** — Orden: `.ariadne-project` subiendo directorios desde `currentFilePath` → si hace falta, ingest `GET /projects/:id/resolve-repo-for-path?path=` para acotar el repo → fallback al grafo Falkor como antes.
