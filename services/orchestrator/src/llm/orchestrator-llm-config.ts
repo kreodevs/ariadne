@@ -21,21 +21,12 @@ export function resolveOrchestratorLlmProvider(): OrchestratorLlmProvider {
 export function orchestratorLlmModel(): string {
   const p = resolveOrchestratorLlmProvider();
   if (p === 'google') {
-    return (
-      process.env.GOOGLE_LLM_MODEL?.trim() ||
-      process.env.ORCHESTRATOR_LLM_MODEL?.trim() ||
-      process.env.CHAT_MODEL?.trim() ||
-      'gemini-2.0-flash'
-    );
+    // No usar CHAT_MODEL/ORCHESTRATOR_LLM_MODEL aquí: en Docker suelen ser gpt-4o-mini y Gemini no los acepta.
+    return process.env.GOOGLE_LLM_MODEL?.trim() || 'gemini-2.0-flash';
   }
   if (p === 'kimi') {
-    return (
-      process.env.KIMI_LLM_MODEL?.trim() ||
-      process.env.MOONSHOT_MODEL?.trim() ||
-      process.env.ORCHESTRATOR_LLM_MODEL?.trim() ||
-      process.env.CHAT_MODEL?.trim() ||
-      'kimi-k2.5'
-    );
+    // Igual: compose pone CHAT_MODEL/ORCHESTRATOR_LLM_MODEL=gpt-4o-mini por defecto.
+    return process.env.KIMI_LLM_MODEL?.trim() || process.env.MOONSHOT_MODEL?.trim() || 'kimi-k2.5';
   }
   return (
     process.env.ORCHESTRATOR_LLM_MODEL?.trim() ||

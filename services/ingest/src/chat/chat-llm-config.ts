@@ -15,12 +15,7 @@ export function resolveIngestChatLlmProvider(): IngestChatLlmProvider {
 
 export function ingestChatLlmModel(): string {
   if (resolveIngestChatLlmProvider() === 'kimi') {
-    return (
-      process.env.KIMI_LLM_MODEL?.trim() ||
-      process.env.MOONSHOT_MODEL?.trim() ||
-      process.env.CHAT_MODEL?.trim() ||
-      'kimi-k2.5'
-    );
+    return process.env.KIMI_LLM_MODEL?.trim() || process.env.MOONSHOT_MODEL?.trim() || 'kimi-k2.5';
   }
   return process.env.CHAT_MODEL?.trim() || 'gpt-4o-mini';
 }

@@ -11,9 +11,9 @@ Capa desacoplada del proveedor: **OpenAI** (Chat Completions + tools) o **Google
 | `GOOGLE_API_KEY` | Proveedor Gemini. |
 | `MOONSHOT_API_KEY` o `KIMI_API_KEY` | Kimi Open Platform (`https://api.moonshot.ai/v1/chat/completions`). |
 | `MOONSHOT_BASE_URL` | Opcional (default `https://api.moonshot.ai/v1`). |
-| `ORCHESTRATOR_LLM_MODEL` / `CHAT_MODEL` | Modelo según proveedor (OpenAI, Gemini o `kimi-k2.5` por defecto para Kimi). |
-| `KIMI_LLM_MODEL` / `MOONSHOT_MODEL` | Opcional: modelo solo para Kimi. |
-| `GOOGLE_LLM_MODEL` | Opcional: modelo solo para Gemini. |
+| `ORCHESTRATOR_LLM_MODEL` / `CHAT_MODEL` | Solo **OpenAI** (default `gpt-4o-mini`). Con `google`/`kimi` no aplican (el compose suele fijar `gpt-4o-mini` y rompería Gemini/Kimi). |
+| `KIMI_LLM_MODEL` / `MOONSHOT_MODEL` | Kimi (default `kimi-k2.5`). |
+| `GOOGLE_LLM_MODEL` | Gemini (default `gemini-2.0-flash`). |
 
 ## Archivos
 
