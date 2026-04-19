@@ -34,6 +34,7 @@ export async function callOrchestratorLlmWithTools(
   maxTokens: number,
 ): Promise<{
   content?: string;
+  reasoning_content?: string | null;
   tool_calls?: Array<{ id: string; function: { name: string; arguments: string } }>;
 }> {
   const p = resolveOrchestratorLlmProvider();

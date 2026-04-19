@@ -7,6 +7,7 @@ import { EXAMPLES, EXPLORER_TOOLS_ALL, SCHEMA } from './chat.constants';
 import type { ChatScope } from './chat-scope.util';
 import { IngestChatClient } from './ingest-chat.client';
 import { OrchestratorLlmService } from './orchestrator-llm.service';
+import type { OpenAiStyleMessage } from '../llm/orchestrator-llm.facade';
 import { RedisStateService } from '../redis-state/redis-state.service';
 import type { RetrieverToolName } from './ingest-types';
 
@@ -215,15 +216,10 @@ ${SCHEMA}${EXAMPLES}
       ? `${historyContent}\n\n<user>${message}</user>`
       : `<user>${message}</user>`;
 
-    const messages: Array<
-      | { role: 'user' | 'system'; content: string }
-      | {
-          role: 'assistant';
-          content?: string | null;
-          tool_calls?: Array<{ id: string; function: { name: string; arguments: string } }>;
-        }
-      | { role: 'tool'; tool_call_id: string; content: string }
-    > = [{ role: 'system', content: retrieverSystem }, { role: 'user', content: userContent }];
+    const messages: OpenAiStyleMessage[] = [
+      { role: 'system', content: retrieverSystem },
+      { role: 'user', content: userContent },
+    ];
 
     let lastCypher = '';
     const collectedToolOutputs: string[] = [];
@@ -239,6 +235,13 @@ ${SCHEMA}${EXAMPLES}
       if (!resp.tool_calls?.length) {
         break;
       }
+
+      messages.push({
+        role: 'assistant',
+        content: resp.content ?? null,
+        ...('reasoning_content' in resp ? { reasoning_content: resp.reasoning_content ?? null } : {}),
+        tool_calls: resp.tool_calls,
+      });
 
       for (const tc of resp.tool_calls) {
         const fn = tc.function;
@@ -259,10 +262,7 @@ ${SCHEMA}${EXAMPLES}
           toolResult = `Error: ${err instanceof Error ? err.message : String(err)}`;
         }
         collectedToolOutputs.push(toolResult);
-        messages.push(
-          { role: 'assistant', content: null, tool_calls: [tc] },
-          { role: 'tool', tool_call_id: tc.id, content: toolResult },
-        );
+        messages.push({ role: 'tool', tool_call_id: tc.id, content: toolResult });
       }
     }
 

@@ -2,7 +2,11 @@
  * LLM del orchestrator (OpenAI o Google Gemini) — ask_codebase y síntesis.
  */
 import { Injectable } from '@nestjs/common';
-import { callOrchestratorLlm, callOrchestratorLlmWithTools } from '../llm/orchestrator-llm.facade';
+import {
+  callOrchestratorLlm,
+  callOrchestratorLlmWithTools,
+  type OpenAiStyleMessage,
+} from '../llm/orchestrator-llm.facade';
 
 @Injectable()
 export class OrchestratorLlmService {
@@ -14,15 +18,12 @@ export class OrchestratorLlmService {
   }
 
   async callLlmWithTools(
-    messages: Array<
-      | { role: 'user' | 'system'; content: string }
-      | { role: 'assistant'; content?: string | null; tool_calls?: Array<{ id: string; function: { name: string; arguments: string } }> }
-      | { role: 'tool'; tool_call_id: string; content: string }
-    >,
+    messages: OpenAiStyleMessage[],
     tools: unknown[],
     maxTokens = 1536,
   ): Promise<{
     content?: string;
+    reasoning_content?: string | null;
     tool_calls?: Array<{ id: string; function: { name: string; arguments: string } }>;
   }> {
     return callOrchestratorLlmWithTools(messages, tools, maxTokens);

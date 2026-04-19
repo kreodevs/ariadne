@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { orchestratorLlmModel } from './orchestrator-llm-config';
 import { googleApiKeyForLlm } from './llm-unified';
-import type { OpenAiStyleMessage } from './openai-llm.adapter';
+import { stripReasoningFromMessages, type OpenAiStyleMessage } from './openai-llm.adapter';
 
 type GeminiPart =
   | { text: string }
@@ -57,19 +57,15 @@ function openAiHistoryToGeminiContents(rest: OpenAiStyleMessage[]): GeminiConten
     }
     if (m.role === 'assistant') {
       if ('tool_calls' in m && m.tool_calls?.length) {
+        const parts = m.tool_calls.map((tc) => ({
+          functionCall: {
+            name: tc.function.name,
+            args: JSON.parse(tc.function.arguments || '{}') as Record<string, unknown>,
+          },
+        }));
+        contents.push({ role: 'model', parts });
+        i++;
         for (const tc of m.tool_calls) {
-          contents.push({
-            role: 'model',
-            parts: [
-              {
-                functionCall: {
-                  name: tc.function.name,
-                  args: JSON.parse(tc.function.arguments || '{}') as Record<string, unknown>,
-                },
-              },
-            ],
-          });
-          i++;
           const tm = rest[i];
           if (!tm || tm.role !== 'tool' || tm.tool_call_id !== tc.id) {
             throw new Error('Secuencia assistant/tool inválida para Gemini');
@@ -199,7 +195,7 @@ export async function googleCallLlmWithTools(
   content?: string;
   tool_calls?: Array<{ id: string; function: { name: string; arguments: string } }>;
 }> {
-  const { system, rest } = extractSystemAndRest(messages);
+  const { system, rest } = extractSystemAndRest(stripReasoningFromMessages(messages));
   const contents = openAiHistoryToGeminiContents(rest);
   const geminiTools = openAiToolsToGeminiDeclarations(tools);
 

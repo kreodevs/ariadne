@@ -6,9 +6,25 @@ export type OpenAiStyleMessage =
   | {
       role: 'assistant';
       content?: string | null;
+      /** Kimi k2.5 / thinking: obligatorio reenviar en multi-turn con tools */
+      reasoning_content?: string | null;
       tool_calls?: Array<{ id: string; function: { name: string; arguments: string } }>;
     }
   | { role: 'tool'; tool_call_id: string; content: string };
+
+/** OpenAI/Gemini no aceptan reasoning_content en el body. */
+export function stripReasoningFromMessages(messages: OpenAiStyleMessage[]): OpenAiStyleMessage[] {
+  return messages.map((m) => {
+    if (m.role !== 'assistant' || !('reasoning_content' in m)) return m;
+    const { reasoning_content: _r, ...rest } = m as {
+      reasoning_content?: string | null;
+      role: 'assistant';
+      content?: string | null;
+      tool_calls?: Array<{ id: string; function: { name: string; arguments: string } }>;
+    };
+    return rest as OpenAiStyleMessage;
+  });
+}
 
 export async function openaiCallLlm(
   messages: Array<{ role: 'user' | 'assistant' | 'system'; content: string }>,
@@ -47,6 +63,7 @@ export async function openaiCallLlmWithTools(
   maxTokens: number,
 ): Promise<{
   content?: string;
+  reasoning_content?: string | null;
   tool_calls?: Array<{ id: string; function: { name: string; arguments: string } }>;
 }> {
   const key = openAiApiKeyForLlm();
@@ -57,7 +74,7 @@ export async function openaiCallLlmWithTools(
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
     body: JSON.stringify({
       model: orchestratorLlmModel(),
-      messages,
+      messages: stripReasoningFromMessages(messages),
       tools,
       tool_choice: 'auto',
       temperature: 0.1,
@@ -75,11 +92,24 @@ export async function openaiCallLlmWithTools(
       };
     }>;
   };
-  const msg = data.choices?.[0]?.message;
-  return {
+  const msg = data.choices?.[0]?.message as {
+    content?: string | null;
+    reasoning_content?: string | null;
+    tool_calls?: Array<{ id: string; function: { name: string; arguments: string } }>;
+  };
+  const base: {
+    content?: string;
+    reasoning_content?: string | null;
+    tool_calls?: Array<{ id: string; function: { name: string; arguments: string } }>;
+  } = {
     content: msg?.content?.trim() ?? undefined,
     tool_calls: msg?.tool_calls?.length ? msg.tool_calls : undefined,
   };
+  if (msg && 'reasoning_content' in msg) {
+    base.reasoning_content =
+      msg.reasoning_content == null ? null : String(msg.reasoning_content);
+  }
+  return base;
 }
 
 /** Chat simple system+user (workflow SDD). */

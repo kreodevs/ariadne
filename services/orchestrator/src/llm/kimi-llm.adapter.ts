@@ -41,31 +41,48 @@ export async function kimiCallLlmWithTools(
   maxTokens: number,
 ): Promise<{
   content?: string;
+  reasoning_content?: string | null;
   tool_calls?: Array<{ id: string; function: { name: string; arguments: string } }>;
 }> {
   const model = orchestratorLlmModel();
+  const floorRaw = process.env.LLM_KIMI_MIN_MAX_TOKENS?.trim();
+  let effectiveMax = maxTokens;
+  if (floorRaw) {
+    const floor = parseInt(floorRaw, 10);
+    if (Number.isFinite(floor) && floor > 0) effectiveMax = Math.max(maxTokens, floor);
+  }
   const res = await postChatCompletions({
     model,
     messages,
     tools,
     tool_choice: 'auto',
     temperature: llmChatTemperature(),
-    max_tokens: maxTokens,
+    max_tokens: effectiveMax,
   });
   if (!res.ok) throw new Error(`Kimi/Moonshot API ${res.status}: ${await res.text()}`);
   const data = (await res.json()) as {
     choices?: Array<{
       message?: {
         content?: string | null;
+        reasoning_content?: string | null;
         tool_calls?: Array<{ id: string; function: { name: string; arguments: string } }>;
       };
     }>;
   };
   const msg = data.choices?.[0]?.message;
-  return {
+  const base: {
+    content?: string;
+    reasoning_content?: string | null;
+    tool_calls?: Array<{ id: string; function: { name: string; arguments: string } }>;
+  } = {
     content: msg?.content?.trim() ?? undefined,
     tool_calls: msg?.tool_calls?.length ? msg.tool_calls : undefined,
   };
+  if (msg && 'reasoning_content' in msg) {
+    base.reasoning_content =
+      msg.reasoning_content == null ? null : String(msg.reasoning_content);
+  }
+  return base;
 }
 
 export async function kimiChatSimple(system: string, user: string): Promise<string> {
