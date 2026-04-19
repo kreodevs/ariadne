@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { orchestratorLlmModel } from './orchestrator-llm-config';
+import { googleApiKeyForLlm } from './llm-unified';
 import type { OpenAiStyleMessage } from './openai-llm.adapter';
 
 type GeminiPart =
@@ -13,8 +14,8 @@ interface GeminiContent {
 }
 
 function googleGenerateUrl(): string {
-  const key = process.env.GOOGLE_API_KEY?.trim();
-  if (!key) throw new Error('GOOGLE_API_KEY no configurada.');
+  const key = googleApiKeyForLlm();
+  if (!key) throw new Error('LLM_API_KEY u GOOGLE_API_KEY no configurada.');
   const model = orchestratorLlmModel();
   return `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(key)}`;
 }

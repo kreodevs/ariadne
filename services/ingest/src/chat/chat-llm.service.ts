@@ -3,6 +3,7 @@
  */
 import { Injectable } from '@nestjs/common';
 import { ingestChatLlmModel, resolveIngestChatLlmProvider } from './chat-llm-config';
+import { openAiApiKeyForLlm } from './llm-unified';
 import { kimiIngestCallLlm, kimiIngestCallLlmWithTools } from './kimi-chat.adapter';
 
 @Injectable()
@@ -14,9 +15,9 @@ export class ChatLlmService {
     const p = resolveIngestChatLlmProvider();
     if (p === 'kimi') return kimiIngestCallLlm(messages, maxTokens);
 
-    const key = process.env.OPENAI_API_KEY?.trim();
+    const key = openAiApiKeyForLlm();
     if (!key) {
-      throw new Error('OPENAI_API_KEY no configurada. Necesaria para chat.');
+      throw new Error('LLM_API_KEY u OPENAI_API_KEY no configurada. Necesaria para chat.');
     }
 
     const res = await fetch('https://api.openai.com/v1/chat/completions', {
@@ -62,8 +63,8 @@ export class ChatLlmService {
     const p = resolveIngestChatLlmProvider();
     if (p === 'kimi') return kimiIngestCallLlmWithTools(messages, tools, maxTokens);
 
-    const key = process.env.OPENAI_API_KEY?.trim();
-    if (!key) throw new Error('OPENAI_API_KEY no configurada.');
+    const key = openAiApiKeyForLlm();
+    if (!key) throw new Error('LLM_API_KEY u OPENAI_API_KEY no configurada.');
 
     const res = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',

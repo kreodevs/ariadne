@@ -1,10 +1,10 @@
-import { kimiChatTemperature, moonshotApiKey, moonshotBaseUrl } from './moonshot-env';
+import { llmChatTemperature, moonshotApiKey, moonshotBaseUrl } from './moonshot-env';
 import { orchestratorLlmModel } from './orchestrator-llm-config';
 import type { OpenAiStyleMessage } from './openai-llm.adapter';
 
 async function postChatCompletions(body: Record<string, unknown>): Promise<Response> {
   const key = moonshotApiKey();
-  if (!key) throw new Error('MOONSHOT_API_KEY o KIMI_API_KEY no configurada.');
+  if (!key) throw new Error('LLM_API_KEY u MOONSHOT_API_KEY u KIMI_API_KEY no configurada.');
   const url = `${moonshotBaseUrl()}/chat/completions`;
   return fetch(url, {
     method: 'POST',
@@ -24,7 +24,7 @@ export async function kimiCallLlm(
   const res = await postChatCompletions({
     model,
     messages,
-    temperature: kimiChatTemperature(model),
+    temperature: llmChatTemperature(),
     max_tokens: maxTokens,
   });
   if (!res.ok) {
@@ -49,7 +49,7 @@ export async function kimiCallLlmWithTools(
     messages,
     tools,
     tool_choice: 'auto',
-    temperature: kimiChatTemperature(model),
+    temperature: llmChatTemperature(),
     max_tokens: maxTokens,
   });
   if (!res.ok) throw new Error(`Kimi/Moonshot API ${res.status}: ${await res.text()}`);
@@ -73,7 +73,7 @@ export async function kimiChatSimple(system: string, user: string): Promise<stri
   const model = orchestratorLlmModel();
   const res = await postChatCompletions({
     model,
-    temperature: kimiChatTemperature(model, { workflowSimple: true }),
+    temperature: llmChatTemperature({ workflowSimple: true }),
     messages: [
       { role: 'system', content: system },
       { role: 'user', content: user },

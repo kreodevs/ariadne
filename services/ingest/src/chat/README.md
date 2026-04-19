@@ -10,7 +10,8 @@ Arquitectura de agentes: **Coordinator** (clasificación LLM) → **CodeAnalysis
 - **`resolve-chat-scope-from-message.util.ts`** — Inferencia de `repoId` desde mensaje + `project_repositories.role` (`CHAT_INFER_SCOPE_FROM_ROLES`).
 - **`chat-preflight-scope.util.ts`** — Paths en el mensaje; filtrado de filas/bloques por `repoId` antes del sintetizador (`CHAT_PREFLIGHT_PATH_REPO`).
 - **`chat-cypher.service.ts`** — Ejecución Cypher y formateo: **executeCypher** recorre **`ProjectsService.getCypherShardContexts`** (proyecto + dominios whitelist) y deduplica filas; **executeCypherRaw**(cypher, shardProjectId?), formatResultsHuman, getGraphSummary. Con sharding, cada nombre de grafo se combina con el **cypherProjectId** correcto para los nodos en ese shard.
-- **`chat-llm-config.ts`** — Proveedor chat ingest: `openai` | `kimi` (`INGEST_LLM_PROVIDER` o auto si solo hay `MOONSHOT_API_KEY`).
+- **`llm-unified.ts`** — `LLM_PROVIDER` / `LLM_MODEL` / `LLM_API_KEY` (y legacy `INGEST_LLM_PROVIDER`, etc.).
+- **`chat-llm-config.ts`** — Reexporta resolución ingest (openai | kimi).
 - **`kimi-chat.adapter.ts`** — Kimi Open Platform (`/v1/chat/completions` compatible OpenAI).
 - **`chat-llm.service.ts`** — callLlm, callLlmWithTools (OpenAI o Kimi según config).
 - **`chat-antipatterns.service.ts`** — Detección de anti-patrones: detectAntipatterns (spaghetti, god functions, circularImports, etc.)
@@ -52,7 +53,7 @@ Sin `ORCHESTRATOR_URL`, el pipeline unificado legacy sigue en este servicio (`ru
 - **`POST /internal/repositories/:repoId/analyze-prep`** — Body: `{ mode, scope?, crossPackageDuplicates? }` — preparación orchestrator (sin LLM en ingest cuando aplica).
 - **`GET /repositories/:id/graph-summary`** — Query: `full=1` (muestras completas), `repoScoped=1` (solo nodos con `repoId` = `:id` dentro del proyecto Falkor). Útil en multi-root para listar componentes de un repo sin mezclar el resto. El ingest usa `repoScoped` de forma interna en diagnóstico, overview, herramienta `get_graph_summary` (chat/ReAct y retriever) y el plan de modificación acota por `repositoryId` salvo `scope.repoIds` explícito.
 
-**Requisitos LLM:** `OPENAI_API_KEY` **o** `MOONSHOT_API_KEY`/`KIMI_API_KEY` (Kimi); `INGEST_LLM_PROVIDER` opcional (`openai`|`kimi`); `CHAT_MODEL` / `KIMI_LLM_MODEL` (default chat OpenAI `gpt-4o-mini`, Kimi `kimi-k2.5`). Con `ORCHESTRATOR_URL`, el LLM de ask_codebase va al orchestrator (mismas variables allí: `ORCHESTRATOR_LLM_PROVIDER`, etc.).
+**Requisitos LLM:** **`LLM_API_KEY`** + **`LLM_PROVIDER`** (o claves legacy `OPENAI_*` / `MOONSHOT_*`); **`LLM_MODEL`** opcional (defaults `gpt-4o-mini` / `kimi-k2.5`). Con `ORCHESTRATOR_URL`, ask_codebase usa el orchestrator (mismas `LLM_*`).
 
 **Grounding (pipeline unificado `runUnifiedPipeline`):** el Synthesizer exige sección **## Evidencia** cuando se citan rutas; sin datos en contexto → mensaje **sin datos en índice para este alcance**. Fase 1→2: bloque JSON `retrieval_summary` antes del contexto bruto (`CHAT_TWO_PHASE`, desactivar con `0|false|off`). Filtros multi-root: `chat-scope.util.ts` (`hasExplicitChatScopeNarrowing`). Telemetría: `CHAT_TELEMETRY_LOG=1` o `true` — log JSON por request con `pathGroundingRatio`, `chat_scope_effective` (`preflightPathRepoApplied`, `inferred`, `scopeFilterActive`, etc.); ver **`docs/notebooklm/metricas-alcance-chat.md`**. Plan de modificación: tope `MODIFICATION_PLAN_MAX_FILES` (default 150).
 

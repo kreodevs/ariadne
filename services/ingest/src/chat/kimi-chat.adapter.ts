@@ -1,9 +1,9 @@
-import { kimiChatTemperature, moonshotApiKey, moonshotBaseUrl } from '../moonshot/moonshot-env';
+import { llmChatTemperature, moonshotApiKey, moonshotBaseUrl } from '../moonshot/moonshot-env';
 import { ingestChatLlmModel } from './chat-llm-config';
 
 async function post(body: Record<string, unknown>): Promise<Response> {
   const key = moonshotApiKey();
-  if (!key) throw new Error('MOONSHOT_API_KEY o KIMI_API_KEY no configurada.');
+  if (!key) throw new Error('LLM_API_KEY u MOONSHOT_API_KEY u KIMI_API_KEY no configurada.');
   return fetch(`${moonshotBaseUrl()}/chat/completions`, {
     method: 'POST',
     headers: {
@@ -22,7 +22,7 @@ export async function kimiIngestCallLlm(
   const res = await post({
     model,
     messages,
-    temperature: kimiChatTemperature(model),
+    temperature: llmChatTemperature(),
     max_tokens: maxTokens,
   });
   if (!res.ok) {
@@ -55,7 +55,7 @@ export async function kimiIngestCallLlmWithTools(
     messages,
     tools,
     tool_choice: 'auto',
-    temperature: kimiChatTemperature(model),
+    temperature: llmChatTemperature(),
     max_tokens: maxTokens,
   });
   if (!res.ok) throw new Error(`Kimi/Moonshot API ${res.status}: ${await res.text()}`);

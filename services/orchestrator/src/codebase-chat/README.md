@@ -7,4 +7,4 @@
 - **`POST /codebase/modification-plan/repository/:repositoryId`** — Body `{ userDescription, scope? }`. Lista de archivos desde ingest (`modification-plan-files`); preguntas de afinación generadas con LLM en orchestrator.
 - **`POST /codebase/modification-plan/project/:projectId`** — Igual; `projectId` puede ser proyecto Ariadne o `roots[].id` (repo).
 
-Variables: `INGEST_URL`, `INTERNAL_API_KEY`, y credenciales LLM según `ORCHESTRATOR_LLM_PROVIDER` (`OPENAI_API_KEY` o `GOOGLE_API_KEY`) — preguntas de modification-plan y síntesis de analyze/chat. Ver [../llm/README.md](../llm/README.md).
+Variables: `INGEST_URL`, `INTERNAL_API_KEY`, y **`LLM_*`** (u opciones legacy) — preguntas de modification-plan y síntesis de analyze/chat. Ver [../llm/README.md](../llm/README.md).

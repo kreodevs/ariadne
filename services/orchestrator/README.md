@@ -35,15 +35,10 @@ El **ingest** con `ORCHESTRATOR_URL` delega estos endpoints al orchestrator (el 
 
 - `PORT` — Default 3001.
 - `ARIADNESPEC_API_URL` — API Ariadne (default `http://api:3000/api`).
-- `ORCHESTRATOR_LLM_PROVIDER` — `openai`, `google` o `kimi`/`moonshot`. Auto: solo `GOOGLE_API_KEY` → Google; solo `MOONSHOT_API_KEY`/`KIMI_API_KEY` (sin OpenAI/Google) → Kimi.
-- `OPENAI_API_KEY` — Proveedor OpenAI (chat + tools).
-- `GOOGLE_API_KEY` — Proveedor Gemini.
-- `MOONSHOT_API_KEY` / `KIMI_API_KEY` — Kimi Open Platform; `MOONSHOT_BASE_URL` opcional (default `https://api.moonshot.ai/v1`).
-- `KIMI_LLM_MODEL` / `MOONSHOT_MODEL` — Modelo Kimi (default `kimi-k2.5` si no se define `ORCHESTRATOR_LLM_MODEL` / `CHAT_MODEL`).
-- `GOOGLE_LLM_MODEL` — Opcional; modelo Gemini (p. ej. `gemini-2.0-flash`).
-- `ORCHESTRATOR_LLM_MODEL` / `CHAT_MODEL` — Modelo según proveedor.
+- **`LLM_PROVIDER`**, **`LLM_MODEL`**, **`LLM_API_KEY`**, **`LLM_TEMPERATURE`** — Config homologada (ver [src/llm/README.md](src/llm/README.md)).
+- Compatibilidad: `ORCHESTRATOR_LLM_PROVIDER`, `OPENAI_API_KEY`, `GOOGLE_API_KEY`, `MOONSHOT_API_KEY` / `KIMI_API_KEY`, `CHAT_MODEL`, etc.
 
-Detalle de la capa LLM: [src/llm/README.md](src/llm/README.md).
+Detalle: [src/llm/README.md](src/llm/README.md).
 - `INGEST_URL` — URL del microservicio ingest (default `http://ingest:3002` en Docker).
 - `INTERNAL_API_KEY` — Debe coincidir con la del ingest; protege `POST /internal/repositories/:id/retriever-tool`.
 - `REDIS_URL` — Estado de sesión y snapshots `codebase:chat:*` (default `redis://redis:6379` en compose).

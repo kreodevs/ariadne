@@ -1,4 +1,5 @@
 import { orchestratorLlmModel } from './orchestrator-llm-config';
+import { openAiApiKeyForLlm } from './llm-unified';
 
 export type OpenAiStyleMessage =
   | { role: 'user' | 'assistant' | 'system'; content: string }
@@ -13,8 +14,8 @@ export async function openaiCallLlm(
   messages: Array<{ role: 'user' | 'assistant' | 'system'; content: string }>,
   maxTokens: number,
 ): Promise<string> {
-  const key = process.env.OPENAI_API_KEY?.trim();
-  if (!key) throw new Error('OPENAI_API_KEY no configurada.');
+  const key = openAiApiKeyForLlm();
+  if (!key) throw new Error('LLM_API_KEY u OPENAI_API_KEY no configurada.');
 
   const res = await fetch('https://api.openai.com/v1/chat/completions', {
     method: 'POST',
@@ -48,8 +49,8 @@ export async function openaiCallLlmWithTools(
   content?: string;
   tool_calls?: Array<{ id: string; function: { name: string; arguments: string } }>;
 }> {
-  const key = process.env.OPENAI_API_KEY?.trim();
-  if (!key) throw new Error('OPENAI_API_KEY no configurada.');
+  const key = openAiApiKeyForLlm();
+  if (!key) throw new Error('LLM_API_KEY u OPENAI_API_KEY no configurada.');
 
   const res = await fetch('https://api.openai.com/v1/chat/completions', {
     method: 'POST',
@@ -83,7 +84,7 @@ export async function openaiCallLlmWithTools(
 
 /** Chat simple system+user (workflow SDD). */
 export async function openaiChatSimple(system: string, user: string): Promise<string> {
-  const key = process.env.OPENAI_API_KEY;
+  const key = openAiApiKeyForLlm();
   if (!key) return '';
   const res = await fetch('https://api.openai.com/v1/chat/completions', {
     method: 'POST',
