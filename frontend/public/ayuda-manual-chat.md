@@ -8,14 +8,14 @@ Documentación del sistema de chat con repositorios, diagnósticos, métricas de
 
 | Endpoint | Descripción |
 |----------|-------------|
-| `POST /repositories/:id/chat` | Pregunta en NL por repo. Body: `{ message, history?, scope?, twoPhase?, responseMode? }` — `scope`: `repoIds`, `includePathPrefixes`, `excludePathGlobs`. **`responseMode: 'evidence_first'`** → JSON **MDD** (7 secciones) o proxy a orchestrator (`mdd-evidence`). |
+| `POST /repositories/:id/chat` | Pregunta en NL por repo. Body: `{ message, history?, scope?, twoPhase?, responseMode? }` — `scope`: `repoIds`, `includePathPrefixes`, `excludePathGlobs`. **`responseMode: 'evidence_first'`** → respuesta **JSON MDD** (7 secciones) en ingest local, o vía orchestrator + `mdd-evidence` (ver `services/ingest/src/chat/README.md`). |
 | `POST /projects/:projectId/chat` | Chat por proyecto (todos los repos). Mismo body. |
 | `POST /repositories/:id/analyze` | Análisis estructurado sobre **un repo** (`:id` = `roots[].id`). Body: `{ mode }` con `mode` ∈ `diagnostico` \| `duplicados` \| `reingenieria` \| `codigo_muerto` \| `seguridad` (mismo pipeline que por proyecto una vez resuelto el repo). |
 | `POST /projects/:projectId/analyze` | Mismo handler unificado: `mode`: `agents` \| `skill` (AGENTS.md / SKILL.md) **o** modos de código anteriores. Para modos de código en proyecto **multi-root**, body opcional: `idePath` (ruta IDE absoluta o bajo un root) y/o `repositoryId` para fijar el root; si hay varios repos y faltan ambos → **400**. Resolución en `AnalyticsService` → `ChatService.analyze`. |
 | `GET /repositories/:id/graph-summary` | Conteos y muestras de nodos indexados |
 | `GET /projects/:id/graph-routing` | Enrutamiento Falkor; **`cypherShardContexts`** (`graphName`, `cypherProjectId`) cuando el proyecto tiene whitelist de dominios — el retriever/`execute_cypher` unen consultas sobre varios grafos con el `projectId` correcto por nodo. |
 
-**Requisitos:** LLM (`LLM_*` o legacy) para chat y diagnósticos. Embeddings: `EMBEDDING_PROVIDER` + API key para modo duplicados.
+**Requisitos:** LLM (`LLM_*` o claves legacy) para chat y diagnósticos; embeddings: `EMBEDDING_PROVIDER` + API key para modo duplicados.
 
 ---
 
@@ -31,11 +31,12 @@ Todas las preguntas pasan por el mismo pipeline. No hay clasificación code vs k
    - El Retriever NO escribe la respuesta; solo reúne contexto.
 
 2. **Fase Synthesizer** — Depende de **`responseMode`**:
-   - **`default`:** LLM en prosa; opcional **`retrieval_summary`** si `twoPhase` / `CHAT_TWO_PHASE`.
-   - **`evidence_first`:** JSON **MDD** (7 secciones); ingest local usa `injectPhysicalEvidenceFallback` + `buildMddEvidenceDocument`; con orchestrator → `mdd-evidence` interno.
-3. **Formato** — `formatResultsHuman()` aplica al modo **`default`**.
+   - **`default`:** Un solo LLM con el contexto reunido. Opcionalmente precedido por **JSON `retrieval_summary`** cuando `twoPhase` está activo (`CHAT_TWO_PHASE` en ingest). Responde en prosa (procesos, flujos, impacto).
+   - **`evidence_first` (ingest local):** Tras el Retriever, si el contexto está vacío se aplica **`injectPhysicalEvidenceFallback`** (paths `File` + lectura de `package.json`, prisma, env, openapi, etc.). Luego **no** se usa el LLM de prosa: se genera **`buildMddEvidenceDocument`** → **`answer`** = JSON MDD (7 claves) y **`mddDocument`** en la respuesta HTTP.
+   - **`evidence_first` (con `ORCHESTRATOR_URL`):** El cliente pega al orchestrator; tras retrieve, **`nodeSynthesize`** llama **`POST /internal/repositories/:id/mdd-evidence`** en ingest y devuelve el mismo JSON (más **`mddDocument`** parseado en el orchestrator).
+3. **Formato** — `formatResultsHuman()`: agrupa por path en los datos pasados al Synthesizer (solo aplica al modo **`default`**).
 
-**Schema en prompt:** Incluye **`Model`**, **`OpenApiOperation`**, `DEFINES_OP`, además de `File`, `Component`, `Function`, … FalkorDB: sin `NOT EXISTS`; usar `OPTIONAL MATCH` + `count(x)=0`.
+**Schema en prompt:** Nodos `File`, `Component`, `Function`, `StorybookDoc`, `MarkdownDoc`, `Route`, `Hook`, `Prop`, `NestController`, **`Model`**, **`OpenApiOperation`**, etc. Relaciones `CONTAINS`, `IMPORTS`, `CALLS`, `RENDERS`, `HAS_PROP`, **`DEFINES_OP`**. FalkorDB NO soporta `NOT EXISTS`; usar `OPTIONAL MATCH` + `count(x)=0`.
 
 ---
 

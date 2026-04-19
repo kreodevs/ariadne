@@ -12,6 +12,7 @@ Protocol for using the MCP AriadneSpecs Oracle tools (get_component_graph, valid
 1. **Run `list_known_projects`** to map project names to IDs.
 2. If `.ariadne-project` exists in workspace root, read its `projectId` and use it in all MCP calls.
 3. If user mentions project by name (e.g. "oohbp2"), use `list_known_projects` → find matching `id` → pass as `projectId`.
+4. **Grafo de componente / impacto / C4:** el MCP usa el API Nest (`ARIADNE_API_URL` + `ARIADNE_API_BEARER` / `ARIADNE_API_JWT`) cuando está configurado; sin JWT, `get_component_graph` y `get_legacy_impact` hacen fallback Falkor y el resultado puede no coincidir con el explorador. El markdown de respuesta indica la fuente.
 
 ## Tools by Intent
 
@@ -19,7 +20,7 @@ Protocol for using the MCP AriadneSpecs Oracle tools (get_component_graph, valid
 |-------------|------|------|
 | **Diagnóstico de archivo/componente/hook** ("diagnóstico de usePauta.tsx", "analiza Board") | `get_component_graph`, `get_legacy_impact`, `get_definitions`, `get_references` | **Use MCP first**, not just Read/Grep. list_known_projects → projectId → get_component_graph + get_legacy_impact + get_definitions/get_references. |
 | Diagnóstico proyecto, duplicados, reingeniería, código muerto, seguridad (`seguridad`) | `get_project_analysis` | list_known_projects → `projectId` (proyecto o `roots[].id`) + `currentFilePath` si multi-root → `get_project_analysis(projectId?, mode, currentFilePath?)`. **Código muerto:** presentar el resultado tal cual. El backend es la fuente de verdad. |
-| "¿Cómo funciona X?", explicar flujo | `ask_codebase` | `projectId` + `question`; opcional `responseMode: evidence_first` → JSON MDD (7 secciones) |
+| "¿Cómo funciona X?", explicar flujo | `ask_codebase` | `projectId` + `question`; opcional `responseMode: evidence_first` (JSON MDD 7 secciones para Forge/LegacyCoordinator) |
 | Búsqueda por término | `semantic_search`, `find_similar_implementations` | Direct query |
 | Antes de editar componente/función | `validate_before_edit` | Required — returns impact + contract |
 

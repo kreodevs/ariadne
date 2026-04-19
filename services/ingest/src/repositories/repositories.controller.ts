@@ -42,7 +42,7 @@ export class RepositoriesController {
     return this.service.findAll(projectId);
   }
 
-  /** Cola global: jobs queued o running en todos los repos (debe ir antes de :id). */
+  /** Cola global: queued/running + jobs terminados recientes con payload de auditoría (debe ir antes de :id). */
   @Get('jobs/active')
   findActiveJobs() {
     return this.service.findActiveJobsGlobal();

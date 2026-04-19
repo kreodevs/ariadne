@@ -46,6 +46,75 @@ function parseEnvExampleKeys(content: string): string[] {
   return keys.slice(0, 80);
 }
 
+/** Manifest agregado multi-repo: indica uso típico de Swagger en Nest. */
+function inferSwaggerDependencies(depKeys: string[]): boolean {
+  return depKeys.some((k) => {
+    const l = k.toLowerCase();
+    return l.includes('swagger') || l.includes('openapi');
+  });
+}
+
+/** Inventarios / PRD que documentan endpoints aunque no haya OpenAPI indexado en el grafo. */
+function pickSupplementaryApiDocPaths(paths: string[]): string[] {
+  const out: string[] = [];
+  for (const p of paths) {
+    const lower = p.toLowerCase();
+    if (!lower.endsWith('.md') && !lower.endsWith('.mdx')) continue;
+    if (
+      (lower.includes('inventario') && lower.includes('endpoint')) ||
+      lower.includes('inventario-endpoint') ||
+      lower.includes('endpoints.md') ||
+      (lower.includes('/docs/') &&
+        (lower.includes('api') || lower.includes('openapi') || lower.includes('endpoint'))) ||
+      ((lower.includes('diseño') || lower.includes('diseno')) &&
+        lower.includes('documentacion') &&
+        lower.includes('api'))
+    ) {
+      out.push(p);
+    }
+  }
+  return uniq(out);
+}
+
+function buildOpenApiSpecNotes(params: {
+  openapiPath: string | null;
+  swaggerDeps: boolean;
+  swaggerRelatedPaths: string[];
+  supplementaryDocs: string[];
+  apiFromSwagger: number;
+  apiFromAst: number;
+}): string | undefined {
+  const { openapiPath, swaggerDeps, swaggerRelatedPaths, supplementaryDocs, apiFromSwagger, apiFromAst } =
+    params;
+  if (openapiPath) return undefined;
+  const parts: string[] = [];
+  if (swaggerDeps) {
+    parts.push(
+      'Dependencias swagger/openapi en package.json agregado del proyecto; la UI Swagger en runtime no implica archivo openapi.json/yml indexado en Falkor.',
+    );
+  }
+  if (swaggerRelatedPaths.length > 0) {
+    parts.push(
+      `Archivos de configuración o rutas con "swagger"/"openapi" en el path (${swaggerRelatedPaths.length} en grafo).`,
+    );
+  }
+  if (supplementaryDocs.length > 0) {
+    parts.push(
+      'Hay documentación Markdown que puede listar endpoints; no sustituye contrato OpenAPI en el índice.',
+    );
+  }
+  if (
+    apiFromSwagger === 0 &&
+    apiFromAst === 0 &&
+    (swaggerDeps || swaggerRelatedPaths.length > 0 || supplementaryDocs.length > 0)
+  ) {
+    parts.push(
+      'Sin nodos OpenApiOperation ni NestController para este projectId: revisar sync del repo backend o ejecutar export OpenAPI y re-indexar el artefacto.',
+    );
+  }
+  return parts.length ? parts.join(' ') : undefined;
+}
+
 export async function buildMddEvidenceDocument(params: {
   projectId: string;
   message: string;
@@ -86,6 +155,23 @@ export async function buildMddEvidenceDocument(params: {
       { projectId },
     )) as Array<{ path?: string }>;
     openapiPath = oa[0]?.path ?? null;
+  } catch {
+    /* ignore */
+  }
+
+  let swaggerRelatedPaths: string[] = [];
+  try {
+    const sw = (await executeCypher(
+      projectId,
+      `MATCH (f:File {projectId: $projectId})
+       WHERE toLower(f.path) CONTAINS 'swagger'
+          OR toLower(f.path) CONTAINS 'openapi'
+       RETURN f.path AS path LIMIT ${L.swaggerRelatedFiles}`,
+      { projectId },
+    )) as Array<{ path?: string }>;
+    swaggerRelatedPaths = uniq(
+      sw.map((r) => r.path).filter((p): p is string => typeof p === 'string' && p.length > 0),
+    );
   } catch {
     /* ignore */
   }
@@ -194,15 +280,33 @@ export async function buildMddEvidenceDocument(params: {
     if (c && c.length > 0 && !evidence_paths.includes(p)) evidence_paths.push(p);
   }
 
+  const mergedEvidencePaths = uniq(evidence_paths);
+  const supplementaryDocPaths = pickSupplementaryApiDocPaths(mergedEvidencePaths);
+  const swaggerDeps = inferSwaggerDependencies(manifestDepKeys);
+
   const trust: MddEvidenceDocument['openapi_spec']['trust_level'] =
     openapiPath && apiFromSwagger.length ? 'high' : openapiPath ? 'medium' : 'low';
 
-  const summary = [
+  const summaryParts = [
     `Consulta: ${message.slice(0, L.summaryMessageChars)}`,
-    `Evidencia anclada a ${evidence_paths.length} ruta(s) verificada(s) en el repositorio indexado.`,
+    `Evidencia anclada a ${mergedEvidencePaths.length} ruta(s) verificada(s) en el repositorio indexado.`,
     openapiPath ? `Contrato OpenAPI priorizado: \`${openapiPath}\`.` : 'Sin spec OpenAPI indexado; rutas vía AST si aplica.',
     entities.length ? `${entities.length} modelo(s) en grafo (Prisma/TypeORM).` : 'Sin nodos Model en grafo para este alcance.',
-  ].join(' ');
+  ];
+  if (!openapiPath && (swaggerDeps || swaggerRelatedPaths.length > 0)) {
+    summaryParts.push(
+      'Swagger/OpenAPI en dependencias o rutas de archivo detectado(s) sin artefacto OpenAPI indexado como File.openApiTruth.',
+    );
+  }
+  if (supplementaryDocPaths.length > 0) {
+    summaryParts.push(
+      `Documentación de endpoints en Markdown (evidencia): ${supplementaryDocPaths
+        .slice(0, 5)
+        .map((p) => `\`${p}\``)
+        .join(', ')}${supplementaryDocPaths.length > 5 ? '…' : ''}.`,
+    );
+  }
+  const summary = summaryParts.join(' ');
 
   const complexity = Math.min(
     100,
@@ -211,9 +315,18 @@ export async function buildMddEvidenceDocument(params: {
         apiFromSwagger.length +
         apiFromAst.length +
         business.length +
-        evidence_paths.length * 0.5,
+        mergedEvidencePaths.length * 0.5,
     ),
   );
+
+  const openApiNotes = buildOpenApiSpecNotes({
+    openapiPath,
+    swaggerDeps,
+    swaggerRelatedPaths,
+    supplementaryDocs: supplementaryDocPaths,
+    apiFromSwagger: apiFromSwagger.length,
+    apiFromAst: apiFromAst.length,
+  });
 
   return {
     summary,
@@ -221,6 +334,10 @@ export async function buildMddEvidenceDocument(params: {
       found: Boolean(openapiPath),
       path: openapiPath,
       trust_level: trust,
+      ...(swaggerDeps ? { swagger_dependencies: true } : {}),
+      ...(swaggerRelatedPaths.length > 0 ? { swagger_related_paths: swaggerRelatedPaths } : {}),
+      ...(supplementaryDocPaths.length > 0 ? { supplementary_doc_paths: supplementaryDocPaths } : {}),
+      ...(openApiNotes ? { notes: openApiNotes } : {}),
     },
     entities,
     api_contracts: apiFromSwagger.length ? apiFromSwagger : apiFromAst,
@@ -233,6 +350,6 @@ export async function buildMddEvidenceDocument(params: {
       complexity,
       anti_patterns: apiFromSwagger.length === 0 && apiFromAst.length > 50 ? ['ast_fallback_large_surface'] : [],
     },
-    evidence_paths: uniq(evidence_paths).slice(0, L.evidencePaths),
+    evidence_paths: mergedEvidencePaths.slice(0, L.evidencePaths),
   };
 }

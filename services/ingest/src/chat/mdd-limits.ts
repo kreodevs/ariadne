@@ -18,6 +18,7 @@ export type MddBuilderLimits = {
   evidencePaths: number;
   summaryMessageChars: number;
   openApiFileCandidates: number;
+  swaggerRelatedFiles: number;
 };
 
 /** Cypher MDD — usar solo enteros sanitizados en plantillas. */
@@ -30,6 +31,7 @@ export function getMddBuilderLimits(): MddBuilderLimits {
     evidencePaths: intEnv('MDD_MAX_EVIDENCE_PATHS', 50_000, 1, 500_000),
     summaryMessageChars: intEnv('MDD_SUMMARY_MESSAGE_CHARS', 16_000, 500, 200_000),
     openApiFileCandidates: intEnv('MDD_MAX_OPENAPI_FILE_CANDIDATES', 25, 1, 200),
+    swaggerRelatedFiles: intEnv('MDD_MAX_SWAGGER_RELATED_PATHS', 40, 1, 500),
   };
 }
 

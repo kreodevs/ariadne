@@ -203,8 +203,8 @@ export class RepositoriesService {
   }
 
   /**
-   * Jobs de sync pendientes o en curso en todo el sistema (cola global).
-   * Orden: más antiguos primero (FIFO aproximado).
+   * Cola global de sync: jobs en cola o en curso + terminados recientes (auditoría).
+   * Los completados conservan `payload` (indexed, skipped, skippedPaths, etc.) hasta `pruneOldJobs`.
    */
   async findActiveJobsGlobal(): Promise<
     Array<{
@@ -225,12 +225,34 @@ export class RepositoriesService {
       };
     }>
   > {
-    const rows = await this.jobsRepo.find({
+    const recentLimit = (() => {
+      const raw = process.env.SYNC_QUEUE_RECENT_JOBS?.trim();
+      const n = raw ? parseInt(raw, 10) : 100;
+      return Number.isFinite(n) && n >= 1 ? Math.min(n, 500) : 100;
+    })();
+
+    const active = await this.jobsRepo.find({
       where: { status: In(['queued', 'running']) },
       relations: ['repository'],
       order: { startedAt: 'ASC' },
     });
-    return rows.map((j) => ({
+    const recentTerminal = await this.jobsRepo.find({
+      where: { status: In(['completed', 'failed']) },
+      relations: ['repository'],
+      order: { finishedAt: 'DESC' },
+      take: recentLimit,
+    });
+    const activeIds = new Set(active.map((j) => j.id));
+    const merged = [...active, ...recentTerminal.filter((j) => !activeIds.has(j.id))];
+    merged.sort((a, b) => {
+      const aAct = a.status === 'queued' || a.status === 'running' ? 0 : 1;
+      const bAct = b.status === 'queued' || b.status === 'running' ? 0 : 1;
+      if (aAct !== bAct) return aAct - bAct;
+      if (aAct === 0) return a.startedAt.getTime() - b.startedAt.getTime();
+      return (b.finishedAt?.getTime() ?? 0) - (a.finishedAt?.getTime() ?? 0);
+    });
+
+    return merged.map((j) => ({
       id: j.id,
       repositoryId: j.repositoryId,
       type: j.type,

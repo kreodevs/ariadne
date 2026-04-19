@@ -18,7 +18,7 @@ Vistas principales de la aplicación Ariadne (shell SaaS: sidebar + header con b
 ## Repositorios (The Forge)
 
 - **RepoList.tsx** — Lista de repositorios con **DataTable** (TanStack: ordenación y filtro global). Título de vista **The Forge**. Acciones **Ver**, **Editar**, **Resync**, **Eliminar** (sin cambiar API).
-- **ActiveJobsQueue.tsx** — Cola global de jobs de sync (`queued` / `running`) en todos los repos; `GET /repositories/jobs/active`, auto-refresh cada 5s. Ruta: `/jobs`.
+- **ActiveJobsQueue.tsx** — Cola global: `queued` / `running` más jobs **terminados recientes** (`completed` / `failed`) para auditoría (indexados, omitidos, lista desplegable de rutas omitidas). Misma ruta `GET /repositories/jobs/active`; límite de histórico configurable en ingest con `SYNC_QUEUE_RECENT_JOBS` (default 100). Auto-refresh cada 5s. Ruta: `/jobs`.
 - **RepoDetail.tsx** — Detalle de un repo (sync, jobs, análisis).
 - **RepoChat.tsx** — Chat por repositorio + panel de análisis (diagnóstico, duplicados, reingeniería, código muerto, **seguridad** heurística, AGENTS, SKILL, Full Audit). **Alcance opcional** y badges de caché / foco vía `reportMeta`. Ruta: `/repos/:id/chat`.
 - **RepoIndex.tsx** — Navegador del índice Falkor del repo (`GET graph-summary` con `full=1` y **`repoScoped=1`** para no mezclar nodos de otros roots en proyectos multi-root).

@@ -97,6 +97,8 @@ Añade tus prefijos según la estructura de tu repo.
 
 Volcado **casi completo** por defecto (OpenAPI ops, Model, NestService, `evidence_paths`, texto de consulta en `summary`). Acota con env si Falkor o el payload JSON son demasiado grandes:
 
+**`openapi_spec`:** además de `found` / `path` (`File.openApiTruth`) / `trust_level`, el builder puede rellenar **`swagger_dependencies`** (manifest agregado del proyecto incluye paquetes swagger/openapi), **`swagger_related_paths`** (nodos `File` cuyo path contiene `swagger` u `openapi`), **`supplementary_doc_paths`** (Markdown en `evidence_paths` que parecen inventario de endpoints, p. ej. `docs/inventario-endpoints-*.md`) y **`notes`** cuando hay Swagger en código pero no hay spec OpenAPI indexada o faltan nodos `OpenApiOperation`/`NestController`.
+
 | Variable | Uso |
 |----------|-----|
 | `MDD_MAX_OPENAPI_OPERATIONS` | Límite Cypher `OpenApiOperation` (default 100000) |
@@ -106,10 +108,11 @@ Volcado **casi completo** por defecto (OpenAPI ops, Model, NestService, `evidenc
 | `MDD_MAX_EVIDENCE_PATHS` | Recorte final de `evidence_paths` (default 50000) |
 | `MDD_SUMMARY_MESSAGE_CHARS` | Prefijo de consulta en `summary` (default 16000) |
 | `MDD_MAX_OPENAPI_FILE_CANDIDATES` | Ficheros `File` con `openApiTruth` (default 25) |
+| `MDD_MAX_SWAGGER_RELATED_PATHS` | `File` con path que sugiere Swagger/OpenAPI (default 40) |
 | `MDD_FALLBACK_GRAPH_FILE_PATHS` | Muestra de paths File si el retriever va vacío (default 2000) |
 | `MDD_FALLBACK_FILE_SNIPPET_CHARS` | Lectura de manifiestos en fallback (default 100000) |
 
-Implementación: `mdd-limits.ts`.
+Implementación: `mdd-limits.ts`, `mdd-document.builder.ts`, `mdd-document.types.ts`.
 
 ## Seguridad (mode=seguridad)
 
