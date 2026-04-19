@@ -1,4 +1,4 @@
-import { moonshotApiKey, moonshotBaseUrl } from '../moonshot/moonshot-env';
+import { kimiChatTemperature, moonshotApiKey, moonshotBaseUrl } from '../moonshot/moonshot-env';
 import { ingestChatLlmModel } from './chat-llm-config';
 
 async function post(body: Record<string, unknown>): Promise<Response> {
@@ -18,10 +18,11 @@ export async function kimiIngestCallLlm(
   messages: Array<{ role: 'user' | 'assistant' | 'system'; content: string }>,
   maxTokens: number,
 ): Promise<string> {
+  const model = ingestChatLlmModel();
   const res = await post({
-    model: ingestChatLlmModel(),
+    model,
     messages,
-    temperature: 0.1,
+    temperature: kimiChatTemperature(model),
     max_tokens: maxTokens,
   });
   if (!res.ok) {
@@ -48,12 +49,13 @@ export async function kimiIngestCallLlmWithTools(
   content?: string;
   tool_calls?: Array<{ id: string; function: { name: string; arguments: string } }>;
 }> {
+  const model = ingestChatLlmModel();
   const res = await post({
-    model: ingestChatLlmModel(),
+    model,
     messages,
     tools,
     tool_choice: 'auto',
-    temperature: 0.1,
+    temperature: kimiChatTemperature(model),
     max_tokens: maxTokens,
   });
   if (!res.ok) throw new Error(`Kimi/Moonshot API ${res.status}: ${await res.text()}`);

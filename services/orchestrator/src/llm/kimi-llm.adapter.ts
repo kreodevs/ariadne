@@ -1,4 +1,4 @@
-import { moonshotApiKey, moonshotBaseUrl } from './moonshot-env';
+import { kimiChatTemperature, moonshotApiKey, moonshotBaseUrl } from './moonshot-env';
 import { orchestratorLlmModel } from './orchestrator-llm-config';
 import type { OpenAiStyleMessage } from './openai-llm.adapter';
 
@@ -20,10 +20,11 @@ export async function kimiCallLlm(
   messages: Array<{ role: 'user' | 'assistant' | 'system'; content: string }>,
   maxTokens: number,
 ): Promise<string> {
+  const model = orchestratorLlmModel();
   const res = await postChatCompletions({
-    model: orchestratorLlmModel(),
+    model,
     messages,
-    temperature: 0.1,
+    temperature: kimiChatTemperature(model),
     max_tokens: maxTokens,
   });
   if (!res.ok) {
@@ -42,12 +43,13 @@ export async function kimiCallLlmWithTools(
   content?: string;
   tool_calls?: Array<{ id: string; function: { name: string; arguments: string } }>;
 }> {
+  const model = orchestratorLlmModel();
   const res = await postChatCompletions({
-    model: orchestratorLlmModel(),
+    model,
     messages,
     tools,
     tool_choice: 'auto',
-    temperature: 0.1,
+    temperature: kimiChatTemperature(model),
     max_tokens: maxTokens,
   });
   if (!res.ok) throw new Error(`Kimi/Moonshot API ${res.status}: ${await res.text()}`);
@@ -68,9 +70,10 @@ export async function kimiCallLlmWithTools(
 
 export async function kimiChatSimple(system: string, user: string): Promise<string> {
   if (!moonshotApiKey()) return '';
+  const model = orchestratorLlmModel();
   const res = await postChatCompletions({
-    model: orchestratorLlmModel(),
-    temperature: 0.2,
+    model,
+    temperature: kimiChatTemperature(model, { workflowSimple: true }),
     messages: [
       { role: 'system', content: system },
       { role: 'user', content: user },
