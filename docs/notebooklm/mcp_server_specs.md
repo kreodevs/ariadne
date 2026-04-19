@@ -136,6 +136,21 @@ RETURN dependent.name AS name, labels(dependent) AS labels
 - **Argumentos:** `projectId?` (id de **proyecto** Ariadne o **`roots[].id`** de repo), `currentFilePath?` (multi-root: el MCP envía `idePath` al ingest cuando el `projectId` es el del proyecto y hay varios roots), `mode?` ∈ `diagnostico` \| `duplicados` \| `reingenieria` \| `codigo_muerto` \| `seguridad` (default `diagnostico`).
 - **Implementación ingest:** Si el UUID corresponde a un **proyecto** en BD → `POST /projects/:projectId/analyze` con `{ mode, idePath?, repositoryId? }`. Si corresponde a un **repositorio** → `POST /repositories/:id/analyze` con `{ mode }`. La resolución de repo en multi-root es responsabilidad del ingest (`AnalyticsService`), no del cliente.
 
+### Herramientas auxiliares (MCP nativas / ingest ligero)
+
+Distintas de `get_project_analysis` (pipeline completo en ingest con LLM):
+
+| Tool | Rol |
+|------|-----|
+| **`get_sync_status`** | `GET /projects/:id/sync-status` (ingest): última sync y jobs recientes. Caché opcional en MCP (`MCP_REDIS_*`). |
+| **`get_debt_report`** | Consulta Cypher en Falkor: nodos `Function`/`Component` sin aristas `CALLS` entrantes ni salientes (heurística “aislado”). Límite de filas configurable: `MCP_DEBT_REPORT_ISOLATED_LIMIT`. |
+| **`find_duplicates`** | Cypher: agrupa `File` por `contentHash` con más de un path. Límite de grupos: `MCP_FIND_DUPLICATES_GROUP_LIMIT`. No es el modo `duplicados` de `get_project_analysis` (embed/cross-package). |
+
+### Volúmenes de salida (operadores / The Forge)
+
+- **MCP:** prefijos **`MCP_*`** — ver `services/mcp-ariadne/README.md` y `src/mcp-tool-limits.ts` (defaults altos; bajar si el contexto del LLM se satura).
+- **MDD (`evidence_first` / `mdd-evidence`):** prefijos **`MDD_*`** — ver `services/ingest/src/chat/README.md` y `mdd-limits.ts`.
+
 ---
 
 ## 2.1 Herramientas de Refactorización Segura (SDD)

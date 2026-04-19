@@ -240,6 +240,9 @@ Los nombres de argumentos deben coincidir con el esquema devuelto por `tools/lis
 | `get_project_standards`        | `projectId` **o** `currentFilePath` | — (idem discrepancia schema vs runtime)                                            |
 | `get_file_context`             | `filePath` + (`projectId` **o** `currentFilePath`) | `ref`                                                                            |
 | `analyze_local_changes`        | —                       | `projectId` o `currentFilePath`; `workspaceRoot` o `stagedDiff`                      |
+| `get_sync_status`              | —                       | `projectId`, `currentFilePath` — estado sync vía **ingest** `GET /projects/:id/sync-status` |
+| `get_debt_report`              | `projectId`             | `currentFilePath` — heurística **Falkor** (nodos aislados); no sustituye `get_project_analysis` |
+| `find_duplicates`              | `projectId`             | `currentFilePath` — duplicados por `contentHash` en grafo (nativo MCP)              |
 
 > **projectId:** ID de proyecto Ariadne o ID de repo (`roots[].id`). Ver [mcp_server_specs.md §2](mcp_server_specs.md) (proyecto vs repo).
 >
@@ -378,7 +381,14 @@ Estos datos **no están siempre en el grafo** (Prisma no se indexa; .env nunca).
 
 ---
 
-## 12. Referencias
+## 12. Volúmenes de salida (límites configurables)
+
+El servidor MCP y el MDD del ingest usan **variables de entorno** con defaults altos para no truncar agresivamente listas y snippets. The Forge / clientes pueden bajarlas si saturan contexto o Falkor. Ver:
+
+- `services/mcp-ariadne/README.md` — prefijos **`MCP_*`** (`semantic_search`, `get_file_context`, `trace_reachability`, etc.).
+- `services/ingest/src/chat/README.md` — prefijos **`MDD_*`** (JSON `evidence_first` / `mdd-evidence`).
+
+## 13. Referencias
 
 - [Especificación MCP — Herramientas](mcp_server_specs.md) — Lista completa, API Nest vs Falkor, `get_c4_model`.
 - [Transports — Streamable HTTP](https://modelcontextprotocol.io/docs/concepts/transports#streamable-http) — Protocolo oficial.

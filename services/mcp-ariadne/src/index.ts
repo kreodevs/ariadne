@@ -375,7 +375,7 @@ function createMcpServer(): Server {
     {
       name: "ask_codebase",
       description:
-        "Pregunta en lenguaje natural sobre el código. Orquestación agéntica: Coordinador (grafo Falkor + archivos físicos: Prisma, Swagger/OpenAPI, package.json, .env.example, tsconfig) → Validador (cross-check grafo vs archivos). Con responseMode=evidence_first devuelve JSON MDD de 7 secciones (summary, openapi_spec, entities, api_contracts, business_logic, infrastructure, risk_report, evidence_paths) para LegacyCoordinator/The Forge. No uses respuestas vacías si hay archivos indexados: el ingest inyecta evidencia física. Para filesToModify usa get_modification_plan. Requiere INGEST_URL y LLM.",
+        "Pregunta en lenguaje natural sobre el código. Orquestación agéntica: Coordinador (grafo Falkor + archivos físicos: Prisma, Swagger/OpenAPI, package.json, .env.example, tsconfig) → Validador (cross-check grafo vs archivos). responseMode=default: respuesta en prosa (sintetizador). responseMode=evidence_first: la respuesta útil para SDD/The Forge es JSON MDD de 7 claves en el campo answer (string JSON parseable: summary, openapi_spec, entities, api_contracts, business_logic, infrastructure, risk_report, evidence_paths); con ORCHESTRATOR_URL el orchestrator construye el MDD vía ingest mdd-evidence. No uses respuestas vacías si hay archivos indexados: el ingest inyecta evidencia física. Para filesToModify usa get_modification_plan. Requiere INGEST_URL y LLM.",
       inputSchema: {
         type: "object" as const,
         properties: {
@@ -400,7 +400,7 @@ function createMcpServer(): Server {
             type: "string",
             enum: ["default", "evidence_first"],
             description:
-              "evidence_first: modo SDD/documentación — fuerza two-phase, más contexto al sintetizador y salida con ## Evidencia primero (listados anclados). The Forge lo usa en síntesis sobre evidencia indexada.",
+              "default: prosa explicativa (Coordinador/Validador + sintetizador). evidence_first: prioriza retrieval anclado y devuelve answer como JSON MDD (7 secciones) para LegacyCoordinator/The Forge — no sustituye por markdown genérico; parsear answer como JSON. Alineado con CHAT_TWO_PHASE / pipeline ingest u orchestrator.",
           },
         },
         required: ["question"],
