@@ -80,3 +80,21 @@
 .component-graph-rf .react-flow .react-flow__nodes {
   z-index: 20 !important;
 }
+
+/* vis-network: botones de navegación (PNG con verde lima por defecto → tema slate + sombra azul) */
+.component-graph-vis div.vis-network div.vis-navigation div.vis-button {
+  background-color: #1e293b !important;
+  border: 1px solid #334155 !important;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.45);
+  /* Neutraliza el relleno verde de los assets de vis */
+  filter: saturate(0) brightness(1.12) contrast(1.08);
+}
+
+.component-graph-vis div.vis-network div.vis-navigation div.vis-button:hover {
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.4) !important;
+  filter: saturate(0) brightness(1.22) contrast(1.05);
+}
+
+.component-graph-vis div.vis-network div.vis-navigation div.vis-button:active {
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.65) !important;
+}

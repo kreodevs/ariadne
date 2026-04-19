@@ -13,7 +13,7 @@ Vista **Explorador de grafo** (`/graph-explorer`):
 
 ### Grafo de componente (principal)
 
-- **[vis-network](https://visjs.github.io/vis-network/docs/network/)** (`ComponentGraphVisView.tsx`): layout **forceAtlas2Based**, zoom (rueda), pan, botones de navegación de vis, **Encuadrar** / **Autolayout**; foco resaltado en color. Aristas = `filterValidEdges` (`depends` / `legacy_impact`). **Clic** en nodo periférico → expansión depth 1 (`mergeGraphNodes` / `mergeGraphEdges`).
+- **[vis-network](https://visjs.github.io/vis-network/docs/network/)** (`ComponentGraphVisView.tsx`): layout **forceAtlas2Based**, zoom (rueda), pan, botones de navegación de vis (estilos sobrescritos en `index.css` bajo `.component-graph-vis` para tema oscuro), **Encuadrar** / **Autolayout**; nodos con color y tipografía explícitos (hex; vis no usa CSS vars). Aristas = `filterValidEdges` (`depends` / `legacy_impact`). **Clic** en nodo periférico → expansión depth 1 (`mergeGraphNodes` / `mergeGraphEdges`).
 - **API (Nest)**: mismo contrato que antes (`graph.service.ts`, `falkorScalarToString`, etc.).
 - **graphHints** (opcional): aviso si no hay aristas depends salientes del foco pero sí `projectId`.
 

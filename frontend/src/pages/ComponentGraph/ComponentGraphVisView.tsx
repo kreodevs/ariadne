@@ -51,11 +51,25 @@ const VIS_NETWORK_OPTIONS = {
   },
 } satisfies Options;
 
-/** Colores hex (el canvas de vis no resuelve CSS variables). */
-const FOCAL_NODE_COLOR = {
-  border: '#2563eb',
+/** Colores hex (el canvas de vis no resuelve CSS variables; alineados a vars.css oscuro). */
+const NODE_FONT = {
+  size: 13,
+  color: '#e2e8f0',
+  face: 'Inter, ui-sans-serif, system-ui, sans-serif',
+} as const;
+
+const PERIPHERAL_NODE_COLOR = {
+  border: '#64748b',
   background: '#1e293b',
   highlight: { border: '#3b82f6', background: '#334155' },
+  hover: { border: '#60a5fa', background: '#334155' },
+};
+
+const FOCAL_NODE_COLOR = {
+  border: '#3b82f6',
+  background: '#172554',
+  highlight: { border: '#60a5fa', background: '#1e3a5f' },
+  hover: { border: '#60a5fa', background: '#1e3a5f' },
 };
 
 type Props = {
@@ -98,13 +112,11 @@ export function ComponentGraphVisView({
           id: n.id,
           label: `${labelFor(n)} (${n.kind})`,
           shape: 'box' as const,
-          font: { size: 12 },
-          ...(isFocal
-            ? {
-                color: FOCAL_NODE_COLOR,
-                borderWidth: 3,
-              }
-            : {}),
+          font: NODE_FONT,
+          color: isFocal
+            ? FOCAL_NODE_COLOR
+            : PERIPHERAL_NODE_COLOR,
+          borderWidth: isFocal ? 3 : 2,
         };
       }),
     );
@@ -121,7 +133,7 @@ export function ComponentGraphVisView({
             : ({ color: '#2563eb', highlight: '#3b82f6' } as const),
         dashes: e.kind === 'legacy_impact',
         label: e.kind,
-        font: { size: 10, align: 'middle' as const },
+        font: { size: 10, align: 'middle' as const, color: '#94a3b8' },
       })),
     );
 
