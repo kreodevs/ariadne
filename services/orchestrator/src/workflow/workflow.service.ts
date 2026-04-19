@@ -3,6 +3,8 @@
  */
 import { Injectable } from '@nestjs/common';
 import { START, END, StateGraph, Annotation } from '@langchain/langgraph';
+import { hasOrchestratorLlmConfigured } from '../llm/orchestrator-llm-config';
+import { orchestratorChatSimple } from '../llm/orchestrator-llm.facade';
 
 /** Propuesta de prop (nombre y si es requerida). */
 export interface PropSpec {
@@ -97,36 +99,6 @@ const apiBase = () =>
   process.env.ARIADNESPEC_API_URL ??
   process.env.FALKORSPEC_API_URL ??
   'http://api:3000/api';
-
-const openaiModel = () => process.env.ORCHESTRATOR_LLM_MODEL ?? 'gpt-4o-mini';
-
-async function openaiChat(system: string, user: string): Promise<string> {
-  const key = process.env.OPENAI_API_KEY;
-  if (!key) return '';
-  const res = await fetch('https://api.openai.com/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${key}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      model: openaiModel(),
-      temperature: 0.2,
-      messages: [
-        { role: 'system', content: system },
-        { role: 'user', content: user },
-      ],
-    }),
-  });
-  const data = (await res.json().catch(() => ({}))) as {
-    choices?: Array<{ message?: { content?: string } }>;
-    error?: { message?: string };
-  };
-  if (!res.ok) {
-    throw new Error(data.error?.message ?? `OpenAI HTTP ${res.status}`);
-  }
-  return (data.choices?.[0]?.message?.content ?? '').trim();
-}
 
 /** Quita cercos ``` del modelo. */
 function stripCodeFence(s: string): string {
@@ -270,10 +242,10 @@ async function reviseCodeWithLlm(state: RefactorState): Promise<Partial<Refactor
       '\n\nCódigo actual:\n',
       state.proposedCode.slice(0, 48000),
     ].join('');
-    const raw = await openaiChat(system, user);
+    const raw = await orchestratorChatSimple(system, user);
     const code = stripCodeFence(raw);
     if (!code) {
-      return { error: 'OPENAI_API_KEY ausente o respuesta vacía del modelo', approved: false };
+      return { error: 'LLM no configurado o respuesta vacía del modelo (ORCHESTRATOR_LLM_PROVIDER + API key)', approved: false };
     }
     return {
       proposedCode: code,
@@ -293,7 +265,7 @@ function routeAfterShadow(state: RefactorState): typeof END | 'compare_graphs' |
   const canRevise =
     (state.falkorIngestError?.length ?? 0) > 0 &&
     n < max &&
-    !!process.env.OPENAI_API_KEY;
+    hasOrchestratorLlmConfigured();
   if (canRevise) return 'revise_code_llm';
   return END;
 }
@@ -326,9 +298,9 @@ async function compareGraphs(state: RefactorState): Promise<Partial<RefactorStat
 async function generateTests(state: RefactorState): Promise<Partial<RefactorState>> {
   if (state.error || !state.approved) return {};
   const props = state.contractProps.length ? state.contractProps : state.shadowCompareResult?.mainProps ?? [];
-  if (!process.env.OPENAI_API_KEY) {
+  if (!hasOrchestratorLlmConfigured()) {
     const lines = [
-      `// Tests sugeridos para ${state.nodeId} (generar con ORCHESTRATOR + OPENAI_API_KEY para código completo)`,
+      `// Tests sugeridos para ${state.nodeId} (generar con ORCHESTRATOR + ORCHESTRATOR_LLM_PROVIDER/API key para código completo)`,
       `// Props del contrato: ${JSON.stringify(props)}`,
       `import { describe, it, expect } from 'vitest';`,
       `// TODO: render/mount ${state.nodeId} y validar props requeridas`,
@@ -339,7 +311,7 @@ async function generateTests(state: RefactorState): Promise<Partial<RefactorStat
     const system =
       'Generas un único archivo de test Vitest/React Testing Library o similar. Solo código, sin markdown.';
     const user = `Componente (o nodo): ${state.nodeId}\nProps: ${JSON.stringify(props)}\nPath: ${state.filePath}`;
-    const raw = await openaiChat(system, user);
+    const raw = await orchestratorChatSimple(system, user);
     return { generatedTests: stripCodeFence(raw) || raw };
   } catch {
     return { generatedTests: `// Error al generar tests con LLM para ${state.nodeId}` };

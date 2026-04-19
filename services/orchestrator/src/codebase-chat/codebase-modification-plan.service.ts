@@ -5,6 +5,7 @@ import { Injectable } from '@nestjs/common';
 import { IngestChatClient } from './ingest-chat.client';
 import type { ModificationPlanResult } from './ingest-types';
 import type { ChatScope } from './chat-scope.util';
+import { hasOrchestratorLlmConfigured } from '../llm/orchestrator-llm-config';
 import { OrchestratorLlmService } from './orchestrator-llm.service';
 
 @Injectable()
@@ -18,8 +19,7 @@ export class CodebaseModificationPlanService {
     userDescription: string,
     filesToModify: ModificationPlanResult['filesToModify'],
   ): Promise<string[]> {
-    const key = process.env.OPENAI_API_KEY?.trim();
-    if (!key) return [];
+    if (!hasOrchestratorLlmConfigured()) return [];
 
     const systemPrompt = `Eres un analista que genera preguntas para afinar un cambio en el software.
 Regla: SOLO preguntas de negocio o funcionalidad: valores por defecto, reglas de validación, criterios de negocio, umbrales, opciones permitidas.
