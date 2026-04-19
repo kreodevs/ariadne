@@ -26,6 +26,11 @@ function isActiveStatus(s: string): boolean {
   return s === 'queued' || s === 'running';
 }
 
+/** No borrar filas en ejecución (riesgo de inconsistencia con el worker). */
+function canSelectJobForDelete(j: ActiveSyncJob): boolean {
+  return j.status !== 'running';
+}
+
 /** Resume progreso en vivo (payload mezclado durante el sync). */
 function progressHint(payload: Record<string, unknown> | null | undefined): string | null {
   if (!payload) return null;
@@ -40,9 +45,11 @@ function progressHint(payload: Record<string, unknown> | null | undefined): stri
   return null;
 }
 
-/** Extrae línea de auditoría y lista de omitidos desde el payload al completar (full o webhook). */
+/** Extrae línea de auditoría y listas indexados/omitidos desde el payload al completar (full o webhook). */
 function auditFromPayload(job: ActiveSyncJob): {
   summary: string;
+  indexedPaths: string[];
+  indexedTotal: number;
   omitted: string[];
   errorLine: string | null;
 } {
@@ -50,12 +57,14 @@ function auditFromPayload(job: ActiveSyncJob): {
   if (status === 'failed') {
     return {
       summary: '—',
+      indexedPaths: [],
+      indexedTotal: 0,
       omitted: [],
       errorLine: errorMessage?.trim() || 'Error desconocido',
     };
   }
   if (status !== 'completed' || !payload) {
-    return { summary: '—', omitted: [], errorLine: null };
+    return { summary: '—', indexedPaths: [], indexedTotal: 0, omitted: [], errorLine: null };
   }
   const indexed = typeof payload.indexed === 'number' ? payload.indexed : undefined;
   const skipped = typeof payload.skipped === 'number' ? payload.skipped : undefined;
@@ -77,8 +86,14 @@ function auditFromPayload(job: ActiveSyncJob): {
         omitted.push(...arr.filter((x): x is string => typeof x === 'string'));
     }
   }
+  let indexedPaths: string[] = [];
+  if (Array.isArray(payload.paths)) {
+    indexedPaths = payload.paths.filter((x): x is string => typeof x === 'string');
+  }
   return {
     summary: parts.length ? parts.join(' · ') : '—',
+    indexedPaths,
+    indexedTotal: indexed ?? 0,
     omitted,
     errorLine: null,
   };
@@ -89,12 +104,18 @@ export function ActiveJobsQueue() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [selectedJobIds, setSelectedJobIds] = useState<Set<string>>(new Set());
+  const [deletingJobs, setDeletingJobs] = useState(false);
 
   const load = useCallback(() => {
     return api
       .getActiveSyncJobs()
       .then((list) => {
         setJobs(list);
+        setSelectedJobIds((prev) => {
+          const ids = new Set(list.map((j) => j.id));
+          return new Set([...prev].filter((id) => ids.has(id)));
+        });
         setError(null);
       })
       .catch((e) => setError(e.message))
@@ -119,6 +140,76 @@ export function ActiveJobsQueue() {
     return { active, done };
   }, [jobs]);
 
+  const selectableIds = useMemo(
+    () => jobs.filter(canSelectJobForDelete).map((j) => j.id),
+    [jobs],
+  );
+  const allSelectableSelected =
+    selectableIds.length > 0 && selectableIds.every((id) => selectedJobIds.has(id));
+  const hasSelection = selectedJobIds.size > 0;
+
+  const toggleJobSelection = useCallback((jobId: string) => {
+    setSelectedJobIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(jobId)) next.delete(jobId);
+      else next.add(jobId);
+      return next;
+    });
+  }, []);
+
+  const toggleAllSelectable = useCallback(() => {
+    if (allSelectableSelected) setSelectedJobIds(new Set());
+    else setSelectedJobIds(new Set(selectableIds));
+  }, [allSelectableSelected, selectableIds]);
+
+  const onDeleteJob = useCallback(
+    async (repositoryId: string, jobId: string) => {
+      if (!window.confirm('¿Quitar este job del historial?')) return;
+      setDeletingJobs(true);
+      try {
+        await api.deleteJob(repositoryId, jobId);
+        setSelectedJobIds((s) => {
+          const n = new Set(s);
+          n.delete(jobId);
+          return n;
+        });
+        await load();
+      } catch (e) {
+        setError(e instanceof Error ? e.message : String(e));
+      } finally {
+        setDeletingJobs(false);
+      }
+    },
+    [load],
+  );
+
+  const onDeleteSelected = useCallback(async () => {
+    if (selectedJobIds.size === 0) return;
+    if (
+      !window.confirm(
+        `¿Eliminar ${selectedJobIds.size} job(s) del historial? Solo se borran registros en base de datos.`,
+      )
+    ) {
+      return;
+    }
+    setDeletingJobs(true);
+    try {
+      const pairs = [...selectedJobIds]
+        .map((jobId) => {
+          const job = jobs.find((j) => j.id === jobId);
+          return job ? { repositoryId: job.repositoryId, jobId } : null;
+        })
+        .filter((p): p is { repositoryId: string; jobId: string } => p !== null);
+      await Promise.all(pairs.map((p) => api.deleteJob(p.repositoryId, p.jobId)));
+      setSelectedJobIds(new Set());
+      await load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setDeletingJobs(false);
+    }
+  }, [selectedJobIds, jobs, load]);
+
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-start justify-between gap-4">
@@ -129,18 +220,30 @@ export function ActiveJobsQueue() {
             Se actualiza cada {POLL_MS / 1000}s.
           </p>
         </div>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => {
-            setRefreshing(true);
-            void load();
-          }}
-          disabled={refreshing}
-        >
-          <RefreshCw className={`w-4 h-4 mr-2 ${refreshing ? 'animate-spin' : ''}`} />
-          Actualizar
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          {hasSelection && (
+            <Button
+              variant="destructive"
+              size="sm"
+              onClick={() => void onDeleteSelected()}
+              disabled={deletingJobs}
+            >
+              Borrar seleccionados ({selectedJobIds.size})
+            </Button>
+          )}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              setRefreshing(true);
+              void load();
+            }}
+            disabled={refreshing}
+          >
+            <RefreshCw className={`w-4 h-4 mr-2 ${refreshing ? 'animate-spin' : ''}`} />
+            Actualizar
+          </Button>
+        </div>
       </div>
 
       <Card>
@@ -172,25 +275,55 @@ export function ActiveJobsQueue() {
               <Table>
                 <TableHeader>
                   <TableRow>
+                    <TableHead className="w-10">
+                      <input
+                        type="checkbox"
+                        checked={allSelectableSelected}
+                        onChange={toggleAllSelectable}
+                        disabled={selectableIds.length === 0}
+                        title={
+                          selectableIds.length === 0
+                            ? 'No hay filas eliminables (hay un job en ejecución)'
+                            : 'Seleccionar todos los que se pueden borrar'
+                        }
+                        className="rounded border-input"
+                      />
+                    </TableHead>
                     <TableHead>Estado</TableHead>
                     <TableHead>Repositorio</TableHead>
                     <TableHead>Tipo</TableHead>
                     <TableHead>Inicio</TableHead>
                     <TableHead>Fin</TableHead>
                     <TableHead>Auditoría / progreso</TableHead>
-                    <TableHead className="text-right">Acción</TableHead>
+                    <TableHead className="text-right">Acciones</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {jobs.map((j) => {
+                    const selectable = canSelectJobForDelete(j);
                     const scope =
                       typeof j.payload?.onlyProjectId === 'string' ? j.payload.onlyProjectId : null;
                     const active = isActiveStatus(j.status);
                     const prog = active ? progressHint(j.payload) : null;
                     const audit = auditFromPayload(j);
                     const showOmitted = audit.omitted.length > 0;
+                    const showIndexed = audit.indexedPaths.length > 0;
                     return (
                       <TableRow key={j.id}>
+                        <TableCell>
+                          <input
+                            type="checkbox"
+                            checked={selectedJobIds.has(j.id)}
+                            onChange={() => toggleJobSelection(j.id)}
+                            disabled={!selectable}
+                            title={
+                              selectable
+                                ? 'Seleccionar para borrar del historial'
+                                : 'No se puede borrar mientras el job está en ejecución'
+                            }
+                            className="rounded border-input"
+                          />
+                        </TableCell>
                         <TableCell>
                           <StatusBadge status={j.status} />
                         </TableCell>
@@ -221,6 +354,24 @@ export function ActiveJobsQueue() {
                           {!active && j.status === 'completed' && (
                             <div className="space-y-1">
                               <div>{audit.summary}</div>
+                              {showIndexed && (
+                                <details className="text-xs text-[var(--foreground-muted)]">
+                                  <summary className="cursor-pointer select-none hover:underline">
+                                    Ver indexados ({audit.indexedPaths.length}
+                                    {audit.indexedTotal > audit.indexedPaths.length
+                                      ? ` de ${audit.indexedTotal}`
+                                      : ''}
+                                    )
+                                  </summary>
+                                  <ul className="mt-1 pl-3 list-disc max-h-40 overflow-y-auto space-y-0.5">
+                                    {audit.indexedPaths.map((p) => (
+                                      <li key={p} className="break-all font-mono">
+                                        {p}
+                                      </li>
+                                    ))}
+                                  </ul>
+                                </details>
+                              )}
                               {showOmitted && (
                                 <details className="text-xs text-[var(--foreground-muted)]">
                                   <summary className="cursor-pointer select-none hover:underline">
@@ -241,10 +392,23 @@ export function ActiveJobsQueue() {
                             <span className="text-destructive text-xs break-words">{audit.errorLine}</span>
                           )}
                         </TableCell>
-                        <TableCell className="text-right">
-                          <Button variant="ghost" size="sm" asChild>
-                            <Link to={`/repos/${j.repositoryId}`}>Ver repo</Link>
-                          </Button>
+                        <TableCell className="text-right whitespace-nowrap">
+                          <div className="flex justify-end gap-1 flex-wrap">
+                            <Button variant="ghost" size="sm" asChild>
+                              <Link to={`/repos/${j.repositoryId}`}>Ver repo</Link>
+                            </Button>
+                            {selectable && (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="text-destructive hover:text-destructive"
+                                disabled={deletingJobs}
+                                onClick={() => void onDeleteJob(j.repositoryId, j.id)}
+                              >
+                                Borrar
+                              </Button>
+                            )}
+                          </div>
                         </TableCell>
                       </TableRow>
                     );

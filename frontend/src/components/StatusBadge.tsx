@@ -3,11 +3,14 @@
  */
 import { Badge } from '@/components/ui/badge';
 
-const statusVariant: Record<string, 'default' | 'secondary' | 'destructive' | 'outline'> = {
+const statusVariant: Record<
+  string,
+  'default' | 'secondary' | 'destructive' | 'outline' | 'warning'
+> = {
   pending: 'secondary',
   queued: 'secondary',
-  syncing: 'default',
-  running: 'default',
+  syncing: 'warning',
+  running: 'warning',
   ready: 'default',
   completed: 'default',
   error: 'destructive',

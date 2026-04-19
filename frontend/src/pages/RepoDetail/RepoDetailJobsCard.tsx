@@ -3,6 +3,7 @@ import type { SyncJob } from '../../types';
 import { Button } from '@/components/ui/button';
 import { JobAnalysisModal } from './JobAnalysisModal';
 import { SkippedFilesModal } from './SkippedFilesModal';
+import { IndexedFilesModal } from './IndexedFilesModal';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import {
   Table,
@@ -33,7 +34,7 @@ interface RepoDetailJobsCardProps {
   setAnalysisModalOpen: (open: boolean) => void;
 }
 
-/** Card con tabla de jobs, análisis por job y modal de archivos omitidos. */
+/** Card con tabla de jobs, análisis por job y modales de archivos indexados / omitidos. */
 export function RepoDetailJobsCard({
   repoId,
   projectId,
@@ -51,6 +52,7 @@ export function RepoDetailJobsCard({
   setAnalysisModalOpen,
 }: RepoDetailJobsCardProps) {
   const [skippedModalJobId, setSkippedModalJobId] = useState<string | null>(null);
+  const [indexedModalJobId, setIndexedModalJobId] = useState<string | null>(null);
   const hasSelection = selectedJobIds.size > 0;
   const allSelected = jobs.length > 0 && selectedJobIds.size === jobs.length;
 
@@ -90,6 +92,7 @@ export function RepoDetailJobsCard({
           onDeleteJob={onDeleteJob}
           onAnalyzeJob={onAnalyzeJob}
           onShowSkipped={(jobId) => setSkippedModalJobId(jobId)}
+          onShowIndexed={(jobId) => setIndexedModalJobId(jobId)}
         />
         <JobAnalysisModal
           repoId={repoId ?? null}
@@ -102,6 +105,11 @@ export function RepoDetailJobsCard({
           open={skippedModalJobId !== null}
           onOpenChange={(open) => !open && setSkippedModalJobId(null)}
           payload={jobs.find((j) => j.id === skippedModalJobId)?.payload}
+        />
+        <IndexedFilesModal
+          open={indexedModalJobId !== null}
+          onOpenChange={(open) => !open && setIndexedModalJobId(null)}
+          payload={jobs.find((j) => j.id === indexedModalJobId)?.payload}
         />
       </CardContent>
     </Card>
@@ -118,6 +126,7 @@ interface JobsTableProps {
   onDeleteJob: (jobId: string) => void;
   onAnalyzeJob: (jobId: string) => void;
   onShowSkipped: (jobId: string) => void;
+  onShowIndexed: (jobId: string) => void;
 }
 
 /** Tabla de jobs con checkbox global, columnas estado/resultado y acciones por fila. */
@@ -131,6 +140,7 @@ function JobsTable({
   onDeleteJob,
   onAnalyzeJob,
   onShowSkipped,
+  onShowIndexed,
 }: JobsTableProps) {
   if (jobs.length === 0) {
     return <p className="text-muted-foreground py-8 text-center">No hay jobs aún.</p>;
@@ -168,6 +178,7 @@ function JobsTable({
             onDelete={() => onDeleteJob(j.id)}
             onAnalyze={() => onAnalyzeJob(j.id)}
             onShowSkipped={() => onShowSkipped(j.id)}
+            onShowIndexed={() => onShowIndexed(j.id)}
           />
         ))}
       </TableBody>
@@ -183,6 +194,7 @@ interface JobRowProps {
   onDelete: () => void;
   onAnalyze: () => void;
   onShowSkipped: () => void;
+  onShowIndexed: () => void;
 }
 
 /** Fila de job: checkbox, tipo, estado, fechas, resultado, error, botones analizar/omitidos/borrar. */
@@ -194,9 +206,12 @@ function JobRow({
   onDelete,
   onAnalyze,
   onShowSkipped,
+  onShowIndexed,
 }: JobRowProps) {
   const skipped = (job.payload?.skipped as number) ?? 0;
+  const indexed = (job.payload?.indexed as number) ?? 0;
   const hasSkipped = skipped > 0 && job.status === 'completed';
+  const hasIndexed = indexed > 0 && job.status === 'completed';
 
   return (
     <TableRow>
@@ -215,18 +230,30 @@ function JobRow({
       <TableCell>{new Date(job.startedAt).toLocaleString()}</TableCell>
       <TableCell>{job.finishedAt ? new Date(job.finishedAt).toLocaleString() : '—'}</TableCell>
       <TableCell className="max-w-xs">
-        <div className="flex flex-wrap items-center gap-1">
+        <div className="flex flex-col gap-1 items-start">
           <span>{formatJobPayload(job.payload, job.status)}</span>
-          {hasSkipped && (
-            <Button
-              variant="link"
-              size="sm"
-              className="h-auto p-0 text-muted-foreground underline"
-              onClick={onShowSkipped}
-            >
-              Ver omitidos
-            </Button>
-          )}
+          <div className="flex flex-wrap gap-x-3 gap-y-0">
+            {hasIndexed && (
+              <Button
+                variant="link"
+                size="sm"
+                className="h-auto p-0 text-muted-foreground underline"
+                onClick={onShowIndexed}
+              >
+                Ver indexados
+              </Button>
+            )}
+            {hasSkipped && (
+              <Button
+                variant="link"
+                size="sm"
+                className="h-auto p-0 text-muted-foreground underline"
+                onClick={onShowSkipped}
+              >
+                Ver omitidos
+              </Button>
+            )}
+          </div>
         </div>
       </TableCell>
       <TableCell className="min-w-[280px] max-w-xl align-top">

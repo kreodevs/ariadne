@@ -24,6 +24,7 @@ RepoDetail/
 ├── utils.ts           # formatJobPayload
 ├── JobAnalysisModal.tsx    # Análisis de job incremental; si hay `projectId` Ariadne, usa `GET /projects/.../jobs/.../analysis`
 ├── SkippedFilesModal.tsx   # Modal de archivos omitidos (fetch, parse, index) por job
+├── IndexedFilesModal.tsx   # Lista `payload.paths` de archivos indexados en el job (sync full; tope configurable en ingest)
 ├── RepoDetailLoading.tsx
 ├── RepoDetailError.tsx
 ├── RepoDetailNotFound.tsx
@@ -39,7 +40,7 @@ RepoDetail/
 - `RepoDetail.NotFound` — Alert cuando el repo no existe
 - `RepoDetail.Header` — Link "← Repos" → `/repos` (lista de repositorios)
 - `RepoDetail.RepoCard` — Card con título, descripción, status, acciones
-- `RepoDetail.JobsCard` — Tabla de jobs con checkboxes, borrar seleccionados/todos, botón "Analizar" (solo jobs incrementales completados)
+- `RepoDetail.JobsCard` — Tabla de jobs con checkboxes, borrar seleccionados/todos, **Ver indexados** / **Ver omitidos**, botón "Analizar" (solo jobs incrementales completados)
 
 El orquestador (`RepoDetail`) decide qué componente renderizar según `loading`, `error`, `repo`.
 

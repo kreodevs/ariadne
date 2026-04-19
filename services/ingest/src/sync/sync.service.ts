@@ -624,13 +624,19 @@ export class SyncService {
         status: 'ready',
       });
       const allSkipped = [...skipped.fetch, ...skipped.parse, ...skippedIndex];
+      const maxIndexedPathsInPayload = (() => {
+        const raw = process.env.SYNC_JOB_PAYLOAD_INDEXED_PATHS_MAX?.trim();
+        const n = raw ? parseInt(raw, 10) : 10_000;
+        if (!Number.isFinite(n) || n < 0) return 10_000;
+        return Math.min(n, 100_000);
+      })();
       await this.syncJobRepo.update(job.id, {
         finishedAt: new Date(),
         status: 'completed',
         payload: {
           indexed: indexedPaths.length,
           total: paths.length,
-          paths: indexedPaths.slice(0, 100),
+          paths: indexedPaths.slice(0, maxIndexedPathsInPayload),
           skipped: allSkipped.length,
           skippedPaths: allSkipped.slice(0, 50),
           skippedByReason: {
