@@ -13,6 +13,7 @@ import { RepositoriesService } from '../repositories/repositories.service';
 import { FileContentService } from '../repositories/file-content.service';
 import { EmbeddingService } from '../embedding/embedding.service';
 import { EmbeddingSpaceService } from '../embedding/embedding-space.service';
+import { hasIngestLlmConfigured } from './chat-llm-config';
 import {
   SCHEMA,
   EXAMPLES,
@@ -940,7 +941,7 @@ Sé conciso en los párrafos pedagógicos. Usa bullet points y tablas. Incluye T
     filesToModify: Array<{ path: string; repoId: string }>,
     questionsMode: ModificationPlanQuestionsMode,
   ): Promise<string[]> {
-    if (!process.env.OPENAI_API_KEY?.trim()) return [];
+    if (!hasIngestLlmConfigured()) return [];
     const mode = questionsMode;
     const businessSystem = `Eres un analista que genera preguntas para afinar un cambio en el software.
 Regla: SOLO preguntas de negocio o funcionalidad: valores por defecto, reglas de validación, criterios de negocio, umbrales, opciones permitidas.

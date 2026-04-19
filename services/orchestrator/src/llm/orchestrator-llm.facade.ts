@@ -5,6 +5,11 @@ import {
   googleChatSimple,
 } from './google-llm.adapter';
 import {
+  kimiCallLlm,
+  kimiCallLlmWithTools,
+  kimiChatSimple,
+} from './kimi-llm.adapter';
+import {
   openaiCallLlm,
   openaiCallLlmWithTools,
   openaiChatSimple,
@@ -19,6 +24,7 @@ export async function callOrchestratorLlm(
 ): Promise<string> {
   const p = resolveOrchestratorLlmProvider();
   if (p === 'google') return googleCallLlm(messages, maxTokens);
+  if (p === 'kimi') return kimiCallLlm(messages, maxTokens);
   return openaiCallLlm(messages, maxTokens);
 }
 
@@ -32,6 +38,7 @@ export async function callOrchestratorLlmWithTools(
 }> {
   const p = resolveOrchestratorLlmProvider();
   if (p === 'google') return googleCallLlmWithTools(messages, tools, maxTokens);
+  if (p === 'kimi') return kimiCallLlmWithTools(messages, tools, maxTokens);
   return openaiCallLlmWithTools(messages, tools, maxTokens);
 }
 
@@ -39,5 +46,6 @@ export async function callOrchestratorLlmWithTools(
 export async function orchestratorChatSimple(system: string, user: string): Promise<string> {
   const p = resolveOrchestratorLlmProvider();
   if (p === 'google') return googleChatSimple(system, user);
+  if (p === 'kimi') return kimiChatSimple(system, user);
   return openaiChatSimple(system, user);
 }

@@ -81,9 +81,11 @@ Tras cada sync (normal o resync), se ejecuta automáticamente `embed-index` si h
 - `CREDENTIALS_ENCRYPTION_KEY` — Clave para cifrar credenciales en BD (32 bytes base64). Requerida si se usan credenciales en BD.
 - `BITBUCKET_TOKEN` / `BITBUCKET_APP_PASSWORD` — Bitbucket (fallback si no hay credentialsRef). Permisos requeridos: Account: Read, Workspace membership: Read, Repositories: Read (ver [docs/manual/CONFIGURACION_Y_USO.md](../../docs/manual/CONFIGURACION_Y_USO.md))
 - `GITHUB_TOKEN` — GitHub (fallback)
-- `EMBEDDING_PROVIDER` — openai o google
-- `OPENAI_API_KEY` — Chat, diagnósticos y (si provider=openai) embeddings. **Obligatorio** para chat/analyze.
-- `CHAT_MODEL` — Modelo OpenAI para chat (default `gpt-4o-mini`). Diagnóstico/reingeniería truncan datos automáticamente para evitar context_length_exceeded (128k tokens).
+- `EMBEDDING_PROVIDER` — openai, google, kimi/moonshot u ollama
+- `OPENAI_API_KEY` — Chat OpenAI y embeddings openai. **Obligatorio** para chat/analyze si el proveedor LLM es OpenAI.
+- `MOONSHOT_API_KEY` / `KIMI_API_KEY` — Kimi (chat + embeddings kimi); `INGEST_LLM_PROVIDER=kimi` o solo esta key sin OpenAI. `ORCHESTRATOR_LLM_PROVIDER=kimi` para el orchestrator.
+- `KIMI_EMBEDDING_MODEL`, `KIMI_EMBEDDING_DIMENSION` — Requeridos si `EMBEDDING_PROVIDER=kimi` sin catálogo Postgres (ver `src/embedding/README.md`).
+- `CHAT_MODEL` — Modelo chat (OpenAI default `gpt-4o-mini`; Kimi default `kimi-k2.5` vía `KIMI_LLM_MODEL`). Diagnóstico/reingeniería truncan datos automáticamente para evitar context_length_exceeded (128k tokens).
 - `CHAT_TELEMETRY_LOG` — `1` o `true`: log JSON por request del pipeline unificado (tamaños, citas de paths, `pathGroundingRatio` vs retrieval).
 - `METRICS_ENABLED` — `0` o `false`: desactiva Prometheus (`GET /metrics` responde 503). Por defecto las métricas están activas (Fase 0 — ver [docs/notebooklm/OBSERVABILIDAD_FASE0.md](../../docs/notebooklm/OBSERVABILIDAD_FASE0.md)).
 - `CHAT_TWO_PHASE` — `0` / `false` / `off`: desactiva el bloque JSON de retrieval antes del contexto bruto en el sintetizador (default: activo).
@@ -95,7 +97,7 @@ Tras cada sync (normal o resync), se ejecuta automáticamente `embed-index` si h
 - `INDEX_E2E` — `true` o `1`: incluir carpetas típicas de e2e (`e2e/`, `cypress/`, `playwright/`, `__tests__/`, etc.) y archivos `*.e2e.*` (default: excluidos; ver `sync-path-filter.ts`)
 - `TRUNCATE_PARSE_MAX_BYTES` — Límite de bytes para truncar archivos grandes antes de parsear (default 25000). Tree-sitter falla con muchos nodos hermanos; aumentar con cuidado.
 
-**Embeddings:** Si cambias de proveedor (OpenAI ↔ Google), reejecuta `POST /repositories/:id/embed-index`; las dimensiones son distintas (1536 vs 768) y FalkorDB no admite mezclar.
+**Embeddings:** Si cambias de proveedor (OpenAI ↔ Google ↔ Kimi), reejecuta `POST /repositories/:id/embed-index`; las dimensiones deben ser coherentes con el índice vectorial y FalkorDB no admite mezclar vectores de distinta dimensión en la misma propiedad.
 
 ## Desarrollo
 

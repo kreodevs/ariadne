@@ -38,7 +38,7 @@ export class EmbeddingController {
     }
     if (!this.embedding.isAvailable()) {
       throw new BadRequestException(
-        'Embedding provider not configured. Set EMBEDDING_PROVIDER=openai|google|ollama and OPENAI_API_KEY or GOOGLE_API_KEY.',
+        'Embedding provider not configured. Set EMBEDDING_PROVIDER=openai|google|kimi|ollama and the matching API keys / KIMI_EMBEDDING_* for kimi.',
       );
     }
     const embedding = await this.embedding.embed(trimmed);

@@ -1,19 +1,19 @@
 /**
- * Servicio de llamadas a OpenAI (chat completions con y sin tools).
- * Centraliza API key y modelo para reducir acoplamiento en ChatService.
+ * Chat completions (OpenAI o Kimi/Moonshot, API compatible).
  */
-
 import { Injectable } from '@nestjs/common';
+import { ingestChatLlmModel, resolveIngestChatLlmProvider } from './chat-llm-config';
+import { kimiIngestCallLlm, kimiIngestCallLlmWithTools } from './kimi-chat.adapter';
 
 @Injectable()
 export class ChatLlmService {
-  /**
-   * Llama a la API de OpenAI (chat completions).
-   */
   async callLlm(
     messages: Array<{ role: 'user' | 'assistant' | 'system'; content: string }>,
     maxTokens = 1024,
   ): Promise<string> {
+    const p = resolveIngestChatLlmProvider();
+    if (p === 'kimi') return kimiIngestCallLlm(messages, maxTokens);
+
     const key = process.env.OPENAI_API_KEY?.trim();
     if (!key) {
       throw new Error('OPENAI_API_KEY no configurada. Necesaria para chat.');
@@ -26,7 +26,7 @@ export class ChatLlmService {
         Authorization: `Bearer ${key}`,
       },
       body: JSON.stringify({
-        model: process.env.CHAT_MODEL ?? 'gpt-4o-mini',
+        model: ingestChatLlmModel(),
         messages,
         temperature: 0.1,
         max_tokens: maxTokens,
@@ -43,13 +43,14 @@ export class ChatLlmService {
     return content ?? '';
   }
 
-  /**
-   * Llama a OpenAI con tools. Devuelve content o tool_calls.
-   */
   async callLlmWithTools(
     messages: Array<
       | { role: 'user' | 'system'; content: string }
-      | { role: 'assistant'; content?: string | null; tool_calls?: Array<{ id: string; function: { name: string; arguments: string } }> }
+      | {
+          role: 'assistant';
+          content?: string | null;
+          tool_calls?: Array<{ id: string; function: { name: string; arguments: string } }>;
+        }
       | { role: 'tool'; tool_call_id: string; content: string }
     >,
     tools: unknown[],
@@ -58,6 +59,9 @@ export class ChatLlmService {
     content?: string;
     tool_calls?: Array<{ id: string; function: { name: string; arguments: string } }>;
   }> {
+    const p = resolveIngestChatLlmProvider();
+    if (p === 'kimi') return kimiIngestCallLlmWithTools(messages, tools, maxTokens);
+
     const key = process.env.OPENAI_API_KEY?.trim();
     if (!key) throw new Error('OPENAI_API_KEY no configurada.');
 
@@ -65,7 +69,7 @@ export class ChatLlmService {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
       body: JSON.stringify({
-        model: process.env.CHAT_MODEL ?? 'gpt-4o-mini',
+        model: ingestChatLlmModel(),
         messages,
         tools,
         tool_choice: 'auto',

@@ -35,11 +35,13 @@ El **ingest** con `ORCHESTRATOR_URL` delega estos endpoints al orchestrator (el 
 
 - `PORT` — Default 3001.
 - `ARIADNESPEC_API_URL` — API Ariadne (default `http://api:3000/api`).
-- `ORCHESTRATOR_LLM_PROVIDER` — `openai` o `google` (Gemini). Si no se define y solo existe `GOOGLE_API_KEY`, se usa Google; si hay `OPENAI_API_KEY`, default OpenAI.
+- `ORCHESTRATOR_LLM_PROVIDER` — `openai`, `google` o `kimi`/`moonshot`. Auto: solo `GOOGLE_API_KEY` → Google; solo `MOONSHOT_API_KEY`/`KIMI_API_KEY` (sin OpenAI/Google) → Kimi.
 - `OPENAI_API_KEY` — Proveedor OpenAI (chat + tools).
-- `GOOGLE_API_KEY` — Proveedor Gemini (misma key que embeddings si ya la usas en ingest).
-- `GOOGLE_LLM_MODEL` — Opcional; modelo Gemini (p. ej. `gemini-2.0-flash`). Si no, se usa `ORCHESTRATOR_LLM_MODEL` / `CHAT_MODEL` o default `gemini-2.0-flash` para Google.
-- `ORCHESTRATOR_LLM_MODEL` / `CHAT_MODEL` — Modelo chat (OpenAI: default `gpt-4o-mini`; Gemini: ver arriba).
+- `GOOGLE_API_KEY` — Proveedor Gemini.
+- `MOONSHOT_API_KEY` / `KIMI_API_KEY` — Kimi Open Platform; `MOONSHOT_BASE_URL` opcional (default `https://api.moonshot.ai/v1`).
+- `KIMI_LLM_MODEL` / `MOONSHOT_MODEL` — Modelo Kimi (default `kimi-k2.5` si no se define `ORCHESTRATOR_LLM_MODEL` / `CHAT_MODEL`).
+- `GOOGLE_LLM_MODEL` — Opcional; modelo Gemini (p. ej. `gemini-2.0-flash`).
+- `ORCHESTRATOR_LLM_MODEL` / `CHAT_MODEL` — Modelo según proveedor.
 
 Detalle de la capa LLM: [src/llm/README.md](src/llm/README.md).
 - `INGEST_URL` — URL del microservicio ingest (default `http://ingest:3002` en Docker).

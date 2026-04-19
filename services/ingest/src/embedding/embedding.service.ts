@@ -1,5 +1,5 @@
 /**
- * @fileoverview Servicio de embeddings para RAG. Provider agnóstico (OpenAI, Google). Config: EMBEDDING_PROVIDER=openai|google + OPENAI_API_KEY | GOOGLE_API_KEY.
+ * @fileoverview Servicio de embeddings para RAG. Provider agnóstico (OpenAI, Google, Kimi). Ver providers/.
  */
 import { Injectable } from '@nestjs/common';
 import { createEmbeddingProvider } from './providers';
@@ -22,7 +22,7 @@ export class EmbeddingService {
   }
 
   /**
-   * ID del provider ('openai' | 'google') o null si no hay provider.
+   * ID del provider ('openai' | 'google' | 'kimi' | …) o null si no hay provider.
    * @returns {string | null}
    */
   getProviderId(): string | null {
@@ -35,7 +35,9 @@ export class EmbeddingService {
    */
   getDimension(): number {
     if (!this.provider) {
-      throw new Error('No embedding provider configured. Set EMBEDDING_PROVIDER=openai|google and the corresponding API key.');
+      throw new Error(
+        'No embedding provider configured. Set EMBEDDING_PROVIDER and the corresponding API key (openai|google|kimi|ollama).',
+      );
     }
     return this.provider.getDimension();
   }
@@ -48,7 +50,7 @@ export class EmbeddingService {
   async embed(text: string): Promise<number[]> {
     if (!this.provider) {
       throw new Error(
-        'No embedding provider configured. Set EMBEDDING_PROVIDER=openai|google and OPENAI_API_KEY or GOOGLE_API_KEY.'
+        'No embedding provider configured. Set EMBEDDING_PROVIDER and keys (OPENAI_API_KEY, GOOGLE_API_KEY, MOONSHOT_API_KEY+kimi params, or ollama).'
       );
     }
     return this.provider.embed(text);

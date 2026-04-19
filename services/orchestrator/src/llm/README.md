@@ -6,15 +6,20 @@ Capa desacoplada del proveedor: **OpenAI** (Chat Completions + tools) o **Google
 
 | Variable | Rol |
 |----------|-----|
-| `ORCHESTRATOR_LLM_PROVIDER` | `openai` (default si hay `OPENAI_API_KEY`) o `google`. Si **no** está definido y solo existe `GOOGLE_API_KEY`, se usa **google**. |
+| `ORCHESTRATOR_LLM_PROVIDER` | `openai`, `google` o `kimi`/`moonshot`. Auto: solo `GOOGLE_API_KEY` → google; solo `MOONSHOT_API_KEY`/`KIMI_API_KEY` (sin OpenAI/Google) → kimi. |
 | `OPENAI_API_KEY` | Proveedor OpenAI. |
-| `GOOGLE_API_KEY` | Proveedor Google (misma convención que ingest para embeddings). |
-| `ORCHESTRATOR_LLM_MODEL` / `CHAT_MODEL` | Modelo: OpenAI (`gpt-4o-mini`, …) o nombre Gemini (`gemini-2.0-flash`, `gemini-1.5-flash`, …). |
-| `GOOGLE_LLM_MODEL` | Opcional: modelo solo para Gemini (sobrescribe el fallback de `ORCHESTRATOR_LLM_MODEL` cuando el proveedor es Google). |
+| `GOOGLE_API_KEY` | Proveedor Gemini. |
+| `MOONSHOT_API_KEY` o `KIMI_API_KEY` | Kimi Open Platform (`https://api.moonshot.ai/v1/chat/completions`). |
+| `MOONSHOT_BASE_URL` | Opcional (default `https://api.moonshot.ai/v1`). |
+| `ORCHESTRATOR_LLM_MODEL` / `CHAT_MODEL` | Modelo según proveedor (OpenAI, Gemini o `kimi-k2.5` por defecto para Kimi). |
+| `KIMI_LLM_MODEL` / `MOONSHOT_MODEL` | Opcional: modelo solo para Kimi. |
+| `GOOGLE_LLM_MODEL` | Opcional: modelo solo para Gemini. |
 
 ## Archivos
 
 - `orchestrator-llm-config.ts` — Resolución de proveedor, modelo y `hasOrchestratorLlmConfigured()`.
+- `moonshot-env.ts` — Base URL y API key Kimi/Moonshot.
 - `openai-llm.adapter.ts` — `fetch` a `api.openai.com`.
-- `google-llm.adapter.ts` — `fetch` a `generativelanguage.googleapis.com` + conversión de mensajes/tools al formato Gemini.
+- `google-llm.adapter.ts` — Gemini (`generativelanguage.googleapis.com`).
+- `kimi-llm.adapter.ts` — Kimi (`/v1/chat/completions` compatible OpenAI).
 - `orchestrator-llm.facade.ts` — Punto único usado por `OrchestratorLlmService` y `workflow.service.ts` (`orchestratorChatSimple`).
