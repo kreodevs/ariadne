@@ -12,12 +12,14 @@ export function moonshotApiKey(): string | null {
   return kimiApiKeyForLlm();
 }
 
-/** `LLM_TEMPERATURE` o `KIMI_TEMPERATURE` (legacy). */
-export function llmChatTemperature(opts?: { workflowSimple?: boolean }): number {
+/**
+ * Kimi: muchos modelos solo admiten `temperature: 1`. Override con `LLM_TEMPERATURE` / `KIMI_TEMPERATURE`.
+ */
+export function llmChatTemperature(_opts?: { workflowSimple?: boolean }): number {
   const raw = process.env.LLM_TEMPERATURE?.trim() || process.env.KIMI_TEMPERATURE?.trim();
   if (raw !== undefined && raw !== '') {
     const n = parseFloat(raw);
     if (Number.isFinite(n) && n >= 0 && n <= 2) return n;
   }
-  return opts?.workflowSimple ? 0.2 : 0.1;
+  return 1;
 }

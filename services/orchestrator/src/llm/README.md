@@ -9,7 +9,7 @@ Capa desacoplada: **OpenAI**, **Google Gemini** o **Kimi (Moonshot)**.
 | `LLM_PROVIDER` | `openai` \| `google` \| `kimi` / `moonshot`. Si falta, se infiere por claves legadas (`OPENAI_API_KEY`, `GOOGLE_API_KEY`, `MOONSHOT_API_KEY`/`KIMI_API_KEY`). |
 | `LLM_MODEL` | Modelo único para el proveedor activo (p. ej. `gpt-4o-mini`, `gemini-2.0-flash`, `kimi-k2.5`). Si falta, defaults por proveedor. |
 | `LLM_API_KEY` | Clave única; se usa para el proveedor elegido (junto con `LLM_PROVIDER` si solo hay esta clave). |
-| `LLM_TEMPERATURE` | Opcional (0–2); si no, 0.1 en chat/tools y 0.2 en workflow SDD (simple). |
+| `LLM_TEMPERATURE` | Opcional (0–2). **Kimi:** si no se define, se envía **1** (requisito de muchos modelos). |
 
 ## Compatibilidad (sigue funcionando)
 
