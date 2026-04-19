@@ -145,7 +145,14 @@ export interface ModelInfo {
   name: string;
   /** JSDoc/TSDoc si existe */
   description?: string;
+  /** Origen explícito (p. ej. TypeORM @Entity); Prisma usa ingest prisma-extract. */
+  source?: 'heuristic' | 'typeorm';
+  /** Propiedades de columna detectadas en entidades TypeORM. */
+  entityFields?: string[];
 }
+
+/** Rol de archivo de configuración indexado (alias, env). */
+export type IndexedFileRole = 'tsconfig' | 'env_example';
 
 /** Concepto de dominio (tipos, opciones). Definido en domain-types. */
 export type { DomainConceptInfo } from './domain-types';
@@ -193,6 +200,8 @@ export interface ParsedFile {
   projectMarkdown?: StorybookDocumentationExtract;
   /** CSF en .stories.ts(x): targets desde `meta.component`, export default y `Meta<typeof X>`. */
   storybookCsf?: { storyMetaTargets: string[] };
+  /** tsconfig / .env.example — solo nodo File con metadatos de rol. */
+  fileRole?: IndexedFileRole;
 }
 
 /** Devuelve el lenguaje Tree-sitter según la extensión del archivo. */
@@ -516,6 +525,22 @@ export function parseSource(
 
   collectStrapiFromPath(path, result);
 
+  const normPathEarly = path.replace(/\\/g, '/');
+  const lowerEarly = normPathEarly.toLowerCase();
+  if (
+    /(^|\/)tsconfig(\.[^/]+)?\.json$/.test(lowerEarly) ||
+    lowerEarly.endsWith('/tsconfig.json') ||
+    lowerEarly.endsWith('.env.example')
+  ) {
+    result.fileRole = lowerEarly.endsWith('.env.example') ? 'env_example' : 'tsconfig';
+    if (options.returnAst) {
+      const stubParser = new Parser();
+      stubParser.setLanguage(LANG_TS as Parameters<Parser['setLanguage']>[0]);
+      return { parsed: result, root: stubParser.parse('').rootNode, source };
+    }
+    return result;
+  }
+
   if (isStorybookDocumentationPath(path)) {
     const doc = parseStorybookDocumentation(path, source);
     if (!doc) return null;
@@ -602,6 +627,12 @@ export function parseSource(
     const nestKind = getNestDecoratorKind(node, source);
     if (nestKind) {
       collectNestFromClass(node, source, result, name, nestKind);
+      continue;
+    }
+    if (hasTypeOrmEntityDecorator(node, source)) {
+      const description = getPrecedingJSDoc(source, node.startIndex);
+      const entityFields = extractTypeOrmColumnPropertyNames(node, source);
+      result.models.push({ name, description, source: 'typeorm', entityFields });
       continue;
     }
     const superClass = node.childForFieldName('superclass');
@@ -1071,6 +1102,49 @@ function collectFunctionsAndCalls(root: Parser.SyntaxNode, source: string, resul
 }
 
 type NestKind = 'module' | 'controller' | 'service';
+
+/** Detecta @Entity() de TypeORM (nombre del decorador Entity). */
+function hasTypeOrmEntityDecorator(classNode: Parser.SyntaxNode, source: string): boolean {
+  const decorators = findNodesByType(classNode, 'decorator');
+  for (const dec of decorators) {
+    const call = dec.childForFieldName('expression') ?? findNodesByType(dec, 'call_expression')[0];
+    if (!call || call.type !== 'call_expression') {
+      const id = dec.childForFieldName('expression') ?? findNodesByType(dec, 'identifier')[0];
+      if (id && id.type === 'identifier' && getNodeText(source, id) === 'Entity') return true;
+      continue;
+    }
+    const callee = call.childForFieldName('function') ?? call.childForFieldName('callee');
+    if (!callee) continue;
+    let name: string;
+    if (callee.type === 'identifier') {
+      name = getNodeText(source, callee);
+    } else if (callee.type === 'member_expression') {
+      const prop = callee.childForFieldName('property') ?? callee.lastNamedChild;
+      name = prop ? getNodeText(source, prop) : '';
+    } else continue;
+    if (name === 'Entity') return true;
+  }
+  return false;
+}
+
+/** Propiedades de clase/abstract class (sin métodos). */
+function extractTypeOrmColumnPropertyNames(classNode: Parser.SyntaxNode, source: string): string[] {
+  const body = classNode.childForFieldName('body');
+  if (!body) return [];
+  const names: string[] = [];
+  for (let i = 0; i < body.childCount; i++) {
+    const ch = body.child(i);
+    if (!ch) continue;
+    if (ch.type === 'public_field_definition') {
+      const nameNode = ch.childForFieldName('name');
+      if (nameNode) names.push(getNodeText(source, nameNode));
+    } else if (ch.type === 'property_signature') {
+      const nameNode = ch.childForFieldName('name');
+      if (nameNode) names.push(getNodeText(source, nameNode));
+    }
+  }
+  return names;
+}
 
 function getNestDecoratorKind(classNode: Parser.SyntaxNode, source: string): NestKind | null {
   const decorators = findNodesByType(classNode, 'decorator');

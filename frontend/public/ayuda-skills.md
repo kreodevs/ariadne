@@ -19,7 +19,7 @@ Protocol for using the MCP AriadneSpecs Oracle tools (get_component_graph, valid
 |-------------|------|------|
 | **Diagnóstico de archivo/componente/hook** ("diagnóstico de usePauta.tsx", "analiza Board") | `get_component_graph`, `get_legacy_impact`, `get_definitions`, `get_references` | **Use MCP first**, not just Read/Grep. list_known_projects → projectId → get_component_graph + get_legacy_impact + get_definitions/get_references. |
 | Diagnóstico proyecto, duplicados, reingeniería, código muerto, seguridad (`seguridad`) | `get_project_analysis` | list_known_projects → `projectId` (proyecto o `roots[].id`) + `currentFilePath` si multi-root → `get_project_analysis(projectId?, mode, currentFilePath?)`. **Código muerto:** presentar el resultado tal cual. El backend es la fuente de verdad. |
-| "¿Cómo funciona X?", explicar flujo | `ask_codebase` | Pass projectId + question |
+| "¿Cómo funciona X?", explicar flujo | `ask_codebase` | `projectId` + `question`; opcional `responseMode: evidence_first` → JSON MDD (7 secciones) |
 | Búsqueda por término | `semantic_search`, `find_similar_implementations` | Direct query |
 | Antes de editar componente/función | `validate_before_edit` | Required — returns impact + contract |
 

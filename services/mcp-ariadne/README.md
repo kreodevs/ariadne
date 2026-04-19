@@ -24,7 +24,7 @@ npm publish
 - **get_file_content** — Contenido crudo del archivo desde Bitbucket/GitHub (requiere INGEST_URL).
 - **validate_before_edit** — OBLIGATORIO antes de editar: impacto + contrato en un llamado.
 - **semantic_search** — Búsqueda por palabra clave en componentes, funciones y archivos.
-- **ask_codebase** — Preguntas en NL sobre el código; delega al ingest. Argumentos opcionales: **`scope`** (`repoIds`, `includePathPrefixes`, `excludePathGlobs`), **`twoPhase`**. Requiere INGEST_URL y OPENAI_API_KEY.
+- **ask_codebase** — Preguntas en NL; ingest u orchestrator (Coordinator → grafo + archivos físicos). Opcionales: **`scope`**, **`twoPhase`**, **`responseMode`** (`evidence_first` → JSON MDD de 7 secciones). Requiere INGEST_URL y LLM; con orchestrator también **`INTERNAL_API_KEY`** (mdd-evidence).
 - **get_project_analysis** — Deuda técnica, duplicados, reingeniería, código muerto o **seguridad** (heurística; requiere INGEST_URL). `projectId` puede ser id de **proyecto** o **`roots[].id`** (repo); si es proyecto multi-root, usa **`currentFilePath`** o pasa el id del repo. Opcional: **`scope`** (mismo shape que `ask_codebase`), **`crossPackageDuplicates`** (modo duplicados). El MCP llama a `POST /projects/.../analyze` o `POST /repositories/.../analyze`. Si la respuesta trae **`reportMeta`**, se añade un bloque JSON al final del markdown.
 - **get_modification_plan** — Plan vía `POST /projects/:id/modification-plan` (`userDescription`, opcional **`scope`**, **`currentFilePath`**, **`questionsMode`**: `business` | `technical` | `both`). Respuesta puede incluir **`warnings`** y **`diagnostic`**. `projectId` = proyecto o `roots[].id`.
 

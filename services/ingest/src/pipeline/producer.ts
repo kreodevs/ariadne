@@ -177,8 +177,10 @@ export function buildCypherForFile(
 
   const commitShaProp =
     context?.commitSha != null ? `, f.commitSha = ${cypherSafe(context.commitSha)}` : '';
+  const fileRoleProp =
+    parsed.fileRole != null ? `, f.fileRole = ${cypherSafe(parsed.fileRole)}` : '';
   statements.push(
-    `MERGE (f:File {path: ${cypherSafe(path)}, projectId: ${pid}, repoId: ${rid}}) ON CREATE SET f.extension = ${cypherSafe(ext)}, f.lastScan = ${cypherSafe(now)}${commitShaProp} ON MATCH SET f.extension = ${cypherSafe(ext)}, f.lastScan = ${cypherSafe(now)}${commitShaProp}`,
+    `MERGE (f:File {path: ${cypherSafe(path)}, projectId: ${pid}, repoId: ${rid}}) ON CREATE SET f.extension = ${cypherSafe(ext)}, f.lastScan = ${cypherSafe(now)}${commitShaProp}${fileRoleProp} ON MATCH SET f.extension = ${cypherSafe(ext)}, f.lastScan = ${cypherSafe(now)}${commitShaProp}${fileRoleProp}`,
   );
   statements.push(
     `MATCH (p:Project {projectId: ${pid}}) MATCH (f:File {path: ${cypherSafe(path)}, projectId: ${pid}, repoId: ${rid}}) MERGE (p)-[:CONTAINS]->(f)`,
@@ -267,8 +269,15 @@ export function buildCypherForFile(
   }
 
   for (const m of parsed.models ?? []) {
+    const sets: string[] = [];
+    if (m.source) sets.push(`m.source = ${cypherSafe(m.source)}`);
+    if (m.entityFields?.length) {
+      sets.push(`m.fieldSummary = ${cypherSafe(JSON.stringify(m.entityFields.slice(0, 120)))}`);
+    }
+    if (m.description?.trim()) sets.push(`m.description = ${cypherSafe(m.description.trim())}`);
+    const sm = sets.length ? ` ON CREATE SET ${sets.join(', ')} ON MATCH SET ${sets.join(', ')}` : '';
     statements.push(
-      `MERGE (m:Model {path: ${cypherSafe(path)}, name: ${cypherSafe(m.name)}, projectId: ${pid}, repoId: ${rid}})`,
+      `MERGE (m:Model {path: ${cypherSafe(path)}, name: ${cypherSafe(m.name)}, projectId: ${pid}, repoId: ${rid}})${sm}`,
     );
     statements.push(
       `MATCH (f:File {path: ${cypherSafe(path)}, projectId: ${pid}, repoId: ${rid}}) MATCH (m:Model {path: ${cypherSafe(path)}, name: ${cypherSafe(m.name)}, projectId: ${pid}, repoId: ${rid}}) MERGE (f)-[:CONTAINS]->(m)`,

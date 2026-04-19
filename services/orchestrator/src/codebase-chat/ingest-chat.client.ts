@@ -126,6 +126,32 @@ export class IngestChatClient {
     return Array.isArray(data.filesToModify) ? data.filesToModify : [];
   }
 
+  async fetchMddEvidence(
+    repositoryId: string,
+    body: {
+      message: string;
+      gatheredContext: string;
+      collectedResults: unknown[];
+      projectScope: boolean;
+      projectId: string;
+    },
+  ): Promise<Record<string, unknown>> {
+    const url = `${this.ingestBase()}/internal/repositories/${encodeURIComponent(repositoryId)}/mdd-evidence`;
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Internal-API-Key': this.internalKey(),
+      },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) {
+      const t = await res.text();
+      throw new Error(`ingest mdd-evidence ${res.status}: ${t}`);
+    }
+    return (await res.json()) as Record<string, unknown>;
+  }
+
   async fetchModificationPlanFilesProject(
     projectId: string,
     userDescription: string,

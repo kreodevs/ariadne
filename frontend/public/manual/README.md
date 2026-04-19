@@ -133,7 +133,7 @@ Servidor por **Streamable HTTP** (puerto 8080, path /mcp). Para usarlo en Cursor
 - **get_functions_in_file** — Funciones y componentes en un archivo (`path`, `projectId`, `currentFilePath` opcionales).
 - **get_import_graph** — Imports y contenido del archivo (`filePath`, `projectId`, `currentFilePath` opcionales).
 - **get_file_content** — Contenido de un archivo del repo o proyecto (`path`, `projectId`, `currentFilePath`, `ref`). Requiere INGEST_URL.
-- **ask_codebase** — Preguntas NL; usa `POST /projects/:id/chat` o `POST /repositories/:id/chat` según el ID.
+- **ask_codebase** — Preguntas NL; `POST /projects/:id/chat` o `POST /repositories/:id/chat`. **`responseMode: evidence_first`** → JSON MDD (7 secciones); con orchestrator, construcción vía endpoint interno `mdd-evidence`.
 - **get_modification_plan** — Plan quirúrgico: `filesToModify` (path + repoId) y `questionsToRefine`. `POST /projects/:projectId/modification-plan`; en multi-root preferir `projectId` = `roots[].id` del repo donde está el código. UUID de proyecto o de repositorio.
 - **get_project_analysis** — Informes por modo (incl. `seguridad`); MCP usa `POST /projects/.../analyze` o `POST /repositories/.../analyze` según proyecto vs `roots[].id`; multi-root: `currentFilePath` → `idePath`.
 - **validate_before_edit** — OBLIGATORIO antes de editar: devuelve impacto + contrato en un solo llamado.

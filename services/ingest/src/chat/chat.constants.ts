@@ -4,15 +4,17 @@
 
 export const SCHEMA = `
 Grafo FalkorDB (Cypher). Nodos:
-- File {path, projectId}
+- File {path, projectId, openApiTruth?, fileRole? (tsconfig|env_example), specKind?}
 - Component {name, projectId}
 - Function {path, name, projectId, complexity, nestingDepth, loc, description}
+- Model {path, name, projectId, source (prisma|typeorm), fieldSummary?}
+- OpenApiOperation {pathTemplate, method, specPath, projectId, docSource}
 - Route {path, projectId, componentName}
 - Hook {name, projectId}
 - DomainConcept {name, projectId, category, sourcePath, options?, description?} — conceptos de dominio (tipos, opciones de enums/constantes)
 - NestController, NestService, NestModule {path, name, projectId}
 
-Relaciones: (File)-[:CONTAINS]->(Component|Function|...), (File)-[:IMPORTS]->(File), (Component)-[:RENDERS]->(Component), (Component)-[:USES_HOOK]->(Hook), (DomainConcept)-[:DEFINED_IN]->(File)
+Relaciones: (File)-[:CONTAINS]->(Component|Function|...), (File)-[:DEFINES_OP]->(OpenApiOperation), (File)-[:IMPORTS]->(File), (Component)-[:RENDERS]->(Component), (Component)-[:USES_HOOK]->(Hook), (DomainConcept)-[:DEFINED_IN]->(File)
 
 IMPORTANTE: Toda consulta debe filtrar con projectId = $projectId. FalkorDB NO tiene toLower: usa CONTAINS con la palabra exacta o prueba variantes (Login, login).
 `;

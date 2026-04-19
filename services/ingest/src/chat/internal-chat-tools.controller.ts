@@ -16,6 +16,7 @@ import {
   type AnalyzeRequestOptions,
   type ChatScope,
 } from './chat.service';
+import type { MddEvidenceDocument } from './mdd-document.types';
 
 @Controller('internal/repositories')
 @UseGuards(InternalApiGuard)
@@ -67,6 +68,34 @@ export class InternalChatToolsController {
           }
         : undefined;
     return this.chat.prepareAnalyzeOrchestrator(repoId, body.mode, opts);
+  }
+
+  /**
+   * POST /internal/repositories/:repoId/mdd-evidence
+   * Body: { message, gatheredContext, collectedResults, projectScope?, projectId? }
+   */
+  @Post(':repoId/mdd-evidence')
+  async mddEvidence(
+    @Param('repoId') repoId: string,
+    @Body()
+    body: {
+      message: string;
+      gatheredContext: string;
+      collectedResults?: unknown[];
+      projectScope?: boolean;
+      projectId?: string;
+    },
+  ): Promise<MddEvidenceDocument> {
+    await this.repos.findOne(repoId);
+    const projectId = body.projectId?.trim() || (await this.resolveProjectIdForRepo(repoId));
+    return this.chat.buildMddEvidenceForRepository(
+      repoId,
+      projectId,
+      body.message ?? '',
+      body.gatheredContext ?? '',
+      Array.isArray(body.collectedResults) ? body.collectedResults : [],
+      body.projectScope === true,
+    );
   }
 
   @Post(':repoId/modification-plan-files')

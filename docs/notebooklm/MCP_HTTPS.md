@@ -225,7 +225,7 @@ Los nombres de argumentos deben coincidir con el esquema devuelto por `tools/lis
 | `semantic_search`             | `query`; con sharding también **`projectId`** | `limit`; **`projectId`** opcional sin sharding (acota al UUID proyecto o `roots[].id`). **No** admite `scope` ni `currentFilePath`. |
 | `validate_before_edit`        | `nodeName`              | `projectId`, `currentFilePath`                                                       |
 | `get_project_analysis`          | —                       | `projectId`, `currentFilePath` (multi-root → `idePath` en ingest), `mode` (`diagnostico`, `duplicados`, `reingenieria`, `codigo_muerto`, `seguridad`) |
-| `ask_codebase`                  | `question`              | `projectId`, `currentFilePath`, `scope`, `twoPhase`, **`responseMode`** (`default` \| **`evidence_first`**) — ver [mcp_server_specs.md](mcp_server_specs.md) (`evidence_first`: two-phase + más contexto al sintetizador, salida “evidencia primero”) |
+| `ask_codebase`                  | `question`              | `projectId`, `currentFilePath`, `scope`, `twoPhase`, **`responseMode`** (`default` \| **`evidence_first`**) — ver [mcp_server_specs.md](mcp_server_specs.md). **`evidence_first`:** respuesta **JSON MDD** (7 secciones); orchestrator usa ingest `mdd-evidence` |
 | `get_modification_plan`         | `userDescription`       | `projectId`, `currentFilePath`, `scope`                                               |
 | `get_definitions`               | `symbolName`            | `projectId`, `currentFilePath`                                                       |
 | `get_references`                | `symbolName`            | `projectId`, `currentFilePath`                                                       |

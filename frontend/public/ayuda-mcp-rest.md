@@ -108,10 +108,11 @@ Si la herramienta no existe o falla, la aplicación puede hacer **fallback** con
 
 ### 3.3 `ask_codebase`
 
-- **Uso:** Preguntas en lenguaje natural sobre el codebase indexado (flujo legacy: listar qué existe, respuestas sugeridas a preguntas, contexto para generar MDD; o chat del Workshop usando la respuesta como contexto para el LLM).
+- **Uso:** Preguntas en lenguaje natural sobre el codebase indexado (flujo legacy: listar qué existe, contexto para MDD/Workshop). Con **`responseMode: evidence_first`** la respuesta es **JSON MDD** (7 claves: `summary`, `openapi_spec`, `entities`, `api_contracts`, `business_logic`, `infrastructure`, `risk_report`, `evidence_paths`) para **LegacyCoordinator** / The Forge; el backend puede devolver también `mddDocument` en la API HTTP del ingest/orchestrator.
 - **Argumentos:**
   - `question` (string): pregunta en lenguaje natural.
   - `projectId` (string): id del proyecto en Ariadne (o id de repo; el MCP resuelve).
+  - Opcional: `scope`, `twoPhase`, **`responseMode`** (`default` \| `evidence_first`).
 
 **Petición de ejemplo:**
 
@@ -124,13 +125,14 @@ Si la herramienta no existe o falla, la aplicación puede hacer **fallback** con
     "name": "ask_codebase",
     "arguments": {
       "question": "For this change: \"...\". List what ALREADY EXISTS in the codebase: data models/entities...",
-      "projectId": "uuid-proyecto-ariadne-o-roots-id-repo"
+      "projectId": "uuid-proyecto-ariadne-o-roots-id-repo",
+      "responseMode": "evidence_first"
     }
   }
 }
 ```
 
-**Respuesta esperada:** En `result.content[].text` texto libre (o JSON si el prompt lo pide). La aplicación parsea según el flujo (JSON o texto tal cual).
+**Respuesta esperada:** En `result.content[].text`: con **`evidence_first`**, **JSON MDD** parseable; con **`default`**, prosa. Parsear `text` como JSON si empieza por `{`.
 
 ---
 

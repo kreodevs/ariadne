@@ -114,6 +114,8 @@ import {
   isChatRoleScopeInferenceEnabled,
   type ProjectRepoRoleCandidate,
 } from './resolve-chat-scope-from-message.util';
+import { buildMddEvidenceDocument } from './mdd-document.builder';
+import type { MddEvidenceDocument } from './mdd-document.types';
 
 /** Mensaje del historial de chat (usuario o asistente). */
 export interface ChatMessage {
@@ -125,6 +127,7 @@ export interface ChatMessage {
 
 /** Re-export para controladores y MCP. */
 export type { ChatScope } from './chat-scope.util';
+export type { MddEvidenceDocument } from './mdd-document.types';
 
 /** Origen del alcance según cliente (telemetría, `CHAT_TELEMETRY_LOG`). */
 export type ChatClientMetaScopeSource =
@@ -174,6 +177,8 @@ export interface ChatResponse {
   answer: string;
   cypher?: string;
   result?: unknown[];
+  /** Presente en `responseMode: evidence_first` — JSON MDD de 7 secciones (LegacyCoordinator / Forge). */
+  mddDocument?: MddEvidenceDocument;
 }
 
 /** Modo de preguntas de afinación en `get_modification_plan` (default: negocio). */
@@ -3087,6 +3092,99 @@ PROHIBIDO: instrucciones genéricas tipo "revisa los controladores", "asegúrate
   }
 
   /**
+   * Cuando el retriever no devolvió texto pero existen archivos en el grafo o manifiestos en remoto,
+   * inyecta muestra de paths + lectura de package.json / prisma / env / tsconfig / openapi.
+   */
+  /**
+   * Expuesto vía POST /internal/repositories/:id/mdd-evidence (orchestrator) para JSON MDD sin duplicar lógica.
+   */
+  async buildMddEvidenceForRepository(
+    repositoryId: string,
+    projectId: string,
+    message: string,
+    gatheredContext: string,
+    collectedResults: unknown[],
+    projectScope: boolean,
+  ): Promise<MddEvidenceDocument> {
+    let gc = gatheredContext;
+    let cr = collectedResults;
+    if (!gc.trim()) {
+      const fb = await this.injectPhysicalEvidenceFallback(repositoryId, projectId, projectScope);
+      if (fb.gathered.trim()) {
+        gc = fb.gathered;
+        cr = [...cr, ...fb.results];
+      }
+    }
+    return buildMddEvidenceDocument({
+      projectId,
+      message,
+      gatheredContext: gc,
+      collectedResults: cr,
+      executeCypher: (pid, q, p) => this.cypher.executeCypher(pid, q, p),
+      getFileSnippet: async (relPath) =>
+        projectScope
+          ? this.fileContent.getFileContentSafeByProject(projectId, relPath)
+          : this.fileContent.getFileContentSafe(repositoryId, relPath),
+    });
+  }
+
+  private async injectPhysicalEvidenceFallback(
+    repositoryId: string,
+    projectId: string,
+    projectScope: boolean,
+  ): Promise<{ gathered: string; results: unknown[] }> {
+    const results: unknown[] = [];
+    const chunks: string[] = [];
+    let fileCount = 0;
+    try {
+      const cnt = (await this.cypher.executeCypher(
+        projectId,
+        `MATCH (f:File {projectId: $projectId}) RETURN count(f) AS c`,
+        {},
+      )) as Array<{ c?: number }>;
+      fileCount = Number(cnt[0]?.c ?? 0);
+    } catch {
+      fileCount = 0;
+    }
+    if (fileCount > 0) {
+      try {
+        const paths = (await this.cypher.executeCypher(
+          projectId,
+          `MATCH (f:File {projectId: $projectId}) RETURN f.path AS path LIMIT 40`,
+          {},
+        )) as Array<{ path?: string }>;
+        for (const p of paths) {
+          if (p.path) results.push({ path: p.path, source: 'graph_file_sample' });
+        }
+        chunks.push(
+          `[Índice Falkor: ${fileCount} nodos File; muestra de paths]\n${paths.map((x) => x.path).filter(Boolean).join('\n')}`,
+        );
+      } catch {
+        /* ignore */
+      }
+    }
+    const candidates = [
+      'package.json',
+      'prisma/schema.prisma',
+      'schema.prisma',
+      '.env.example',
+      'tsconfig.json',
+      'swagger.json',
+      'openapi.yaml',
+    ];
+    for (const rel of candidates) {
+      const content = projectScope
+        ? await this.fileContent.getFileContentSafeByProject(projectId, rel)
+        : await this.fileContent.getFileContentSafe(repositoryId, rel);
+      if (content && content.length > 0) {
+        chunks.push(`--- ${rel} ---\n${content.slice(0, 8000)}`);
+        results.push({ path: rel, source: 'mandatory_file_read' });
+      }
+    }
+    return { gathered: chunks.join('\n\n'), results };
+  }
+
+  /**
    * Fase 1 (Retriever): ReAct con tools — recopila datos vía Cypher, get_file_content, semantic_search.
    * Fase 2 (Synthesizer): LLM recibe contexto y produce respuesta SIEMPRE en forma humana (prosa, explicación).
    * @param options.projectScope - Si true, get_file_content busca en todos los repos del proyecto (chat por proyecto).
@@ -3121,17 +3219,23 @@ PROHIBIDO: instrucciones genéricas tipo "revisa los controladores", "asegúrate
     const useTwoPhase = evidenceFirst ? true : (options?.twoPhase ?? defaultTwoPhaseFromEnv());
     const tools = EXPLORER_TOOLS_ALL;
     const retrieverSystem = `<instrucciones>
-Eres un RECOLECTOR de datos. Tu única tarea: usar las herramientas para reunir información **proveniente del grafo o archivos leídos**, relevante para la pregunta.
+Actúa como **Coordinador** y **Validador** (ask_codebase agéntico).
 
-Plan: 1) execute_cypher o get_graph_summary para ubicar archivos/funciones/componentes. 2) get_file_content en paths relevantes para leer el código. 3) semantic_search si aplica.
+**Coordinador:** Si la pregunta implica datos, API, esquema o contratos, combina grafo Falkor con archivos físicos: schema.prisma, entidades TypeORM (:Model source=typeorm), swagger/openapi (File openApiTruth / :OpenApiOperation), package.json, .env.example, tsconfig.
 
-**Tablas / esquema BD / modelos:** Prisma → execute_cypher MATCH (m:Model) WHERE m.source = 'prisma' (y :Enum / RELATES_TO); get_file_content del schema para detalle. TypeORM u otras clases → MATCH (m:Model). **Rutas API:** NestController/Route. **Variables de entorno:** get_file_content(".env.example") u otros paths convencionales.
+**Validador:** Contrasta resultados Cypher con contenidos leídos; evidencia solo con paths reales.
 
-**Monorepos (apps/, packages/):** Si get_graph_summary muestra paths como apps/admin, apps/api, apps/worker o packages/*, el repo es un monorepo. Explora TODAS las apps, no solo la primera. Para "qué hace el proyecto" o descripciones generales: incluye frontend (Component, Route) Y backend (NestController, NestService, NestModule, Function en apps/api, apps/worker). Consulta execute_cypher buscando NestController, NestService si hay conteos de esos nodos.
+**Recolector:** Usa herramientas para reunir datos relevantes.
 
-**Grounding:** No inventes rutas ni porcentajes. Si una herramienta devuelve 0 filas, repórtalo tal cual (el sintetizador dirá que no hay datos en índice).
+Plan: 1) execute_cypher o get_graph_summary. 2) get_file_content en paths relevantes. 3) semantic_search si aplica.
 
-NO escribas la respuesta final al usuario. Otro agente sintetizará. Solo GATHER datos. Máx 4 turnos.
+**Modelos:** Prisma (m.source=prisma), TypeORM (m.source=typeorm). **API:** OpenApiOperation (swagger) con prioridad sobre inferencia AST (NestController). **Env:** .env.example.
+
+**Monorepos:** Explora apps/* y packages/*.
+
+**Grounding:** No inventes rutas. Si 0 filas, repórtalo.
+
+NO escribas la respuesta final al usuario. Máx 4 turnos.
 </instrucciones>
 
 <schema_cypher>
@@ -3205,6 +3309,48 @@ ${SCHEMA}${EXAMPLES}
       effectiveResults = narrowed.results;
       effectiveGathered = narrowed.gatheredContext;
       preflightPathRepoApplied = true;
+    }
+
+    if (!effectiveGathered.trim()) {
+      const fb = await this.injectPhysicalEvidenceFallback(
+        repositoryId,
+        projectId,
+        Boolean(options?.projectScope),
+      );
+      if (fb.gathered.trim()) {
+        effectiveGathered = fb.gathered;
+        effectiveResults = [...effectiveResults, ...fb.results];
+      }
+    }
+
+    if (evidenceFirst) {
+      const mdd = await buildMddEvidenceDocument({
+        projectId,
+        message,
+        gatheredContext: effectiveGathered,
+        collectedResults: effectiveResults,
+        executeCypher: (pid, q, p) => this.cypher.executeCypher(pid, q, p),
+        getFileSnippet: async (relPath) =>
+          options?.projectScope
+            ? this.fileContent.getFileContentSafeByProject(projectId, relPath)
+            : this.fileContent.getFileContentSafe(repositoryId, relPath),
+      });
+      const jsonAnswer = JSON.stringify(mdd, null, 2);
+      const durationSec = Number(process.hrtime.bigint() - pipelineStarted) / 1e9;
+      observeChatPipelineComplete({
+        durationSeconds: durationSec,
+        projectScope: projectScopeForMetrics,
+        useTwoPhase,
+        gatheredContext: effectiveGathered,
+        answer: jsonAnswer,
+        collectedResults: effectiveResults,
+      });
+      return {
+        answer: jsonAnswer,
+        cypher: lastCypher || undefined,
+        result: effectiveResults.length > 0 ? effectiveResults : undefined,
+        mddDocument: mdd,
+      };
     }
 
     const retrievalJson =

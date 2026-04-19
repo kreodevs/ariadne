@@ -34,6 +34,8 @@ export interface ChatResponse {
   answer: string;
   cypher?: string;
   result?: unknown[];
+  /** JSON MDD (evidence_first) — LegacyCoordinator. */
+  mddDocument?: Record<string, unknown>;
 }
 
 function defaultTwoPhaseFromEnv(): boolean {
@@ -127,10 +129,20 @@ export class CodebaseChatService {
       resultOut: undefined,
     };
     const out = await this.getGraph().invoke(initial);
+    const answer = (out.answer ?? '').trim();
+    let mddDocument: Record<string, unknown> | undefined;
+    if (evidenceFirst && answer.startsWith('{')) {
+      try {
+        mddDocument = JSON.parse(answer) as Record<string, unknown>;
+      } catch {
+        mddDocument = undefined;
+      }
+    }
     return {
-      answer: (out.answer ?? '').trim(),
+      answer,
       cypher: out.lastCypher || undefined,
       result: out.resultOut && out.resultOut.length > 0 ? out.resultOut : undefined,
+      mddDocument,
     };
   }
 
@@ -167,10 +179,20 @@ export class CodebaseChatService {
       resultOut: undefined,
     };
     const out = await this.getGraph().invoke(initial);
+    const answer = (out.answer ?? '').trim();
+    let mddDocument: Record<string, unknown> | undefined;
+    if (evidenceFirst && answer.startsWith('{')) {
+      try {
+        mddDocument = JSON.parse(answer) as Record<string, unknown>;
+      } catch {
+        mddDocument = undefined;
+      }
+    }
     return {
-      answer: (out.answer ?? '').trim(),
+      answer,
       cypher: out.lastCypher || undefined,
       result: out.resultOut && out.resultOut.length > 0 ? out.resultOut : undefined,
+      mddDocument,
     };
   }
 
@@ -193,17 +215,23 @@ export class CodebaseChatService {
   private async nodeRetrieve(state: CodebaseChatState): Promise<Partial<CodebaseChatState>> {
     const tools = EXPLORER_TOOLS_ALL;
     const retrieverSystem = `<instrucciones>
-Eres un RECOLECTOR de datos. Tu única tarea: usar las herramientas para reunir información **proveniente del grafo o archivos leídos**, relevante para la pregunta.
+Actúa como **Coordinador** y luego como **Validador** (ask_codebase agéntico).
 
-Plan: 1) execute_cypher o get_graph_summary para ubicar archivos/funciones/componentes. 2) get_file_content en paths relevantes para leer el código. 3) semantic_search si aplica.
+**Coordinador:** Si la pregunta implica datos, API, esquema o contratos, NO te limites al grafo: usa execute_cypher Y get_file_content sobre schema.prisma, entidades TypeORM (:Model source=typeorm), swagger/openapi (File openApiTruth), package.json, .env.example, tsconfig.
 
-**Tablas / esquema BD / modelos:** Prisma → execute_cypher MATCH (m:Model) WHERE m.source = 'prisma' (y :Enum / RELATES_TO); get_file_content del schema para detalle. TypeORM u otras clases → MATCH (m:Model). **Rutas API:** NestController/Route. **Variables de entorno:** get_file_content(".env.example") u otros paths convencionales.
+**Validador:** Contrasta resultados del grafo con contenidos de archivo; solo considera evidencia anclada a path real devuelto por herramientas.
 
-**Monorepos (apps/, packages/):** Si get_graph_summary muestra paths como apps/admin, apps/api, apps/worker o packages/*, el repo es un monorepo. Explora TODAS las apps, no solo la primera. Para "qué hace el proyecto" o descripciones generales: incluye frontend (Component, Route) Y backend (NestController, NestService, NestModule, Function en apps/api, apps/worker). Consulta execute_cypher buscando NestController, NestService si hay conteos de esos nodos.
+**Recolector:** Tu única salida en esta fase es reunir datos del grafo o archivos leídos.
 
-**Grounding:** No inventes rutas ni porcentajes. Si una herramienta devuelve 0 filas, repórtalo tal cual (el sintetizador dirá que no hay datos en índice).
+Plan: 1) execute_cypher o get_graph_summary. 2) get_file_content en paths relevantes. 3) semantic_search si aplica.
 
-NO escribas la respuesta final al usuario. Otro agente sintetizará. Solo GATHER datos. Máx 4 turnos.
+**Tablas / esquema BD / modelos:** Prisma → MATCH (m:Model) WHERE m.source = 'prisma'; TypeORM → m.source = 'typeorm'. **API:** OpenApiOperation (swagger) con prioridad sobre NestController. **Env:** .env.example (fileRole env_example).
+
+**Monorepos:** Explora todas las apps (apps/*, packages/*).
+
+**Grounding:** No inventes rutas. Si una herramienta devuelve 0 filas, repórtalo tal cual.
+
+NO escribas la respuesta final al usuario. Máx 4 turnos.
 </instrucciones>
 
 <schema_cypher>
@@ -292,6 +320,36 @@ ${SCHEMA}${EXAMPLES}
     const useTwoPhase = state.useTwoPhase;
     const gatheredContext = state.gatheredContext ?? '';
     const collectedResults = state.collectedResults ?? [];
+
+    if (evidenceFirst) {
+      try {
+        const mdd = await this.ingest.fetchMddEvidence(state.repositoryId, {
+          message,
+          gatheredContext,
+          collectedResults,
+          projectScope: state.projectScope,
+          projectId: state.projectId,
+        });
+        const jsonAnswer = JSON.stringify(mdd, null, 2);
+        return {
+          answer: jsonAnswer,
+          resultOut: collectedResults.length > 0 ? collectedResults : undefined,
+        };
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        return {
+          answer: JSON.stringify(
+            {
+              error: 'mdd_evidence_failed',
+              message: msg,
+              summary: 'Fallo al construir MDD en ingest; verifica INTERNAL_API_KEY e INGEST_URL.',
+            },
+            null,
+            2,
+          ),
+        };
+      }
+    }
 
     const retrievalJson =
       collectedResults.length > 0 || gatheredContext.trim().length > 0

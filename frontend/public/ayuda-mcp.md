@@ -70,7 +70,7 @@ Reiniciar Cursor. Listo.
 | `validate_before_edit` | **Obligatorio** antes de editar: impacto + contrato en un solo llamado |
 | `semantic_search` | Búsqueda por palabra clave en componentes, funciones, archivos |
 | `get_project_analysis` | Deuda técnica, duplicados, reingeniería, código muerto, **seguridad** (heurística). Multi-root: `currentFilePath` ayuda a resolver el repo vía ingest |
-| `ask_codebase` | Preguntas en NL sobre el código. Opcional **`scope`** (`repoIds`, `includePathPrefixes`, `excludePathGlobs`) y **`twoPhase`**; ingest: JSON de retrieval + `CHAT_TWO_PHASE`. |
+| `ask_codebase` | Preguntas en NL; Coordinador (grafo + archivos). Opcional **`scope`**, **`twoPhase`**, **`responseMode`**. **`evidence_first`** → JSON **MDD** (7 claves); orchestrator usa ingest `mdd-evidence` (`INTERNAL_API_KEY`). |
 | `get_definitions` | Origen exacto de clase/función (archivo, líneas) |
 | `get_references` | Todos los lugares donde se usa un símbolo |
 | `get_implementation_details` | Firma, tipos, props, endpoints de un símbolo |

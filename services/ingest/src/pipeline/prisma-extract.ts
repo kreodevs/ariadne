@@ -54,12 +54,17 @@ export async function buildCypherForPrismaSchema(
   const modelNames = new Set((dm.models ?? []).map((m) => m.name));
 
   for (const model of dm.models ?? []) {
+    const fieldNames =
+      model.fields
+        ?.filter((f) => f.kind === 'scalar' || f.kind === 'enum' || f.kind === 'object')
+        .map((f) => (f.kind === 'object' ? `${f.name}:${f.type}` : f.name)) ?? [];
+    const fieldSummary = cypherSafe(JSON.stringify(fieldNames.slice(0, 120)));
     const desc =
       model.documentation != null && model.documentation.trim()
         ? `, m.description = ${cypherSafe(model.documentation.trim())}`
         : '';
     statements.push(
-      `MERGE (m:Model {path: ${cypherSafe(path)}, name: ${cypherSafe(model.name)}, projectId: ${pid}, repoId: ${rid}}) ON CREATE SET m.source = ${cypherSafe(KIND_PRISMA)}${desc} ON MATCH SET m.source = ${cypherSafe(KIND_PRISMA)}${desc}`,
+      `MERGE (m:Model {path: ${cypherSafe(path)}, name: ${cypherSafe(model.name)}, projectId: ${pid}, repoId: ${rid}}) ON CREATE SET m.source = ${cypherSafe(KIND_PRISMA)}, m.fieldSummary = ${fieldSummary}${desc} ON MATCH SET m.source = ${cypherSafe(KIND_PRISMA)}, m.fieldSummary = ${fieldSummary}${desc}`,
     );
     statements.push(
       `MATCH (f:File {path: ${cypherSafe(path)}, projectId: ${pid}, repoId: ${rid}}) MATCH (m:Model {path: ${cypherSafe(path)}, name: ${cypherSafe(model.name)}, projectId: ${pid}, repoId: ${rid}}) MERGE (f)-[:CONTAINS]->(m)`,

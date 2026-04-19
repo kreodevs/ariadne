@@ -1,6 +1,6 @@
 # Monorepos y limitaciones del indexado AriadneSpecs
 
-Este documento explica por qué la documentación generada (MDD) puede devolver "No se encontraron resultados" para búsquedas como modelos de datos, API routes o componentes UI en **monorepos**, y qué mejoras son posibles.
+Este documento explica limitaciones históricas del indexado en **monorepos** y cómo mitigarlas. **Actualización:** el sync indexa **Prisma** (`prisma-extract` → nodos `Model`/`Enum`), **OpenAPI** (`swagger.json` / `openapi.yaml` → `OpenApiOperation`), **TypeORM** (`@Entity` → `Model` con `source=typeorm`), **`tsconfig` / `.env.example`** como `File` con `fileRole`, y **`manifestDeps`** incluye `depKeys` + `scripts`. El chat **`ask_codebase`** con **`responseMode: evidence_first`** devuelve un **JSON MDD** de 7 secciones y, si el retriever viene vacío pero hay archivos en índice, **inyecta** lecturas mínimas (`package.json`, prisma, env, openapi, etc.) para no responder en vacío.
 
 ---
 
@@ -21,17 +21,17 @@ repo/
 
 ---
 
-## 2. Por qué "No se encontraron resultados"
+## 2. Por qué a veces faltan resultados (y qué está cubierto ahora)
 
 ### 2.1 Prisma y modelos de datos
 
 | Aspecto | Detalle |
 |---------|---------|
-| **Archivos indexados** | Solo `.js`, `.jsx`, `.ts`, `.tsx` |
-| **Prisma** | `prisma/schema.prisma` tiene extensión `.prisma` → **no se indexa** |
-| **Consecuencia** | Los modelos de datos definidos en Prisma nunca entran al grafo |
+| **Parser Tree-sitter** | Solo `.js`, `.jsx`, `.ts`, `.tsx` en el pipeline AST genérico |
+| **Prisma** | Los `.prisma` se indexan en **sync** vía **`prisma-extract`** (`@prisma/internals` / DMMF) → nodos **`Model`**, **`Enum`**, relaciones, **`fieldSummary`** |
+| **Herramientas** | Cypher `MATCH (m:Model)` con `m.source = 'prisma'`; `ask_codebase` / MDD incluyen entidades desde el grafo |
 
-La búsqueda "data models entities database schema tables" no encuentra nada porque el schema de Prisma está fuera del alcance del parser.
+Si tras un **resync** aún no ves modelos, revisa que el job de sync haya completado y que el path del schema esté en el repo (p. ej. `prisma/schema.prisma`).
 
 ### 2.2 NestController y NestService
 

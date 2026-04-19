@@ -374,7 +374,7 @@ function createMcpServer(): Server {
     {
       name: "ask_codebase",
       description:
-        "Pregunta en lenguaje natural sobre el código del proyecto. Usa arquitectura agéntica (Coordinator → CodeAnalysis | KnowledgeExtraction). Para listas exhaustivas de archivos a modificar y preguntas de afinación (flujo legacy/MaxPrime), usa get_modification_plan: esa herramienta garantiza filesToModify 100% del grafo y preguntas solo de negocio. Requiere INGEST_URL y OPENAI_API_KEY.",
+        "Pregunta en lenguaje natural sobre el código. Orquestación agéntica: Coordinador (grafo Falkor + archivos físicos: Prisma, Swagger/OpenAPI, package.json, .env.example, tsconfig) → Validador (cross-check grafo vs archivos). Con responseMode=evidence_first devuelve JSON MDD de 7 secciones (summary, openapi_spec, entities, api_contracts, business_logic, infrastructure, risk_report, evidence_paths) para LegacyCoordinator/The Forge. No uses respuestas vacías si hay archivos indexados: el ingest inyecta evidencia física. Para filesToModify usa get_modification_plan. Requiere INGEST_URL y LLM.",
       inputSchema: {
         type: "object" as const,
         properties: {

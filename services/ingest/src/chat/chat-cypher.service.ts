@@ -59,7 +59,21 @@ export class ChatCypherService {
 
     const limit = full ? '' : ' LIMIT 12';
     const limitPerPrefix = full ? '' : ' LIMIT 4';
-    const labels = ['File', 'Component', 'Function', 'Model', 'Route', 'Hook', 'Context', 'DomainConcept', 'Prop', 'NestController', 'NestService', 'NestModule'];
+    const labels = [
+      'File',
+      'Component',
+      'Function',
+      'Model',
+      'OpenApiOperation',
+      'Route',
+      'Hook',
+      'Context',
+      'DomainConcept',
+      'Prop',
+      'NestController',
+      'NestService',
+      'NestModule',
+    ];
     const counts: Record<string, number> = {};
     const samples: Record<string, unknown[]> = {};
 

@@ -174,7 +174,8 @@ export class C4DslGeneratorService {
       const raw = Array.isArray(row) ? row[0] : null;
       if (typeof raw === 'string' && raw.trim()) {
         try {
-          const keys = JSON.parse(raw) as string[];
+          const parsed = JSON.parse(raw) as string[] | { depKeys?: string[] };
+          const keys = Array.isArray(parsed) ? parsed : parsed.depKeys;
           if (Array.isArray(keys) && keys.length) {
             const hint = keys.slice(0, 8).join(', ');
             for (const id of repoIds) out.set(id, hint);

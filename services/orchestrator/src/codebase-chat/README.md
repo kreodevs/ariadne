@@ -1,6 +1,6 @@
 # Codebase chat / análisis / modification-plan
 
-- **`POST /codebase/chat/repository/:repositoryId`** — ask_codebase (LangGraph: retrieve → synthesize).
+- **`POST /codebase/chat/repository/:repositoryId`** — ask_codebase (LangGraph: retrieve → synthesize). Body: `message`, `history?`, `scope?`, `twoPhase?`, **`responseMode?`** (`default` \| `evidence_first`), `threadId?`. Con **`evidence_first`**, la respuesta **`answer`** es **JSON string** del MDD (7 claves); **`mddDocument`** se rellena parseando ese JSON cuando aplica.
 - **`POST /codebase/chat/project/:projectId`** — Igual, alcance proyecto multi-repo. El ingest, en **`execute_cypher`**, usa los **cypherShardContexts** del proyecto (whitelist de dominios) para unir resultados de varios grafos Falkor con el `projectId` correcto por nodo.
 - **`POST /codebase/analyze/repository/:repositoryId`** — Body `{ mode }`. Llama a ingest `internal/.../analyze-prep` (sin LLM en ingest salvo recopilar datos) y ejecuta la síntesis LLM aquí si `kind === 'llm'`.
 - **`POST /codebase/analyze/project/:projectId`** — Body `{ mode: 'agents' | 'skill' }` para AGENTS.md / SKILL.md vía prep por proyecto.

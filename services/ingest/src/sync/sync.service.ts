@@ -32,6 +32,7 @@ import {
   ensureFalkorIndexes,
 } from '../pipeline/producer';
 import { buildCypherForPrismaSchema } from '../pipeline/prisma-extract';
+import { buildCypherForOpenApiSpec } from '../pipeline/openapi-spec-ingest';
 import { loadRepoTsconfigPaths } from '../pipeline/tsconfig-resolve';
 import { buildProjectMergeCypher } from '../pipeline/project';
 import type { ParsedFile } from '../pipeline/parser';
@@ -66,10 +67,19 @@ interface MappingResult {
 
 /** Phase 2: Extract dependency manifests */
 function extractManifestDeps(
-  pkg: { dependencies?: Record<string, string>; devDependencies?: Record<string, string> },
+  pkg: {
+    dependencies?: Record<string, string>;
+    devDependencies?: Record<string, string>;
+    scripts?: Record<string, string>;
+  },
 ): string {
   const deps = { ...pkg.dependencies, ...pkg.devDependencies };
-  return JSON.stringify(Object.keys(deps || {}));
+  const scripts =
+    pkg.scripts && typeof pkg.scripts === 'object' ? (pkg.scripts as Record<string, string>) : {};
+  return JSON.stringify({
+    depKeys: Object.keys(deps || {}),
+    scripts,
+  });
 }
 
 @Injectable()
@@ -375,6 +385,9 @@ export class SyncService {
             prismaFiles.push({ path: relPath, content });
             continue;
           }
+          if (/swagger\.json$/i.test(relPath) || /openapi\.(yaml|yml|json)$/i.test(relPath)) {
+            continue;
+          }
           if (isFirstSync) {
             const out = parseSource(relPath, content, { returnAst: true });
             if (out && 'root' in out) {
@@ -516,6 +529,23 @@ export class SyncService {
           } catch (err) {
             console.error(`Sync: error indexing Prisma ${pf.path}:`, err);
             if (projectId === projectIds[0]) skippedIndex.push(pf.path);
+          }
+        }
+        const openApiPaths = paths.filter(
+          (p) => /swagger\.json$/i.test(p) || /openapi\.(yaml|yml|json)$/i.test(p),
+        );
+        for (const oaPath of openApiPaths) {
+          try {
+            const content = await getContent(oaPath);
+            if (!content) continue;
+            const statements = buildCypherForOpenApiSpec(oaPath, content, projectId, repoId);
+            if (statements.length === 0) continue;
+            const graphClient = await prepareGraph(oaPath);
+            await runCypherBatch(graphClient, statements);
+            if (projectId === projectIds[0]) indexedPaths.push(oaPath);
+          } catch (err) {
+            console.error(`Sync: error indexing OpenAPI ${oaPath}:`, err);
+            if (projectId === projectIds[0]) skippedIndex.push(oaPath);
           }
         }
         const currentSet = new Set(indexedPaths);

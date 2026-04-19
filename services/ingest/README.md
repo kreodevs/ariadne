@@ -5,7 +5,7 @@ Microservicio NestJS que reemplaza la ingesta basada en directorio local (chokid
 ## Flujo de Ingesta
 
 1. **Fase Mapping:** Escaneo del repo (árbol, lenguajes); incluye `.prisma` cuando aplica.
-2. **Fase Deps:** Lectura de `package.json` para `manifestDeps` en Project.
+2. **Fase Deps:** Lectura de `package.json` para `manifestDeps` en Project (JSON: **`depKeys`** + **`scripts`**; el C4 y ayudas usan `depKeys`; el formato antiguo solo-array sigue siendo aceptado en lectura).
 3. **Fase Chunking:** Parse Tree-sitter con metadata `line_range` y `commit_sha`; **Prisma** vía `@prisma/internals` (getDMMF) → nodos `:Model`, `:Enum`, relaciones `RELATES_TO` / `USES_ENUM`; **tsconfig** con TypeScript API (`extends` merge) para aliases en `IMPORTS`. Incluye **domain-extract** (DomainConcept).
 4. **Cola Redis/BullMQ:** Sync se encola; worker procesa en background.
 5. **Orphan cleanup:** Archivos borrados se eliminan del grafo.
@@ -50,7 +50,7 @@ Ver [src/chat/README.md](src/chat/README.md) y [docs/comparativa/Plan_Implementa
 - `GET /embed?text=` — Vector de embedding para RAG (requiere EMBEDDING_PROVIDER + OPENAI_API_KEY o GOOGLE_API_KEY)
 - `POST /repositories/:id/sync` — Encola job de full sync; retorna `{ jobId, queued: true }`
 - `POST /repositories/:id/resync` — Borra en Falkor solo los nodos de **este** repositorio (`projectId` + `repoId` por cada vínculo; no el grafo de otros repos del mismo proyecto) y `indexed_files` del repo; encola sync completo. Retorna `{ jobId, queued, deletedNodes? }`
-- `POST /repositories/:id/chat` — Chat NL→Cypher. Body: `{ message, history? }`. Requiere `OPENAI_API_KEY`. Ver [src/chat/README.md](src/chat/README.md).
+- `POST /repositories/:id/chat` — Chat NL→Cypher. Body: `{ message, history?, scope?, twoPhase?, responseMode?, … }`. Requiere LLM (`LLM_*`). Con **`responseMode: evidence_first`** la respuesta es **JSON MDD** (7 secciones) cuando el pipeline unificado no delega en orchestrator. Ver [src/chat/README.md](src/chat/README.md).
 - `POST /repositories/:id/analyze` — Análisis estructurado. Body: `{ mode: 'diagnostico'|'duplicados'|'reingenieria'|'codigo_muerto'|'seguridad'|... }`. Diagnóstico: top riesgo, antipatrones; Duplicados: embeddings; Reingeniería: plan priorizado; Código muerto: detalle de uso por archivo; **seguridad:** escaneo heurístico de secretos + informe LLM (complementa Full Audit).
 - `GET /repositories/:id/graph-summary` — Conteos y muestras de nodos indexados.
 - `GET /projects/:id/graph-routing` — Metadatos Falkor para MCP/API: `shardMode` (`project` \| `domain`), `domainSegments` (último sync), `graphNodeSoftLimit`, `extendedGraphShardNames` (grafos de proyectos en dominios whitelist), `cypherShardContexts` (`{ graphName, cypherProjectId }[]` para Cypher multi-proyecto). Usado para abrir el subgrafo correcto (`AriadneSpecs:<uuid>:<segmento>`).
@@ -90,7 +90,7 @@ Tras cada sync (normal o resync), se ejecuta automáticamente `embed-index` si h
 - `CHAT_TELEMETRY_LOG` — `1` o `true`: log JSON por request del pipeline unificado (tamaños, citas de paths, `pathGroundingRatio` vs retrieval).
 - `METRICS_ENABLED` — `0` o `false`: desactiva Prometheus (`GET /metrics` responde 503). Por defecto las métricas están activas (Fase 0 — ver [docs/notebooklm/OBSERVABILIDAD_FASE0.md](../../docs/notebooklm/OBSERVABILIDAD_FASE0.md)).
 - `CHAT_TWO_PHASE` — `0` / `false` / `off`: desactiva el bloque JSON de retrieval antes del contexto bruto en el sintetizador (default: activo).
-- `CHAT_EVIDENCE_FIRST_MAX_CHARS` — tope de caracteres del contexto bruto hacia el sintetizador cuando el body del chat incluye `responseMode: 'evidence_first'` (default `18000`, mínimo efectivo `4000`, máximo `100000`).
+- `CHAT_EVIDENCE_FIRST_MAX_CHARS` — tope de caracteres del contexto hacia el builder MDD cuando el modo **`evidence_first`** prepara contexto antes del JSON (default `18000`, mínimo efectivo `4000`, máximo `100000`). Si **`ORCHESTRATOR_URL`** está activo, el ingest no sintetiza MDD en local para ese path; el orchestrator llama **`POST /internal/repositories/:id/mdd-evidence`**.
 - `MODIFICATION_PLAN_MAX_FILES` — Tope de entradas en `get_modification_plan` (default 150, máx. 2000).
 - `GOOGLE_API_KEY` / `GEMINI_API_KEY` — Si provider=google
 - `NODE_ENV` — Si no es `production`, TypeORM usa `synchronize: true`
