@@ -42,4 +42,13 @@ describe('sync-path-filter (e2e / tests)', () => {
     process.env.INDEX_TESTS = '1';
     expect(shouldSyncIndexPath('src/lib/utils.spec.ts')).toBe(true);
   });
+
+  it('incluye package.json y OpenAPI/Swagger en raíz o monorepo', () => {
+    expect(shouldSyncIndexPath('package.json')).toBe(true);
+    expect(shouldSyncIndexPath('apps/api/package.json')).toBe(true);
+    expect(shouldSyncIndexPath('openapi.json')).toBe(true);
+    expect(shouldSyncIndexPath('openapi.yaml')).toBe(true);
+    expect(shouldSyncIndexPath('swagger.json')).toBe(true);
+    expect(shouldSyncIndexPath('config/random.json')).toBe(false);
+  });
 });

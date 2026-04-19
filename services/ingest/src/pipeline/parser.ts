@@ -152,7 +152,7 @@ export interface ModelInfo {
 }
 
 /** Rol de archivo de configuración indexado (alias, env). */
-export type IndexedFileRole = 'tsconfig' | 'env_example';
+export type IndexedFileRole = 'tsconfig' | 'env_example' | 'package_json';
 
 /** Concepto de dominio (tipos, opciones). Definido en domain-types. */
 export type { DomainConceptInfo } from './domain-types';
@@ -533,6 +533,16 @@ export function parseSource(
     lowerEarly.endsWith('.env.example')
   ) {
     result.fileRole = lowerEarly.endsWith('.env.example') ? 'env_example' : 'tsconfig';
+    if (options.returnAst) {
+      const stubParser = new Parser();
+      stubParser.setLanguage(LANG_TS as Parameters<Parser['setLanguage']>[0]);
+      return { parsed: result, root: stubParser.parse('').rootNode, source };
+    }
+    return result;
+  }
+
+  if (lowerEarly.endsWith('/package.json') || lowerEarly === 'package.json') {
+    result.fileRole = 'package_json';
     if (options.returnAst) {
       const stubParser = new Parser();
       stubParser.setLanguage(LANG_TS as Parameters<Parser['setLanguage']>[0]);

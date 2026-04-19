@@ -1,6 +1,7 @@
 /**
  * Filtro único para listFiles (GitHub/Bitbucket) y walk del shallow clone.
- * Incluye código JS/TS, `.md` del repo (salvo bajo `node_modules`), MDX Storybook y JSON Strapi v4 acotados.
+ * Incluye código JS/TS, `.md` del repo (salvo bajo `node_modules`), MDX Storybook, JSON Strapi v4 acotados,
+ * y manifiestos/specs: `package.json`, `openapi.json`/`swagger.json`/`openapi.ya?ml` en cualquier carpeta.
  *
  * Carpetas típicas de **e2e** / Playwright / Cypress y archivos `*.e2e.*` se omiten por defecto.
  * Override: `INDEX_E2E=true` (mismo espíritu que `INDEX_TESTS` para specs).
@@ -68,6 +69,19 @@ function pathHasSegmentIn(path: string, set: Set<string>): boolean {
 }
 
 /**
+ * Manifiestos y specs que deben entrar en el mapping (clone + API) aunque el resto de .json se excluya.
+ */
+export function isManifestOrOpenApiSyncPath(path: string): boolean {
+  const norm = path.replace(/\\/g, '/');
+  const base = norm.slice(norm.lastIndexOf('/') + 1).toLowerCase();
+  if (base === 'package.json') return true;
+  if (base === 'swagger.json') return true;
+  if (base === 'openapi.json') return true;
+  if (base === 'openapi.yaml' || base === 'openapi.yml') return true;
+  return false;
+}
+
+/**
  * JSON necesarios para el grafo Strapi (ApiRoute / StrapiContentType desde schema).
  * El resto de .json (package-lock, tsconfig, etc.) se excluye para no inflar el índice.
  */
@@ -100,6 +114,8 @@ export function shouldSyncIndexPath(path: string): boolean {
   if (isProjectMarkdownPath(norm)) return true;
   if (ext === '.mdx' && isStorybookDocumentationPath(norm)) return true;
   if (ext === '.json' && isStrapiIndexableJsonPath(norm)) return true;
+  if (ext === '.json' && isManifestOrOpenApiSyncPath(norm)) return true;
+  if ((ext === '.yaml' || ext === '.yml') && isManifestOrOpenApiSyncPath(norm)) return true;
   if ((ext === '.mjs' || ext === '.cjs') && !ignoreRe.test(norm)) return true;
   if (ext === '.prisma') return true;
   return false;
