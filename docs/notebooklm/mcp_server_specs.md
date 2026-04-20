@@ -140,10 +140,10 @@ RETURN dependent.name AS name, labels(dependent) AS labels
 
 Distintas de `get_project_analysis` (pipeline completo en ingest con LLM):
 
-| Tool | Rol |
-|------|-----|
-| **`get_sync_status`** | `GET /projects/:id/sync-status` (ingest): última sync y jobs recientes. Caché opcional en MCP (`MCP_REDIS_*`). |
-| **`get_debt_report`** | Consulta Cypher en Falkor: nodos `Function`/`Component` sin aristas `CALLS` entrantes ni salientes (heurística “aislado”). Límite de filas configurable: `MCP_DEBT_REPORT_ISOLATED_LIMIT`. |
+| Tool                  | Rol                                                                                                                                                                                          |
+| --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **`get_sync_status`** | `GET /projects/:id/sync-status` (ingest): última sync y jobs recientes. Caché opcional en MCP (`MCP_REDIS_*`).                                                                               |
+| **`get_debt_report`** | Consulta Cypher en Falkor: nodos `Function`/`Component` sin aristas `CALLS` entrantes ni salientes (heurística “aislado”). Límite de filas configurable: `MCP_DEBT_REPORT_ISOLATED_LIMIT`.   |
 | **`find_duplicates`** | Cypher: agrupa `File` por `contentHash` con más de un path. Límite de grupos: `MCP_FIND_DUPLICATES_GROUP_LIMIT`. No es el modo `duplicados` de `get_project_analysis` (embed/cross-package). |
 
 ### Volúmenes de salida (operadores / The Forge)
@@ -157,18 +157,18 @@ Distintas de `get_project_analysis` (pipeline completo en ingest con LLM):
 
 Para que la IA no rompa código al refactorizar, el MCP implementa operaciones sobre el árbol de llamadas (AST indexado vía Tree-sitter en el Cartographer):
 
-| Tool | Propósito |
-|------|-----------|
-| `get_definitions` | Localiza el origen exacto (archivo, líneas) de una clase o función. |
-| `get_references` | Encuentra todos los sitios donde se usa un símbolo. Evita romper archivos no abiertos al renombrar. |
-| `get_implementation_details` | Expone firma, tipos y contratos (props) para que el nuevo código respete la estructura existente. |
-| `trace_reachability` | Desde puntos de entrada (rutas, index, main), rastrea qué funciones nunca son llamadas (código muerto). |
-| `check_export_usage` | Identifica exports sin importaciones activas. |
-| `get_affected_scopes` | Si modificas A, devuelve B,C,D afectados + archivos de tests. |
-| `check_breaking_changes` | Compara firma antes/después; alerta si eliminas params usados en N sitios. |
-| `find_similar_implementations` | Búsqueda semántica antes de escribir código nuevo (ej. "¿ya tenemos validación de email?"). |
-| `get_project_standards` | Recupera Prettier, ESLint, tsconfig para que el código sea indistinguible del existente. |
-| `get_file_context` | Combina contenido + imports + exports. Paso 2 del flujo: search → get_file_context → validate → apply. |
+| Tool                           | Propósito                                                                                               |
+| ------------------------------ | ------------------------------------------------------------------------------------------------------- |
+| `get_definitions`              | Localiza el origen exacto (archivo, líneas) de una clase o función.                                     |
+| `get_references`               | Encuentra todos los sitios donde se usa un símbolo. Evita romper archivos no abiertos al renombrar.     |
+| `get_implementation_details`   | Expone firma, tipos y contratos (props) para que el nuevo código respete la estructura existente.       |
+| `trace_reachability`           | Desde puntos de entrada (rutas, index, main), rastrea qué funciones nunca son llamadas (código muerto). |
+| `check_export_usage`           | Identifica exports sin importaciones activas.                                                           |
+| `get_affected_scopes`          | Si modificas A, devuelve B,C,D afectados + archivos de tests.                                           |
+| `check_breaking_changes`       | Compara firma antes/después; alerta si eliminas params usados en N sitios.                              |
+| `find_similar_implementations` | Búsqueda semántica antes de escribir código nuevo (ej. "¿ya tenemos validación de email?").             |
+| `get_project_standards`        | Recupera Prettier, ESLint, tsconfig para que el código sea indistinguible del existente.                |
+| `get_file_context`             | Combina contenido + imports + exports. Paso 2 del flujo: search → get_file_context → validate → apply.  |
 
 **Contexto de proyecto:** Las herramientas basadas en grafo aceptan `projectId` y/o `currentFilePath`. Si no se pasa `projectId`, se infiere desde `currentFilePath` (monolito) o, con **sharding**, vía ingest + barrido de shards cuando `INGEST_URL` está definido. El `projectId` puede ser ID de proyecto (Ariadne) o ID de repo (`roots[].id`); las herramientas que llaman al ingest para file/chat resuelven automáticamente (fallback repo → project o project → repo según el caso).
 
@@ -207,7 +207,8 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
   tools: [
     {
       name: "get_component_graph",
-      description: "Árbol de dependencias del componente (ver especificación §2)",
+      description:
+        "Árbol de dependencias del componente (ver especificación §2)",
       inputSchema: {
         type: "object",
         properties: {
