@@ -80,6 +80,7 @@ Las herramientas ya no recortan agresivamente listados y snippets; puedes **baja
 
 - Transporte: **Streamable HTTP** en `0.0.0.0:8080` (o `PORT`).
 - Requiere FalkorDB con el grafo `AriadneSpecs` ya poblado.
+- **Conexión Falkor:** el cliente registra `error` (no tumba el proceso ante `Socket closed unexpectedly`), usa `pingInterval` y `reconnectStrategy` vía Redis. Reinicios de Falkor o cortes de red pueden loguearse sin exit de Node; si el servicio MCP sigue unhealthy, revisa red/DNS hasta Falkor.
 - **Auth:** Si `MCP_AUTH_TOKEN` está definido, las peticiones deben incluir `Authorization: Bearer <token>`.
 
 Variables: `PORT` (8080), `FALKORDB_HOST`, `FALKORDB_PORT`, `INGEST_URL`, **`ARIADNE_API_URL`** (API Nest; default `http://localhost:3000`), **`ARIADNE_API_BEARER`** o **`ARIADNE_API_JWT`** (token OTP para rutas `/api/*`: grafo de componente, impacto, C4), `MCP_AUTH_TOKEN` (opcional; auth del propio endpoint MCP, no del API Nest).

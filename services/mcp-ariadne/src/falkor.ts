@@ -34,12 +34,37 @@ export type ProjectGraphRouting = {
 
 let client: Awaited<ReturnType<typeof FalkorDB.connect>> | null = null;
 
+/**
+ * FalkorDB reenvía errores del cliente Redis (`client.on('error', …) → emit('error')`).
+ * Sin listener propio, Node usa el handler por defecto y el proceso **termina** ante `Socket closed unexpectedly`
+ * (reinicio de Falkor, idle timeout de red, LB, etc.).
+ */
+function attachFalkorErrorHandler(c: Awaited<ReturnType<typeof FalkorDB.connect>>) {
+  c.on("error", (err: Error) => {
+    console.error("[mcp-ariadne] FalkorDB client error:", err?.message ?? err);
+  });
+}
+
 async function getClient() {
   if (!client) {
     const config = getFalkorConfig();
-    client = await FalkorDB.connect({
-      socket: { host: config.host, port: config.port },
+    const c = await FalkorDB.connect({
+      /** Evita cortes silenciosos detrás de NAT / balanceadores sin TCP keepalive. */
+      pingInterval: 30_000,
+      socket: {
+        host: config.host,
+        port: config.port,
+        /** Pasado a `redis` `createClient`; los tipos de `falkordb` no declaran esta propiedad. */
+        ...({
+          reconnectStrategy: (retries: number) => {
+            if (retries > 100) return new Error("[mcp-ariadne] FalkorDB reconnection limit exceeded");
+            return Math.min(retries * 50, 2_000);
+          },
+        } as object),
+      },
     });
+    attachFalkorErrorHandler(c);
+    client = c;
   }
   return client;
 }
