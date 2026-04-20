@@ -85,7 +85,7 @@ Tras cada sync (normal o resync), se ejecuta automáticamente `embed-index` si h
 - **`LLM_PROVIDER`**, **`LLM_MODEL`**, **`LLM_API_KEY`**, **`LLM_TEMPERATURE`** — Config homologada de chat (ingest + orchestrator); ver `src/chat/llm-unified.ts` y orchestrator `src/llm/llm-unified.ts`.
 - `OPENAI_API_KEY` — Legacy; embeddings openai y chat OpenAI si no usas `LLM_API_KEY`.
 - `MOONSHOT_API_KEY` / `KIMI_API_KEY` — Legacy Kimi; embeddings kimi y chat Kimi.
-- `KIMI_EMBEDDING_MODEL`, `KIMI_EMBEDDING_DIMENSION` — Requeridos si `EMBEDDING_PROVIDER=kimi` sin catálogo Postgres (ver `src/embedding/README.md`).
+- `KIMI_EMBEDDING_MODEL`, `KIMI_EMBEDDING_DIMENSION` — Opcionales si `EMBEDDING_PROVIDER=kimi` sin catálogo Postgres: defaults **`moonshot-v1`** y **1024** (ver `src/embedding/README.md`).
 - `CHAT_MODEL` — Legacy; preferir `LLM_MODEL`. Diagnóstico/reingeniería truncan datos automáticamente para evitar context_length_exceeded (128k tokens).
 - `CHAT_TELEMETRY_LOG` — `1` o `true`: log JSON por request del pipeline unificado (tamaños, citas de paths, `pathGroundingRatio` vs retrieval).
 - `METRICS_ENABLED` — `0` o `false`: desactiva Prometheus (`GET /metrics` responde 503). Por defecto las métricas están activas (Fase 0 — ver [docs/notebooklm/OBSERVABILIDAD_FASE0.md](../../docs/notebooklm/OBSERVABILIDAD_FASE0.md)).

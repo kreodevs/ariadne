@@ -8,6 +8,11 @@ import { GoogleEmbeddingProvider } from './google.provider';
 import { KimiEmbeddingProvider } from './kimi.provider';
 import { OllamaEmbeddingProvider } from './ollama.provider';
 
+/** Modelo por defecto en `/v1/embeddings` (Moonshot/Kimi suelen documentar `moonshot-v1` para embeddings). */
+export const DEFAULT_KIMI_EMBEDDING_MODEL = 'moonshot-v1';
+/** Dimensión por defecto si no hay env; ajusta si la API devuelve otro tamaño. */
+export const DEFAULT_KIMI_EMBEDDING_DIMENSION = 1024;
+
 const PROVIDERS = {
   openai: () => new OpenAiEmbeddingProvider(),
   google: () => new GoogleEmbeddingProvider(),
@@ -32,10 +37,12 @@ export function createEmbeddingProvider(): EmbeddingProvider | null {
     const model =
       process.env.KIMI_EMBEDDING_MODEL?.trim() ||
       process.env.MOONSHOT_EMBEDDING_MODEL?.trim() ||
-      '';
-    const dimRaw = process.env.KIMI_EMBEDDING_DIMENSION?.trim();
-    const dimension = dimRaw ? parseInt(dimRaw, 10) : NaN;
-    if (!model || !Number.isFinite(dimension) || dimension < 1) return null;
+      DEFAULT_KIMI_EMBEDDING_MODEL;
+    const dimRaw =
+      process.env.KIMI_EMBEDDING_DIMENSION?.trim() ||
+      process.env.MOONSHOT_EMBEDDING_DIMENSION?.trim();
+    const dimension = dimRaw ? parseInt(dimRaw, 10) : DEFAULT_KIMI_EMBEDDING_DIMENSION;
+    if (!Number.isFinite(dimension) || dimension < 1) return null;
     const p = new KimiEmbeddingProvider({ model, dimensions: dimension });
     return p.isAvailable() ? p : null;
   }
