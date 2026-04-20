@@ -9,6 +9,7 @@ import {
   kimiCallLlmWithTools,
   kimiChatSimple,
 } from './kimi-llm.adapter';
+import { withLlmRequestThrottle } from './llm-request-throttle';
 import {
   openaiCallLlm,
   openaiCallLlmWithTools,
@@ -22,10 +23,12 @@ export async function callOrchestratorLlm(
   messages: Array<{ role: 'user' | 'assistant' | 'system'; content: string }>,
   maxTokens: number,
 ): Promise<string> {
-  const p = resolveOrchestratorLlmProvider();
-  if (p === 'google') return googleCallLlm(messages, maxTokens);
-  if (p === 'kimi') return kimiCallLlm(messages, maxTokens);
-  return openaiCallLlm(messages, maxTokens);
+  return withLlmRequestThrottle(() => {
+    const p = resolveOrchestratorLlmProvider();
+    if (p === 'google') return googleCallLlm(messages, maxTokens);
+    if (p === 'kimi') return kimiCallLlm(messages, maxTokens);
+    return openaiCallLlm(messages, maxTokens);
+  });
 }
 
 export async function callOrchestratorLlmWithTools(
@@ -37,16 +40,20 @@ export async function callOrchestratorLlmWithTools(
   reasoning_content?: string | null;
   tool_calls?: Array<{ id: string; function: { name: string; arguments: string } }>;
 }> {
-  const p = resolveOrchestratorLlmProvider();
-  if (p === 'google') return googleCallLlmWithTools(messages, tools, maxTokens);
-  if (p === 'kimi') return kimiCallLlmWithTools(messages, tools, maxTokens);
-  return openaiCallLlmWithTools(messages, tools, maxTokens);
+  return withLlmRequestThrottle(() => {
+    const p = resolveOrchestratorLlmProvider();
+    if (p === 'google') return googleCallLlmWithTools(messages, tools, maxTokens);
+    if (p === 'kimi') return kimiCallLlmWithTools(messages, tools, maxTokens);
+    return openaiCallLlmWithTools(messages, tools, maxTokens);
+  });
 }
 
 /** System + user (workflow SDD: revisión de código, tests). */
 export async function orchestratorChatSimple(system: string, user: string): Promise<string> {
-  const p = resolveOrchestratorLlmProvider();
-  if (p === 'google') return googleChatSimple(system, user);
-  if (p === 'kimi') return kimiChatSimple(system, user);
-  return openaiChatSimple(system, user);
+  return withLlmRequestThrottle(() => {
+    const p = resolveOrchestratorLlmProvider();
+    if (p === 'google') return googleChatSimple(system, user);
+    if (p === 'kimi') return kimiChatSimple(system, user);
+    return openaiChatSimple(system, user);
+  });
 }

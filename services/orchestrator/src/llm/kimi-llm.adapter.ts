@@ -2,18 +2,45 @@ import { llmChatTemperature, moonshotApiKey, moonshotBaseUrl } from './moonshot-
 import { orchestratorLlmModel } from './orchestrator-llm-config';
 import type { OpenAiStyleMessage } from './openai-llm.adapter';
 
+/** Reintenta 429/503 (TPM/RPM u sobrecarga); respeta Retry-After si viene. */
+const MOONSHOT_RATE_LIMIT_ATTEMPTS = 6;
+const MOONSHOT_RETRY_BASE_MS = 3000;
+
 async function postChatCompletions(body: Record<string, unknown>): Promise<Response> {
   const key = moonshotApiKey();
   if (!key) throw new Error('LLM_API_KEY u MOONSHOT_API_KEY u KIMI_API_KEY no configurada.');
   const url = `${moonshotBaseUrl()}/chat/completions`;
-  return fetch(url, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${key}`,
-    },
-    body: JSON.stringify(body),
-  });
+  const payload = JSON.stringify(body);
+
+  for (let attempt = 0; ; attempt++) {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${key}`,
+      },
+      body: payload,
+    });
+
+    if (res.ok) return res;
+
+    const errText = await res.text();
+    const retryable =
+      (res.status === 429 || res.status === 503) && attempt < MOONSHOT_RATE_LIMIT_ATTEMPTS - 1;
+    if (!retryable) {
+      return new Response(errText, { status: res.status, headers: res.headers });
+    }
+
+    const ra = res.headers.get('retry-after');
+    let delayMs: number;
+    if (ra) {
+      const sec = parseFloat(ra);
+      delayMs = Number.isFinite(sec) ? Math.min(sec * 1000, 120_000) : MOONSHOT_RETRY_BASE_MS * 2 ** attempt;
+    } else {
+      delayMs = Math.min(MOONSHOT_RETRY_BASE_MS * 2 ** attempt + Math.random() * 1000, 60_000);
+    }
+    await new Promise((r) => setTimeout(r, delayMs));
+  }
 }
 
 export async function kimiCallLlm(
