@@ -15,6 +15,15 @@ const LANG_JS = JavaScript as unknown;
 const LANG_TSX = ts.tsx;
 const LANG_TS = ts.typescript;
 
+/**
+ * node-tree-sitter buffer interno ~32 KiB; UTF-8 largo → `Invalid argument`.
+ * @see https://github.com/tree-sitter/node-tree-sitter/issues/199
+ */
+function treeSitterParseOptions(source: string): Parser.Options {
+  const byteLen = Buffer.byteLength(source, "utf8");
+  return { bufferSize: Math.max(32 * 1024, byteLen + 4096) };
+}
+
 export interface ImportInfo {
   specifier: string; // raw string from source (e.g. 'react', './Button')
   isDefault: boolean;
@@ -199,7 +208,7 @@ export function parseSource(path: string, source: string): ParsedFile | null {
 
   let tree: Parser.Tree;
   try {
-    tree = parser.parse(source);
+    tree = parser.parse(source, undefined, treeSitterParseOptions(source));
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     const snippet = source.slice(0, 200).replace(/\n/g, ' ');

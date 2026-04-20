@@ -53,7 +53,7 @@ EMBEDDING_PROVIDER=kimi MOONSHOT_API_KEY=xxx
 
 ## FalkorDB
 
-`embed-index` usa `vecf32($vec)` y `CREATE VECTOR INDEX`. Si el servidor responde `Unknown function 'vecf32'`, la versión de FalkorDB no incluye tipos vectoriales: actualiza según [docs Falkor](https://docs.falkordb.com/cypher/indexing/vector-index.html). Al arrancar embed-index se hace una **sonda** `RETURN vecf32(...)`; si falla, se omite todo el lote (un warning) en lugar de un error por cada nodo.
+`embed-index` usa `vecf32($vec)` y `CREATE VECTOR INDEX`. Si el servidor responde `Unknown function 'vecf32'`, la versión de FalkorDB no incluye tipos vectoriales: actualiza según [docs Falkor](https://docs.falkordb.com/cypher/indexing/vector-index.html). En este repo, **`docker-compose.yml`** fija `falkordb/falkordb:v4.16.5` (o equivalente reciente de la serie 4.16.x); imágenes tipo **v4.0.1** pueden no exponer el mismo soporte vector en despliegues viejos. Al arrancar embed-index se hace una **sonda** `RETURN vecf32(...)`; si falla, se omite todo el lote (un warning) en lugar de un error por cada nodo.
 
 Para **no ejecutar** embed automático tras cada sync full (p. ej. hasta actualizar Falkor): `SYNC_SKIP_EMBED_INDEX=1` o `INGEST_SKIP_EMBED_INDEX=1`. Sigue pudiendo llamar `POST /repositories/:id/embed-index` a mano.
 

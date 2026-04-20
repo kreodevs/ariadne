@@ -1,8 +1,9 @@
 services:
-  # Base de Datos de Grafos (El Cerebro) — v4.0.1 para soporte vector (RAG)
+  # Base de Datos de Grafos (El Cerebro) — FalkorDB 4.16+ incluye vecf32 / VECTOR INDEX para embed-index y MCP.
+  # (v4.0.x es muy antigua; si ves "FalkorDB no expone vecf32", sube de imagen y reinicia con el volumen migrado/respaldado.)
   # Sin puertos expuestos: solo accesible desde contenedores de la red
   falkordb:
-    image: falkordb/falkordb:v4.0.1
+    image: falkordb/falkordb:v4.16.5
     platform: linux/amd64
     container_name: ariadnespecs-db
     volumes:

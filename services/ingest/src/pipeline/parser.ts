@@ -212,6 +212,15 @@ function getLanguageForPath(path: string): unknown {
   return LANG_JS;
 }
 
+/**
+ * node-tree-sitter reserva un buffer interno ~32 KiB; entradas mayores en UTF-8 lanzan `Invalid argument`.
+ * @see https://github.com/tree-sitter/node-tree-sitter/issues/199
+ */
+function treeSitterParseOptions(source: string): Parser.Options {
+  const byteLen = Buffer.byteLength(source, 'utf8');
+  return { bufferSize: Math.max(32 * 1024, byteLen + 4096) };
+}
+
 /** Obtiene el texto del nodo en el source. */
 function getNodeText(src: string, node: Parser.SyntaxNode): string {
   return src.slice(node.startIndex, node.endIndex);
@@ -382,8 +391,8 @@ export interface ParseSourceOptions {
 }
 
 /**
- * Límite para truncar archivos grandes. Tree-sitter falla con "Invalid argument" cuando hay ~3300+ sentencias hermanas.
- * Configurable vía env TRUNCATE_PARSE_MAX_BYTES (default 25000).
+ * Límite para truncar cuando aún falla el parse completo (p. ej. muchísimas sentencias hermanas, SVG inline gigante).
+ * Configurable vía env TRUNCATE_PARSE_MAX_BYTES (default 25000). El caso típico "Invalid argument" >32 KiB UTF-8 se cubre con `treeSitterParseOptions`.
  */
 function getTruncateParseMaxBytes(): number {
   const v = process.env.TRUNCATE_PARSE_MAX_BYTES;
@@ -411,7 +420,7 @@ function tryParseTruncated(
   tr += '\n' + '}'.repeat(Math.max(0, open - close)) + '\nexport default _;';
   try {
     parser.setLanguage(lang);
-    const tree = parser.parse(tr);
+    const tree = parser.parse(tr, undefined, treeSitterParseOptions(tr));
     if (!tree) return null;
     const root = tree.rootNode;
     const result: ParsedFile = {
@@ -474,7 +483,9 @@ function tryParseTruncated(
     if (isStorybookStoriesPath(path)) {
       result.storybookCsf = { storyMetaTargets: extractStorybookCsfMetaTargets(root, tr) };
     }
-    console.warn(`[parser] Truncated parse OK for ${path} (${result.components.length} components, ${result.functions.length} functions)`);
+    console.info(
+      `[parser] Truncated parse OK for ${path} (${result.components.length} components, ${result.functions.length} functions)`,
+    );
     recordParseTruncated();
     return result;
   } catch {
@@ -583,16 +594,16 @@ export function parseSource(
   parser.setLanguage(lang as Parameters<Parser['setLanguage']>[0]);
   let tree: Parser.Tree;
   try {
-    tree = parser.parse(source);
+    tree = parser.parse(source, undefined, treeSitterParseOptions(source));
   } catch (err) {
+    // Fallback si aún falla (AST masivo, etc.): parsear truncado
+    const truncated = tryParseTruncated(path, source, parser, lang as Parameters<Parser['setLanguage']>[0]);
+    if (truncated) return truncated;
     const msg = err instanceof Error ? err.message : String(err);
     const snippet = source.slice(0, 200).replace(/\n/g, ' ');
     console.warn(
       `[parser] Parse failed for ${path}: ${msg}. First 200 chars: ${snippet}...`,
     );
-    // Fallback para archivos muy grandes (~60KB+ o ~3000+ sentencias): parsear truncado
-    const truncated = tryParseTruncated(path, source, parser, lang as Parameters<Parser['setLanguage']>[0]);
-    if (truncated) return truncated;
     const hasStrapi =
       result.strapiContentTypes.length > 0 ||
       result.strapiControllers.length > 0 ||

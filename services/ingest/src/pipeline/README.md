@@ -1,6 +1,6 @@
 # Pipeline de ingesta (FalkorDB)
 
-- **parser.ts** — Tree-sitter: TS/JS/JSX, componentes, Nest, rutas React Router (`RouteInfo.enclosingComponent`), **entidades TypeORM** (`@Entity` → `:Model` con `source=typeorm` + `fieldSummary`), **tsconfig.json** / **.env.example** (nodo `File` con `fileRole`). Los **`.prisma`** no se parsean aquí: **`prisma-extract.ts`** en sync.
+- **parser.ts** — Tree-sitter: TS/JS/JSX, componentes, Nest, rutas React Router (`RouteInfo.enclosingComponent`), **entidades TypeORM** (`@Entity` → `:Model` con `source=typeorm` + `fieldSummary`), **tsconfig.json** / **.env.example** (nodo `File` con `fileRole`). Los **`.prisma`** no se parsean aquí: **`prisma-extract.ts`** en sync. `Parser.parse` usa `bufferSize` acorde al tamaño UTF-8 del archivo (el binding por defecto ~32 KiB lanza `Invalid argument` si el código es más largo). Si aún falla, fallback truncado (`TRUNCATE_PARSE_MAX_BYTES`).
 - **storybook-documentation.ts** — Detección de rutas Storybook, parseo MDX/MD y markdown general (`README`, `docs/`, …).
 - **producer.ts** — Cypher (`File`, `Component`, `Function`, `StorybookDoc`, `MarkdownDoc`, `IMPORTS`, `RENDERS` desde JSX y desde `<Route element={…}/>` hacia la página, `STORYBOOK_*`, `MARKDOWN_*`, …).
 - **tsconfig-resolve.ts** — Merge de `tsconfig`/`jsconfig` con `extends` (TypeScript API) para aliases en imports (docs → `*_TARGETS_FILE`).
