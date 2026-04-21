@@ -46,6 +46,26 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
   return res.json();
 }
 
+/** Reintento ligero ante 429 (TPM) en chat ingest — The Forge / operadores. */
+async function postChatWith429Retry<T>(path: string, body: unknown): Promise<T> {
+  const maxAttempts = 3;
+  let lastErr: unknown;
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    try {
+      return await request<T>(path, {
+        method: 'POST',
+        body: JSON.stringify(body),
+      });
+    } catch (e) {
+      lastErr = e;
+      const msg = e instanceof Error ? e.message : String(e);
+      if (!msg.startsWith('429:') || attempt === maxAttempts - 1) throw e;
+      await new Promise((r) => setTimeout(r, 3500 * 2 ** attempt));
+    }
+  }
+  throw lastErr;
+}
+
 /** Objeto con métodos para todas las rutas del Ingest. */
 export const api = {
   getProjects: () => request<import('./types').Project[]>('/projects'),
@@ -255,26 +275,11 @@ export const api = {
     return request<{ content: string }>(`/repositories/${repoId}/file?${q}`);
   },
 
-  chat: (repoId: string, body: { message: string; history?: Array<{ role: 'user' | 'assistant'; content: string; cypher?: string; result?: unknown[] }> }) =>
-    request<{ answer: string; cypher?: string; result?: unknown[] }>(`/repositories/${repoId}/chat`, {
-      method: 'POST',
-      body: JSON.stringify(body),
-    }),
+  chat: (repoId: string, body: import('./types').IngestChatRequestBody) =>
+    postChatWith429Retry<import('./types').IngestChatResponse>(`/repositories/${repoId}/chat`, body),
 
-  chatProject: (
-    projectId: string,
-    body: {
-      message: string;
-      history?: Array<{ role: 'user' | 'assistant'; content: string; cypher?: string; result?: unknown[] }>;
-      scope?: import('./types').ChatScope;
-      twoPhase?: boolean;
-      strictChatScope?: boolean;
-    },
-  ) =>
-    request<{ answer: string; cypher?: string; result?: unknown[] }>(`/projects/${projectId}/chat`, {
-      method: 'POST',
-      body: JSON.stringify(body),
-    }),
+  chatProject: (projectId: string, body: import('./types').IngestChatRequestBody) =>
+    postChatWith429Retry<import('./types').IngestChatResponse>(`/projects/${projectId}/chat`, body),
 
   listBitbucketWorkspaces: (credentialsRef: string) =>
     request<Array<{ slug: string; name?: string }>>(

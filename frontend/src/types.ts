@@ -210,6 +210,34 @@ export interface ChatScope {
   excludePathGlobs?: string[];
 }
 
+/** UI The Forge (RepoChat / ProjectChat): alineado con `responseMode` + `deterministicRetriever` del ingest. */
+export type ChatPipelineMode = 'default' | 'evidence_first' | 'raw_evidence_fast';
+
+export interface IngestChatHistoryEntry {
+  role: 'user' | 'assistant';
+  content: string;
+  cypher?: string;
+  result?: unknown[];
+}
+
+/** Body de `POST /repositories/:id/chat` y `POST /projects/:id/chat` (proxy ingest). */
+export interface IngestChatRequestBody {
+  message: string;
+  history?: IngestChatHistoryEntry[];
+  scope?: ChatScope;
+  twoPhase?: boolean;
+  responseMode?: 'default' | 'evidence_first' | 'raw_evidence';
+  deterministicRetriever?: boolean;
+  strictChatScope?: boolean;
+}
+
+export interface IngestChatResponse {
+  answer: string;
+  cypher?: string;
+  result?: unknown[];
+  mddDocument?: Record<string, unknown>;
+}
+
 /** Metadatos de `POST .../analyze` (caché, foco, cobertura). */
 export interface AnalyzeReportMeta {
   scopeApplied: boolean;

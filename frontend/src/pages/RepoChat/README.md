@@ -9,7 +9,22 @@ Página de chat con el repositorio: preguntas en lenguaje natural → Cypher →
 
 ## Alcance opcional
 
-Panel **Alcance opcional**: prefijos de ruta y globs de exclusión (una línea por entrada) se envían como `scope` en `POST /repositories/:id/analyze`. Checkbox **Duplicados cross-boundary** añade `crossPackageDuplicates` en modo duplicados.
+Panel **Alcance opcional**: prefijos de ruta y globs de exclusión (una línea por entrada) se envían como `scope` en `POST /repositories/:id/analyze` **y** en `POST /repositories/:id/chat` (menos tokens / 429). Checkbox **Duplicados cross-boundary** añade `crossPackageDuplicates` en modo duplicados.
+
+## Modo Ariadne (The Forge)
+
+**ChatPipelineModeSelect** + `ingestOptionsFromChatPipelineMode` (`frontend/src/utils/chat-pipeline-mode.ts`):
+
+- **Chat normal** — sin `responseMode` (prosa en backend).
+- **MDD / SDD** — `responseMode: evidence_first`: una respuesta JSON MDD (7 claves); **ChatAssistantContent** lo muestra formateado.
+- **Evidencia bruta** — `responseMode: raw_evidence` + `deterministicRetriever: true`: sin LLM en la fase de retrieve en ingest.
+
+`api.chat` reintenta hasta 3 veces ante **429** con backoff.
+
+## Componentes de chat
+
+- **ChatAssistantContent.tsx** — Detecta JSON MDD / raw_evidence o Markdown.
+- **ChatPipelineModeSelect.tsx** — Radios de modo pipeline.
 
 Tras la respuesta, **badges** bajo el título del informe muestran `reportMeta` (p. ej. **Caché**, **Alcance activo**, huella degradada, capa CALL cache) y la nota de cobertura del grafo si viene en el payload.
 

@@ -10,8 +10,11 @@ import { MarkdownBlock } from '@/components/MarkdownBlock';
 import { AnalyzeReportMetaBadges } from '@/components/analyze/AnalyzeReportMetaBadges';
 import { AnalyzeScopeFields } from '@/components/analyze/AnalyzeScopeFields';
 import { api } from '../api';
-import type { AnalyzeCodeMode, AnalyzeReportMeta, Project } from '../types';
+import type { AnalyzeCodeMode, AnalyzeReportMeta, ChatPipelineMode, ChatScope, Project } from '../types';
 import { scopeFromAnalyzeForm } from '../utils/analyze-scope-form';
+import { ingestOptionsFromChatPipelineMode } from '../utils/chat-pipeline-mode';
+import { ChatAssistantContent } from './RepoChat/ChatAssistantContent';
+import { ChatPipelineModeSelect } from './RepoChat/ChatPipelineModeSelect';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
@@ -72,6 +75,7 @@ export function ProjectChat() {
   const [crossPackageDuplicates, setCrossPackageDuplicates] = useState(false);
   /** Multi-root: `false` → envía `strictChatScope: false` (chat sobre todos los roots sin exigir scope). */
   const [allowBroadProjectChat, setAllowBroadProjectChat] = useState(false);
+  const [chatPipelineMode, setChatPipelineMode] = useState<ChatPipelineMode>('default');
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -163,7 +167,24 @@ export function ProjectChat() {
       result: m.result,
     }));
 
-    const chatBody: Parameters<typeof api.chatProject>[1] = { message: msg, history };
+    const fromForm = scopeFromAnalyzeForm(includePrefixesText, excludeGlobsText);
+    let scope: ChatScope | undefined = fromForm;
+    if (project.repositories.length > 1 && !allowBroadProjectChat && selectedRepoId) {
+      scope = { ...(fromForm ?? {}), repoIds: [selectedRepoId] };
+    }
+    const hasScope =
+      scope &&
+      ((scope.repoIds?.length ?? 0) > 0 ||
+        (scope.includePathPrefixes?.length ?? 0) > 0 ||
+        (scope.excludePathGlobs?.length ?? 0) > 0);
+
+    const modeOpts = ingestOptionsFromChatPipelineMode(chatPipelineMode);
+    const chatBody: Parameters<typeof api.chatProject>[1] = {
+      message: msg,
+      history,
+      ...modeOpts,
+      ...(hasScope ? { scope } : {}),
+    };
     if (project.repositories.length > 1 && allowBroadProjectChat) {
       chatBody.strictChatScope = false;
     }
@@ -186,7 +207,18 @@ export function ProjectChat() {
         setMessages((m) => [...m, { role: 'assistant', content: `Error: ${e.message}` }]);
       })
       .finally(() => setLoading(false));
-  }, [projectId, project, input, loading, messages, allowBroadProjectChat]);
+  }, [
+    projectId,
+    project,
+    input,
+    loading,
+    messages,
+    allowBroadProjectChat,
+    selectedRepoId,
+    includePrefixesText,
+    excludeGlobsText,
+    chatPipelineMode,
+  ]);
 
   /** Envía mensaje con Enter (sin Shift). */
   const onKeyDown = (e: React.KeyboardEvent) => {
@@ -273,6 +305,11 @@ export function ProjectChat() {
             onCrossPackageDuplicates={setCrossPackageDuplicates}
             showCrossPackage
           />
+          <p className="text-muted-foreground text-xs leading-snug">
+            En el <strong>chat</strong>, con varios repos y sin &quot;chat amplio&quot;, se envía{' '}
+            <code className="rounded bg-muted px-1 font-mono">scope.repoIds</code> del repo elegido más prefijos/globs
+            — menos tokens y menos 429.
+          </p>
 
           <div className="flex flex-wrap gap-2">
             <Button
@@ -389,11 +426,12 @@ export function ProjectChat() {
         </aside>
 
         <Card className="order-1 flex min-h-[min(52vh,560px)] min-w-0 flex-1 flex-col overflow-hidden lg:order-2 lg:min-h-0">
-        <CardHeader className="shrink-0 pb-2">
+        <CardHeader className="shrink-0 pb-2 space-y-3">
           <CardTitle>Pregunta sobre todo el proyecto</CardTitle>
           <p className="text-sm text-muted-foreground">
             Este chat usa el grafo de todos los repos del proyecto. Puedes preguntar por archivos, componentes o flujos en cualquier repo.
           </p>
+          <ChatPipelineModeSelect value={chatPipelineMode} onChange={setChatPipelineMode} id="project-chat-mode" />
           {project.repositories.length > 1 ? (
             <label className="mt-3 flex cursor-pointer items-start gap-2 rounded-md border border-dashed border-[var(--border)] p-2 text-xs">
               <input
@@ -433,40 +471,44 @@ export function ProjectChat() {
                     : 'mr-2 sm:mr-8 rounded-lg border bg-muted/50 p-3 text-sm'
                 }
               >
-                <div className="[&_ul]:my-1 [&_ol]:my-1 [&_li]:my-0 [&_p]:my-1 [&_strong]:font-semibold [&_h1]:text-lg [&_h2]:text-base [&_h3]:text-sm [&_pre]:overflow-x-auto [&_table]:w-full [&_th]:border [&_td]:border [&_td]:px-2 [&_td]:py-1">
-                  <ReactMarkdown
-                    remarkPlugins={[remarkGfm]}
-                    components={{
-                      p: ({ children }) => (children ? <p className="mb-1 last:mb-0">{children}</p> : null),
-                      ul: ({ children }) => <ul className="list-disc pl-4 my-1">{children}</ul>,
-                      ol: ({ children }) => <ol className="list-decimal pl-4 my-1">{children}</ol>,
-                      strong: ({ children }) => <strong className="font-semibold">{children}</strong>,
-                      table: ({ children }) => (
-                        <div className="overflow-x-auto my-2">
-                          <table className="w-full text-xs border-collapse">{children}</table>
-                        </div>
-                      ),
-                      th: ({ children }) => (
-                        <th className="px-2 py-1 border bg-muted/80 font-medium text-left">{children}</th>
-                      ),
-                      td: ({ children }) => <td className="px-2 py-1 border">{children}</td>,
-                      code: ({ className, children, ...props }) => {
-                        const isBlock = className?.includes('language-');
-                        return isBlock ? (
-                          <pre className="my-2 rounded bg-muted p-2 text-xs font-mono overflow-x-auto">
-                            <code {...props}>{children}</code>
-                          </pre>
-                        ) : (
-                          <code className="rounded bg-muted px-1 py-0.5 text-xs font-mono" {...props}>
-                            {children}
-                          </code>
-                        );
-                      },
-                    }}
-                  >
-                    {m.content}
-                  </ReactMarkdown>
-                </div>
+                {m.role === 'assistant' ? (
+                  <ChatAssistantContent content={m.content} />
+                ) : (
+                  <div className="[&_ul]:my-1 [&_ol]:my-1 [&_li]:my-0 [&_p]:my-1 [&_strong]:font-semibold [&_h1]:text-lg [&_h2]:text-base [&_h3]:text-sm [&_pre]:overflow-x-auto [&_table]:w-full [&_th]:border [&_td]:border [&_td]:px-2 [&_td]:py-1">
+                    <ReactMarkdown
+                      remarkPlugins={[remarkGfm]}
+                      components={{
+                        p: ({ children }) => (children ? <p className="mb-1 last:mb-0">{children}</p> : null),
+                        ul: ({ children }) => <ul className="list-disc pl-4 my-1">{children}</ul>,
+                        ol: ({ children }) => <ol className="list-decimal pl-4 my-1">{children}</ol>,
+                        strong: ({ children }) => <strong className="font-semibold">{children}</strong>,
+                        table: ({ children }) => (
+                          <div className="overflow-x-auto my-2">
+                            <table className="w-full text-xs border-collapse">{children}</table>
+                          </div>
+                        ),
+                        th: ({ children }) => (
+                          <th className="px-2 py-1 border bg-muted/80 font-medium text-left">{children}</th>
+                        ),
+                        td: ({ children }) => <td className="px-2 py-1 border">{children}</td>,
+                        code: ({ className, children, ...props }) => {
+                          const isBlock = className?.includes('language-');
+                          return isBlock ? (
+                            <pre className="my-2 rounded bg-muted p-2 text-xs font-mono overflow-x-auto">
+                              <code {...props}>{children}</code>
+                            </pre>
+                          ) : (
+                            <code className="rounded bg-muted px-1 py-0.5 text-xs font-mono" {...props}>
+                              {children}
+                            </code>
+                          );
+                        },
+                      }}
+                    >
+                      {m.content}
+                    </ReactMarkdown>
+                  </div>
+                )}
                 {m.cypher && (
                   <pre className="mt-2 rounded bg-muted p-2 text-xs font-mono overflow-x-auto">
                     {m.cypher}
@@ -477,7 +519,11 @@ export function ProjectChat() {
             {loading && (
               <div className="mr-8 flex items-center gap-2 rounded-lg border bg-muted/50 p-3 text-sm text-muted-foreground">
                 <span className="inline-block h-4 w-4 shrink-0 animate-spin rounded-full border-2 border-current border-t-transparent" />
-                Pensando… (puede tardar unos segundos)
+                {chatPipelineMode === 'evidence_first'
+                  ? 'Generando MDD (puede tardar 30–120 s)…'
+                  : chatPipelineMode === 'raw_evidence_fast'
+                    ? 'Recolectando evidencia sin LLM en retrieve…'
+                    : 'Pensando… (puede tardar unos segundos)'}
               </div>
             )}
             <div ref={scrollRef} />
