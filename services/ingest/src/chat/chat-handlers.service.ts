@@ -192,12 +192,22 @@ export class ChatHandlersService {
         projectId,
         `MATCH (n:MarkdownDoc) WHERE n.projectId = $projectId AND n.${vProp} IS NOT NULL RETURN count(n) as c`,
       );
+      const countModel = await this.cypher.executeCypher(
+        projectId,
+        `MATCH (n:Model) WHERE n.projectId = $projectId AND n.${vProp} IS NOT NULL RETURN count(n) as c`,
+      );
+      const countEnum = await this.cypher.executeCypher(
+        projectId,
+        `MATCH (n:Enum) WHERE n.projectId = $projectId AND n.${vProp} IS NOT NULL RETURN count(n) as c`,
+      );
       const hasFn = (countFn as Array<{ c?: number }>)?.[0]?.c ?? 0;
       const hasComp = (countComp as Array<{ c?: number }>)?.[0]?.c ?? 0;
       const hasDoc = (countDoc as Array<{ c?: number }>)?.[0]?.c ?? 0;
       const hasSb = (countSb as Array<{ c?: number }>)?.[0]?.c ?? 0;
       const hasMd = (countMd as Array<{ c?: number }>)?.[0]?.c ?? 0;
-      if (hasFn === 0 && hasComp === 0 && hasDoc === 0 && hasSb === 0 && hasMd === 0)
+      const hasModel = (countModel as Array<{ c?: number }>)?.[0]?.c ?? 0;
+      const hasEnum = (countEnum as Array<{ c?: number }>)?.[0]?.c ?? 0;
+      if (hasFn === 0 && hasComp === 0 && hasDoc === 0 && hasSb === 0 && hasMd === 0 && hasModel === 0 && hasEnum === 0)
         return { cypher: '', result: [] };
 
       const vec = await embed.embed(query.trim());
@@ -209,13 +219,17 @@ export class ChatHandlersService {
       const docVecQ = `CALL db.idx.vector.queryNodes('Document', '${vProp}', ${k}, vecf32(${vecStr})) YIELD node, score RETURN node.path AS path, node.heading AS heading, node.chunkIndex AS chunkIndex, node.projectId AS projectId, score`;
       const sbVecQ = `CALL db.idx.vector.queryNodes('StorybookDoc', '${vProp}', ${k}, vecf32(${vecStr})) YIELD node, score RETURN node.title AS name, node.sourcePath AS path, node.projectId AS projectId, score`;
       const mdDocVecQ = `CALL db.idx.vector.queryNodes('MarkdownDoc', '${vProp}', ${k}, vecf32(${vecStr})) YIELD node, score RETURN node.title AS name, node.sourcePath AS path, node.projectId AS projectId, score`;
+      const modelVecQ = `CALL db.idx.vector.queryNodes('Model', '${vProp}', ${k}, vecf32(${vecStr})) YIELD node, score RETURN node.name AS name, node.path AS path, node.projectId AS projectId, score`;
+      const enumVecQ = `CALL db.idx.vector.queryNodes('Enum', '${vProp}', ${k}, vecf32(${vecStr})) YIELD node, score RETURN node.name AS name, node.path AS path, node.projectId AS projectId, score`;
 
-      const [fRes, cRes, dRes, sbRes, mdDocRes] = await Promise.all([
+      const [fRes, cRes, dRes, sbRes, mdDocRes, modelVecRes, enumVecRes] = await Promise.all([
         hasFn > 0 ? this.cypher.executeCypherRaw(funcVecQ, projectId) : Promise.resolve([]),
         hasComp > 0 ? this.cypher.executeCypherRaw(compVecQ, projectId) : Promise.resolve([]),
         hasDoc > 0 ? this.cypher.executeCypherRaw(docVecQ, projectId) : Promise.resolve([]),
         hasSb > 0 ? this.cypher.executeCypherRaw(sbVecQ, projectId) : Promise.resolve([]),
         hasMd > 0 ? this.cypher.executeCypherRaw(mdDocVecQ, projectId) : Promise.resolve([]),
+        hasModel > 0 ? this.cypher.executeCypherRaw(modelVecQ, projectId) : Promise.resolve([]),
+        hasEnum > 0 ? this.cypher.executeCypherRaw(enumVecQ, projectId) : Promise.resolve([]),
       ]);
 
       const fData = (Array.isArray(fRes) ? fRes : []) as Array<unknown>;
@@ -223,6 +237,8 @@ export class ChatHandlersService {
       const dData = (Array.isArray(dRes) ? dRes : []) as Array<unknown>;
       const sbData = (Array.isArray(sbRes) ? sbRes : []) as Array<unknown>;
       const mdDocData = (Array.isArray(mdDocRes) ? mdDocRes : []) as Array<unknown>;
+      const modelVecData = (Array.isArray(modelVecRes) ? modelVecRes : []) as Array<unknown>;
+      const enumVecData = (Array.isArray(enumVecRes) ? enumVecRes : []) as Array<unknown>;
 
       const results: Array<{ tipo: string; path: string; name: string }> = [];
       const seen = new Set<string>();
@@ -300,6 +316,36 @@ export class ChatHandlersService {
           name: pathStr ? `${titleStr || 'Doc'} — ${pathStr}` : titleStr || pathStr,
         });
       }
+      for (const row of modelVecData) {
+        if (results.length >= limit) break;
+        const { name, path, projectId: pid } = toRow(row);
+        if (pid !== projectId) continue;
+        const pathStr = String(path ?? '');
+        const nameStr = String(name ?? '');
+        const key = `Model:${nameStr}:${pathStr}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        results.push({
+          tipo: 'Model',
+          path: pathStr,
+          name: pathStr ? `${nameStr} — ${pathStr}` : nameStr,
+        });
+      }
+      for (const row of enumVecData) {
+        if (results.length >= limit) break;
+        const { name, path, projectId: pid } = toRow(row);
+        if (pid !== projectId) continue;
+        const pathStr = String(path ?? '');
+        const nameStr = String(name ?? '');
+        const key = `Enum:${nameStr}:${pathStr}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        results.push({
+          tipo: 'Enum',
+          path: pathStr,
+          name: pathStr ? `${nameStr} — ${pathStr}` : nameStr,
+        });
+      }
 
       return {
         cypher: 'CALL db.idx.vector.queryNodes (semantic search)',
@@ -342,13 +388,23 @@ export class ChatHandlersService {
         projectId,
         `MATCH (n:MarkdownDoc) WHERE n.projectId = $projectId AND n.${vProp} IS NOT NULL RETURN count(n) as c`,
       );
+      const countModel = await this.cypher.executeCypher(
+        projectId,
+        `MATCH (n:Model) WHERE n.projectId = $projectId AND n.${vProp} IS NOT NULL RETURN count(n) as c`,
+      );
+      const countEnum = await this.cypher.executeCypher(
+        projectId,
+        `MATCH (n:Enum) WHERE n.projectId = $projectId AND n.${vProp} IS NOT NULL RETURN count(n) as c`,
+      );
       const hasFn = (countFn as Array<{ c?: number }>)?.[0]?.c ?? 0;
       const hasComp = (countComp as Array<{ c?: number }>)?.[0]?.c ?? 0;
       const hasDoc = (countDoc as Array<{ c?: number }>)?.[0]?.c ?? 0;
       const hasSb = (countSb as Array<{ c?: number }>)?.[0]?.c ?? 0;
       const hasMd = (countMd as Array<{ c?: number }>)?.[0]?.c ?? 0;
-      if (hasFn === 0 && hasComp === 0 && hasDoc === 0 && hasSb === 0 && hasMd === 0) {
-        return 'Diagnóstico: ningún nodo indexable (Function/Component/Document/StorybookDoc/MarkdownDoc) tiene embedding. Ejecuta POST /repositories/:id/embed-index tras sync.';
+      const hasModel = (countModel as Array<{ c?: number }>)?.[0]?.c ?? 0;
+      const hasEnum = (countEnum as Array<{ c?: number }>)?.[0]?.c ?? 0;
+      if (hasFn === 0 && hasComp === 0 && hasDoc === 0 && hasSb === 0 && hasMd === 0 && hasModel === 0 && hasEnum === 0) {
+        return 'Diagnóstico: ningún nodo indexable (Function/Component/Document/StorybookDoc/MarkdownDoc/Model/Enum) tiene embedding. Ejecuta POST /repositories/:id/embed-index tras sync.';
       }
       return 'Diagnóstico: hay embeddings pero esta consulta no obtuvo vecinos relevantes; reformula o usa execute_cypher con términos del dominio.';
     } catch (err) {

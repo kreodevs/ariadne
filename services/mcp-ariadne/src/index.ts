@@ -1793,23 +1793,29 @@ async function fetchFileFromIngest(
           const docVecQ = `CALL db.idx.vector.queryNodes('Document', '${vecProp}', ${k}, vecf32(${vecStr})) YIELD node, score RETURN node.path AS path, node.heading AS heading, node.chunkIndex AS chunkIndex, node.projectId AS projectId, node.repoId AS repoId, score`;
           const sbVecQ = `CALL db.idx.vector.queryNodes('StorybookDoc', '${vecProp}', ${k}, vecf32(${vecStr})) YIELD node, score RETURN node.title AS name, node.sourcePath AS path, node.projectId AS projectId, node.repoId AS repoId, score`;
           const mdVecQ = `CALL db.idx.vector.queryNodes('MarkdownDoc', '${vecProp}', ${k}, vecf32(${vecStr})) YIELD node, score RETURN node.title AS name, node.sourcePath AS path, node.projectId AS projectId, node.repoId AS repoId, score`;
+          const modelVecQ = `CALL db.idx.vector.queryNodes('Model', '${vecProp}', ${k}, vecf32(${vecStr})) YIELD node, score RETURN node.name AS name, node.path AS path, node.projectId AS projectId, node.repoId AS repoId, score`;
+          const enumVecQ = `CALL db.idx.vector.queryNodes('Enum', '${vecProp}', ${k}, vecf32(${vecStr})) YIELD node, score RETURN node.name AS name, node.path AS path, node.projectId AS projectId, node.repoId AS repoId, score`;
           try {
             const seen = new Set<string>();
             await runOnProjectGraphs(graphRouteId, async (g, ctx) => {
               try {
-                const [fRes, cRes, dRes, sbRes, mdRes] = await Promise.all([
+                const [fRes, cRes, dRes, sbRes, mdRes, modelVecRes, enumVecRes] = await Promise.all([
                   g.query(funcVecQ) as Promise<{ data?: Array<Record<string, unknown>> }>,
                   g.query(compVecQ) as Promise<{ data?: Array<Record<string, unknown>> }>,
                   g.query(docVecQ) as Promise<{ data?: Array<Record<string, unknown>> }>,
                   g.query(sbVecQ) as Promise<{ data?: Array<Record<string, unknown>> }>,
                   g.query(mdVecQ) as Promise<{ data?: Array<Record<string, unknown>> }>,
+                  g.query(modelVecQ) as Promise<{ data?: Array<Record<string, unknown>> }>,
+                  g.query(enumVecQ) as Promise<{ data?: Array<Record<string, unknown>> }>,
                 ]);
                 if (
                   (fRes.data?.length ?? 0) +
                     (cRes.data?.length ?? 0) +
                     (dRes.data?.length ?? 0) +
                     (sbRes.data?.length ?? 0) +
-                    (mdRes.data?.length ?? 0) >
+                    (mdRes.data?.length ?? 0) +
+                    (modelVecRes.data?.length ?? 0) +
+                    (enumVecRes.data?.length ?? 0) >
                   0
                 )
                   usedVector = true;
@@ -1886,6 +1892,38 @@ async function fetchFileFromIngest(
                     projectId: pid,
                   });
                 }
+                for (const row of modelVecRes.data ?? []) {
+                  if (results.length >= limit) return;
+                  const name = _rv<string>(row, "name") ?? "";
+                  const path = _rv<string>(row, "path") ?? "";
+                  const pid = _rv<string>(row, "projectId");
+                  if (ctx.cypherProjectId && pid !== ctx.cypherProjectId) continue;
+                  if (scopeRepoId && _rv<string>(row, "repoId") !== scopeRepoId) continue;
+                  const key = `Model:${name}:${path}`;
+                  if (seen.has(key)) continue;
+                  seen.add(key);
+                  results.push({
+                    type: "Model",
+                    name: path ? `${name} — ${path}` : name,
+                    projectId: pid,
+                  });
+                }
+                for (const row of enumVecRes.data ?? []) {
+                  if (results.length >= limit) return;
+                  const name = _rv<string>(row, "name") ?? "";
+                  const path = _rv<string>(row, "path") ?? "";
+                  const pid = _rv<string>(row, "projectId");
+                  if (ctx.cypherProjectId && pid !== ctx.cypherProjectId) continue;
+                  if (scopeRepoId && _rv<string>(row, "repoId") !== scopeRepoId) continue;
+                  const key = `Enum:${name}:${path}`;
+                  if (seen.has(key)) continue;
+                  seen.add(key);
+                  results.push({
+                    type: "Enum",
+                    name: path ? `${name} — ${path}` : name,
+                    projectId: pid,
+                  });
+                }
               } catch {
                 /* vector index may not exist on this shard */
               }
@@ -1907,6 +1945,7 @@ async function fetchFileFromIngest(
       const funcQ = `MATCH (n:Function)${projFilter} RETURN n.name AS name, n.path AS path LIMIT ${kwLim}`;
       const fileQ = `MATCH (n:File)${projFilter} RETURN n.path AS path LIMIT ${kwLim}`;
       const modelQ = `MATCH (n:Model)${projFilter} RETURN n.name AS name, n.path AS path LIMIT ${kwLim}`;
+      const enumQ = `MATCH (n:Enum)${projFilter} RETURN n.name AS name, n.path AS path LIMIT ${kwLim}`;
       const nestQ = requestedScopeId
         ? `MATCH (n) WHERE (n:NestController OR n:NestService OR n:NestModule) AND ${whereProjectRepo("n", hasRepoScope)} RETURN labels(n)[0] AS typ, n.name AS name, n.path AS path, n.route AS route LIMIT ${kwLim}`
         : `MATCH (n) WHERE n:NestController OR n:NestService OR n:NestModule RETURN labels(n)[0] AS typ, n.name AS name, n.path AS path, n.route AS route LIMIT ${kwLim}`;
@@ -1925,11 +1964,13 @@ async function fetchFileFromIngest(
         });
         return { data: rows as unknown[][] };
       };
-      const [compRes, funcRes, fileRes, modelRes, nestRes, routeRes, domainRes, sbRes, mdRes] = await Promise.all([
+      const [compRes, funcRes, fileRes, modelRes, enumRes, nestRes, routeRes, domainRes, sbRes, mdRes] =
+        await Promise.all([
         mergeRows(compQ),
         mergeRows(funcQ),
         mergeRows(fileQ),
         mergeRows(modelQ),
+        mergeRows(enumQ),
         mergeRows(nestQ),
         mergeRows(routeQ),
         mergeRows(domainQ),
@@ -1966,6 +2007,14 @@ async function fetchFileFromIngest(
         const blob = [name, path].filter(Boolean).join(" ");
         if (textMatchesQuery(blob, query)) {
           pushUnique("Model", path ? `${name ?? ""} — ${path}` : (name ?? ""));
+        }
+      }
+      for (const row of asObjRows(enumRes.data)) {
+        const name = _rv<string>(row, "name");
+        const path = _rv<string>(row, "path");
+        const blob = [name, path].filter(Boolean).join(" ");
+        if (textMatchesQuery(blob, query)) {
+          pushUnique("Enum", path ? `${name ?? ""} — ${path}` : (name ?? ""));
         }
       }
       for (const row of asObjRows(nestRes.data)) {
@@ -2944,13 +2993,17 @@ async function fetchFileFromIngest(
           const k = Math.min(Math.max(limit * 2, 20), mcpLimits.findSimilarVectorKMax);
           const funcVecQ = `CALL db.idx.vector.queryNodes('Function', '${vecProp}', ${k}, vecf32(${vecStr})) YIELD node, score RETURN node.name AS name, node.path AS path, node.projectId AS projectId, node.repoId AS repoId, score`;
           const compVecQ = `CALL db.idx.vector.queryNodes('Component', '${vecProp}', ${k}, vecf32(${vecStr})) YIELD node, score RETURN node.name AS name, node.projectId AS projectId, node.repoId AS repoId, score`;
+          const modelVecQ = `CALL db.idx.vector.queryNodes('Model', '${vecProp}', ${k}, vecf32(${vecStr})) YIELD node, score RETURN node.name AS name, node.path AS path, node.projectId AS projectId, node.repoId AS repoId, score`;
+          const enumVecQ = `CALL db.idx.vector.queryNodes('Enum', '${vecProp}', ${k}, vecf32(${vecStr})) YIELD node, score RETURN node.name AS name, node.path AS path, node.projectId AS projectId, node.repoId AS repoId, score`;
           try {
             const seen = new Set<string>();
             await runOnProjectGraphs(graphRouteId, async (g, ctx) => {
               try {
-                const [fRes, cRes] = await Promise.all([
+                const [fRes, cRes, modelVecRes, enumVecRes] = await Promise.all([
                   g.query(funcVecQ) as Promise<{ data?: Array<Record<string, unknown>> }>,
                   g.query(compVecQ) as Promise<{ data?: Array<Record<string, unknown>> }>,
+                  g.query(modelVecQ) as Promise<{ data?: Array<Record<string, unknown>> }>,
+                  g.query(enumVecQ) as Promise<{ data?: Array<Record<string, unknown>> }>,
                 ]);
                 for (const row of asObjRows(fRes.data)) {
                   if (results.length >= limit) return;
@@ -2975,6 +3028,38 @@ async function fetchFileFromIngest(
                   if (seen.has(key)) continue;
                   seen.add(key);
                   results.push({ type: "Component", name: name ?? "", projectId: pid });
+                }
+                for (const row of asObjRows(modelVecRes.data)) {
+                  if (results.length >= limit) break;
+                  const name = _rv<string>(row, "name");
+                  const path = _rv<string>(row, "path");
+                  const pid = _rv<string>(row, "projectId");
+                  if (ctx.cypherProjectId && pid !== ctx.cypherProjectId) continue;
+                  if (scopeRepoId && _rv<string>(row, "repoId") !== scopeRepoId) continue;
+                  const key = `Model:${name}:${path}`;
+                  if (seen.has(key)) continue;
+                  seen.add(key);
+                  results.push({
+                    type: "Model",
+                    name: path ? `${name ?? ""} — ${path}` : (name ?? ""),
+                    projectId: pid,
+                  });
+                }
+                for (const row of asObjRows(enumVecRes.data)) {
+                  if (results.length >= limit) break;
+                  const name = _rv<string>(row, "name");
+                  const path = _rv<string>(row, "path");
+                  const pid = _rv<string>(row, "projectId");
+                  if (ctx.cypherProjectId && pid !== ctx.cypherProjectId) continue;
+                  if (scopeRepoId && _rv<string>(row, "repoId") !== scopeRepoId) continue;
+                  const key = `Enum:${name}:${path}`;
+                  if (seen.has(key)) continue;
+                  seen.add(key);
+                  results.push({
+                    type: "Enum",
+                    name: path ? `${name ?? ""} — ${path}` : (name ?? ""),
+                    projectId: pid,
+                  });
                 }
                 usedVector = true;
               } catch {
@@ -3004,7 +3089,14 @@ async function fetchFileFromIngest(
       const fsk = mcpLimits.findSimilarKeywordLimit;
       const compQ = `MATCH (n:Component)${projFilter} RETURN n.name AS name LIMIT ${fsk}`;
       const funcQ = `MATCH (n:Function)${projFilter} RETURN n.name AS name, n.path AS path LIMIT ${fsk}`;
-      const [compRes, funcRes] = await Promise.all([mergeRows(compQ), mergeRows(funcQ)]);
+      const modelQ = `MATCH (n:Model)${projFilter} RETURN n.name AS name, n.path AS path, n.source AS source LIMIT ${fsk}`;
+      const enumQ = `MATCH (n:Enum)${projFilter} RETURN n.name AS name, n.path AS path LIMIT ${fsk}`;
+      const [compRes, funcRes, modelResKw, enumResKw] = await Promise.all([
+        mergeRows(compQ),
+        mergeRows(funcQ),
+        mergeRows(modelQ),
+        mergeRows(enumQ),
+      ]);
       for (const row of asObjRows(compRes.data)) {
         if (results.length >= limit) break;
         const n = _rv<string>(row, "name");
@@ -3016,6 +3108,24 @@ async function fetchFileFromIngest(
         const path = _rv<string>(row, "path");
         if (name?.toLowerCase().includes(qLower) || path?.toLowerCase().includes(qLower)) {
           results.push({ type: "Function", name: path ? `${name ?? ""} — ${path}` : (name ?? "") });
+        }
+      }
+      for (const row of asObjRows(modelResKw.data)) {
+        if (results.length >= limit) break;
+        const name = _rv<string>(row, "name");
+        const path = _rv<string>(row, "path");
+        const source = _rv<string>(row, "source");
+        const hay = `${name ?? ""} ${path ?? ""} ${source ?? ""}`.toLowerCase();
+        if (hay.includes(qLower)) {
+          results.push({ type: "Model", name: path ? `${name ?? ""} — ${path}` : (name ?? "") });
+        }
+      }
+      for (const row of asObjRows(enumResKw.data)) {
+        if (results.length >= limit) break;
+        const name = _rv<string>(row, "name");
+        const path = _rv<string>(row, "path");
+        if (name?.toLowerCase().includes(qLower) || path?.toLowerCase().includes(qLower)) {
+          results.push({ type: "Enum", name: path ? `${name ?? ""} — ${path}` : (name ?? "") });
         }
       }
     }

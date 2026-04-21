@@ -46,7 +46,7 @@ EMBEDDING_PROVIDER=kimi MOONSHOT_API_KEY=xxx
 
 ## Postgres: `embedding_spaces` y migración sin downtime
 
-- Tabla **`embedding_spaces`**: versiona `provider`, `model_id`, `dimension` y **`graph_property`** (nombre de la propiedad vectorial en nodos Falkor: `Function`, `Component`, `Document`).
+- Tabla **`embedding_spaces`**: versiona `provider`, `model_id`, `dimension` y **`graph_property`** (nombre de la propiedad vectorial en nodos Falkor: `Function`, `Component`, `Document`, `StorybookDoc`, `MarkdownDoc`, **`Model`**, **`Enum`** — ver `FALKOR_EMBEDDABLE_NODE_LABELS` en `ariadne-common`).
 - En **`repositories`**: `read_embedding_space_id` (búsqueda + `GET /embed?repositoryId=`) y `write_embedding_space_id` (destino de `embed-index`). Si ambos son null, el comportamiento es el histórico: propiedad `embedding` y `EMBEDDING_PROVIDER`.
 - **Flujo migración** (ej. OpenAI → Ollama): crea un espacio nuevo (`POST /embedding-spaces`), asigna solo `write_embedding_space_id` al repo, ejecuta `embed-index` (llena la nueva propiedad e índice en paralelo al legado), cuando termina asigna `read_embedding_space_id` al mismo espacio (o quita `write` si ya no hace falta). La lectura sigue usando el espacio anterior hasta el flip.
 - API: `GET/POST /embedding-spaces`, y `PATCH /repositories/:id` con `readEmbeddingSpaceId` / `writeEmbeddingSpaceId`.

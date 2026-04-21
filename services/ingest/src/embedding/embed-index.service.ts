@@ -1,5 +1,5 @@
 /**
- * @fileoverview Indexa embeddings en Function, Component, Document (chunks legado), StorybookDoc y MarkdownDoc para RAG.
+ * @fileoverview Indexa embeddings en Function, Component, Document (chunks legado), StorybookDoc, MarkdownDoc, Model (Prisma/TypeORM) y Enum (Prisma) para RAG.
  * Requiere EMBEDDING_PROVIDER + FalkorDB con soporte vectorial (`vecf32`, CREATE VECTOR INDEX), p. ej. FalkorDB 4.x según docs.
  * Si ves `Unknown function 'vecf32'`, actualiza FalkorDB o desactiva embed post-sync con SYNC_SKIP_EMBED_INDEX=1.
  */
@@ -37,7 +37,7 @@ function rowAsRecord(row: unknown, keys: string[]): Record<string, unknown> {
 }
 
 /**
- * Servicio que recorre Function y Component del grafo, genera embeddings con EmbeddingService y actualiza el grafo (propiedad embedding).
+ * Servicio que recorre Function, Component, documentación y Model/Enum del grafo, genera embeddings y actualiza el grafo (propiedad del espacio de embedding).
  */
 @Injectable()
 export class EmbedIndexService {
@@ -318,6 +318,69 @@ export class EmbedIndexService {
         if (errors <= 3) {
           console.warn(
             `[embed-index] MarkdownDoc ${path} failed:`,
+            e instanceof Error ? e.message : e,
+          );
+        }
+      }
+    }
+
+    const modelRes = (await graph.query(
+      `MATCH (m:Model) WHERE m.projectId = $projectId AND m.repoId = $repoId RETURN m.path AS path, m.name AS name, m.description AS description, m.fieldSummary AS fieldSummary, m.source AS source`,
+      { params: { projectId: falkorProjectId, repoId: repositoryIdForFileContent } },
+    )) as { data?: unknown[] };
+    for (const row of modelRes.data ?? []) {
+      const r = rowAsRecord(row, ['path', 'name', 'description', 'fieldSummary', 'source']);
+      const path = String(r.path ?? '');
+      const name = String(r.name ?? '');
+      const description = r.description != null ? String(r.description) : '';
+      const fieldSummary = r.fieldSummary != null ? String(r.fieldSummary) : '';
+      const source = r.source != null ? String(r.source) : '';
+      const text = [name, path, source && `source:${source}`, description, fieldSummary && `fields:${fieldSummary}`]
+        .filter(Boolean)
+        .join('\n')
+        .slice(0, 12_000);
+      if (text.length < 8) continue;
+      try {
+        const vec = await embed.embed(text);
+        await graph.query(
+          `MATCH (m:Model {path: $path, name: $name, projectId: $projectId, repoId: $repoId}) SET m.${prop} = vecf32($vec)`,
+          { params: { path, name, projectId: falkorProjectId, repoId: repositoryIdForFileContent, vec } },
+        );
+        indexed++;
+      } catch (e) {
+        errors++;
+        if (errors <= 3) {
+          console.warn(
+            `[embed-index] Model ${path}::${name} failed:`,
+            e instanceof Error ? e.message : e,
+          );
+        }
+      }
+    }
+
+    const enumRes = (await graph.query(
+      `MATCH (e:Enum) WHERE e.projectId = $projectId AND e.repoId = $repoId RETURN e.path AS path, e.name AS name, e.description AS description`,
+      { params: { projectId: falkorProjectId, repoId: repositoryIdForFileContent } },
+    )) as { data?: unknown[] };
+    for (const row of enumRes.data ?? []) {
+      const r = rowAsRecord(row, ['path', 'name', 'description']);
+      const path = String(r.path ?? '');
+      const name = String(r.name ?? '');
+      const description = r.description != null ? String(r.description) : '';
+      const text = [name, path, description].filter(Boolean).join('\n').slice(0, 8000);
+      if (text.length < 4) continue;
+      try {
+        const vec = await embed.embed(text);
+        await graph.query(
+          `MATCH (e:Enum {path: $path, name: $name, projectId: $projectId, repoId: $repoId}) SET e.${prop} = vecf32($vec)`,
+          { params: { path, name, projectId: falkorProjectId, repoId: repositoryIdForFileContent, vec } },
+        );
+        indexed++;
+      } catch (e) {
+        errors++;
+        if (errors <= 3) {
+          console.warn(
+            `[embed-index] Enum ${path}::${name} failed:`,
             e instanceof Error ? e.message : e,
           );
         }

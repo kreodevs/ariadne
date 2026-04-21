@@ -10,6 +10,10 @@ export const FALKOR_EMBEDDABLE_NODE_LABELS = [
   'Document',
   'StorybookDoc',
   'MarkdownDoc',
+  /** Prisma (`prisma-extract`) + TypeORM (`@Entity` en parser). */
+  'Model',
+  /** Prisma enums (`prisma-extract`). */
+  'Enum',
 ] as const;
 
 export type FalkorEmbeddableLabel = (typeof FALKOR_EMBEDDABLE_NODE_LABELS)[number];

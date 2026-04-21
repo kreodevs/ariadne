@@ -8,7 +8,7 @@ Tipos y utilidades compartidas para FalkorDB/Cypher entre servicios Ariadne (ing
 - **falkor**: `GRAPH_NAME`, `getFalkorConfig()`, `graphNameForProject`, `listGraphNamesForProjectRouting`, `effectiveShardMode` — configuración y nombres de grafo por proyecto / segmento de dominio (`FALKOR_SHARD_BY_*`). La whitelist multi-proyecto (dominios) se resuelve en ingest (`cypherShardContexts`), no solo aquí.
 - **graph-types**: `ResolvedCallInfo`, `ParsedFileMinimal`, etc. — contratos mínimos para utilidades de grafo.
 - **graph-utils**: `buildExportsMap`, `resolveCrossFileCalls`, `runCypherBatch`, `GraphClient` — lógica compartida de producer.
-- **graph-labels**: `FALKOR_EMBEDDABLE_NODE_LABELS`, `FALKOR_DOCUMENTATION_DOC_LABELS` — etiquetas Falkor para embed-index y docs (Fase 4); mantener alineado con `producer` en ingest.
+- **graph-labels**: `FALKOR_EMBEDDABLE_NODE_LABELS` (incluye **Model**/**Enum** además de Function/Component/docs), `FALKOR_DOCUMENTATION_DOC_LABELS` — etiquetas Falkor para embed-index y docs (Fase 4); mantener alineado con `embed-index.service` y `producer` en ingest.
 
 ## Consumidores
 

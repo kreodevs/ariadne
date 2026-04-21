@@ -44,7 +44,7 @@ Ver [src/chat/README.md](src/chat/README.md) y [docs/comparativa/Plan_Implementa
 - `DELETE /repositories/:id` — Borra el repo en Postgres (jobs, `indexed_files`, vínculos a proyectos vía CASCADE) y **antes** elimina en FalkorDB todos los nodos con ese `repoId` en cada `projectId` donde estuvo indexado (`clearProjectRepo`), para no dejar basura consultable vía MCP/RAG.
 - `GET /repositories/:id` — Detalle de un repositorio
 - `GET /repositories/:id/file?path=&ref=` — Contenido de un archivo (Bitbucket/GitHub). `path` relativo o del grafo (repo-slug/src/foo.ts)
-- `POST /repositories/:id/embed-index` — Embeddings en **Function**, **Component**, **Document** (chunks legado), **StorybookDoc** y **MarkdownDoc** para RAG; EMBEDDING_PROVIDER + API key, FalkorDB 4.0+
+- `POST /repositories/:id/embed-index` — Embeddings en **Function**, **Component**, **Document** (chunks legado), **StorybookDoc**, **MarkdownDoc**, **Model** (Prisma + TypeORM `@Entity`) y **Enum** (Prisma) para RAG; EMBEDDING_PROVIDER + API key, FalkorDB 4.0+
 - `GET /repositories/:id/jobs` — Listar sync_jobs del repositorio
 - `GET /repositories/:id/jobs/:jobId/analysis` — Análisis de un job **incremental** (impacto en grafo, heurística de secretos, resumen); el job debe pertenecer a ese repositorio
 - `GET /embed?text=` — Vector de embedding para RAG (requiere EMBEDDING_PROVIDER + OPENAI_API_KEY o GOOGLE_API_KEY)
