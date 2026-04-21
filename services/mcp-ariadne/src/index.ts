@@ -2371,7 +2371,14 @@ async function fetchFileFromIngest(
       if (res.status === 404) res = await fetch(`${base}/repositories/${projectId}/chat`, opts);
       if (!res.ok) {
         const msg = await res.text();
-        return { content: [{ type: "text", text: `**Error ${res.status}:** ${msg || res.statusText}` }], isError: true };
+        const rateHint =
+          res.status === 429
+            ? "\n\n_(Cuota Moonshot/Kimi TPM — orchestrator: `LLM_MAX_CONCURRENT`, `LLM_MIN_REQUEST_INTERVAL_MS`, `MOONSHOT_*`; evita otras cargas con la misma API key.)_"
+            : "";
+        return {
+          content: [{ type: "text", text: `**Error ${res.status}:** ${msg || res.statusText}${rateHint}` }],
+          isError: true,
+        };
       }
       const data = (await res.json()) as { answer: string; cypher?: string; result?: unknown };
       const parts: string[] = [data.answer];
@@ -2379,7 +2386,20 @@ async function fetchFileFromIngest(
       return { content: [{ type: "text", text: parts.join("\n") }] };
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      return { content: [{ type: "text", text: `**Error:** No se pudo conectar al chat. ¿INGEST_URL y OPENAI_API_KEY configurados? ${msg}` }], isError: true };
+      const isTimeout =
+        /AbortError|timeout|ETIMEDOUT|HeadersTimeoutError|BodyTimeoutError/i.test(msg);
+      const hint = isTimeout
+        ? " Timeout de red o `AbortSignal` (sube `MCP_ASK_CODEBASE_TIMEOUT_MS` o `THEFORGE_MCP_TIMEOUT_MS` en el cliente). Si el ingest devolvió **429**, es cuota Moonshot/Kimi (TPM), no timeout MCP."
+        : "";
+      return {
+        content: [
+          {
+            type: "text",
+            text: `**Error:** No se pudo completar ask_codebase vía ingest. ¿INGEST_URL y orchestrator activos? ${msg}${hint}`,
+          },
+        ],
+        isError: true,
+      };
     }
   }
 

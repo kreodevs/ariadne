@@ -3,7 +3,7 @@
  * Pipeline unificado: Retriever (Cypher + archivos + RAG) → Synthesizer (respuesta siempre humana).
  */
 
-import { Injectable, Logger } from '@nestjs/common';
+import { HttpException, Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { FalkorDB } from 'falkordb';
@@ -2910,6 +2910,28 @@ PROHIBIDO: instrucciones genéricas tipo "revisa los controladores", "asegúrate
   }
 
   /**
+   * Propaga HTTP del orchestrator (p. ej. 429 Kimi TPM) para que MCP/The Forge no lo confundan con timeout genérico.
+   */
+  private throwOrchestratorFailure(res: Response, bodyText: string): never {
+    const status = res.status;
+    const msg = bodyText?.trim() || res.statusText || 'upstream error';
+    if (status === 429) {
+      throw new HttpException(
+        { code: 'ORCHESTRATOR_RATE_LIMIT', message: msg, upstream: 'orchestrator' },
+        429,
+      );
+    }
+    if (status === 503) {
+      throw new HttpException(
+        { code: 'ORCHESTRATOR_UPSTREAM_UNAVAILABLE', message: msg, upstream: 'orchestrator' },
+        503,
+      );
+    }
+    const mapped = status >= 400 && status < 600 ? status : 502;
+    throw new HttpException({ code: 'ORCHESTRATOR_ERROR', message: msg, upstream: 'orchestrator' }, mapped);
+  }
+
+  /**
    * Pipeline unificado: Retriever (Cypher + archivos + RAG) → Synthesizer (respuesta siempre humana).
    * Todas las preguntas pasan por extracción de código con Falkor/Cypher/RAG y luego síntesis en prosa.
    * @param {string} repositoryId - ID del repositorio (proyecto indexado).
@@ -2928,11 +2950,12 @@ PROHIBIDO: instrucciones genéricas tipo "revisa los controladores", "asegúrate
         });
         if (!res.ok) {
           const t = await res.text();
-          throw new Error(`orchestrator ${res.status}: ${t}`);
+          this.throwOrchestratorFailure(res, t);
         }
         return (await res.json()) as ChatResponse;
       } catch (err) {
         recordChatPipelineError();
+        if (err instanceof HttpException) throw err;
         const msg = err instanceof Error ? err.message : String(err);
         return { answer: `Error: ${msg}` };
       }
@@ -2984,11 +3007,12 @@ PROHIBIDO: instrucciones genéricas tipo "revisa los controladores", "asegúrate
         });
         if (!res.ok) {
           const t = await res.text();
-          throw new Error(`orchestrator ${res.status}: ${t}`);
+          this.throwOrchestratorFailure(res, t);
         }
         return (await res.json()) as ChatResponse;
       } catch (err) {
         recordChatPipelineError();
+        if (err instanceof HttpException) throw err;
         const msg = err instanceof Error ? err.message : String(err);
         return { answer: `Error: ${msg}` };
       }

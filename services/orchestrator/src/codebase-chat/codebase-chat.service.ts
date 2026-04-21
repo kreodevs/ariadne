@@ -1,13 +1,14 @@
 /**
  * ask_codebase / chat NL: LangGraph (retrieve → synthesize) + llamadas al ingest solo para datos (Cypher, archivos, RAG).
  */
-import { Injectable, Logger } from '@nestjs/common';
+import { HttpException, HttpStatus, Injectable, Logger } from '@nestjs/common';
 import { START, END, StateGraph, Annotation } from '@langchain/langgraph';
 import { EXAMPLES, EXPLORER_TOOLS_ALL, SCHEMA } from './chat.constants';
 import type { ChatScope } from './chat-scope.util';
 import { IngestChatClient } from './ingest-chat.client';
 import { OrchestratorLlmService } from './orchestrator-llm.service';
 import type { OpenAiStyleMessage } from '../llm/orchestrator-llm.facade';
+import { isMoonshotRateLimitError } from '../llm/moonshot-rate-limit.error';
 import { RedisStateService } from '../redis-state/redis-state.service';
 import type { RetrieverToolName } from './ingest-types';
 
@@ -135,7 +136,7 @@ export class CodebaseChatService {
       answer: undefined,
       resultOut: undefined,
     };
-    const out = await this.getGraph().invoke(initial);
+    const out = await this.invokeCodebaseGraph(initial);
     const answer = (out.answer ?? '').trim();
     let mddDocument: Record<string, unknown> | undefined;
     if (evidenceFirst && answer.startsWith('{')) {
@@ -188,7 +189,7 @@ export class CodebaseChatService {
       answer: undefined,
       resultOut: undefined,
     };
-    const out = await this.getGraph().invoke(initial);
+    const out = await this.invokeCodebaseGraph(initial);
     const answer = (out.answer ?? '').trim();
     let mddDocument: Record<string, unknown> | undefined;
     if (evidenceFirst && answer.startsWith('{')) {
@@ -204,6 +205,24 @@ export class CodebaseChatService {
       result: out.resultOut && out.resultOut.length > 0 ? out.resultOut : undefined,
       mddDocument,
     };
+  }
+
+  private async invokeCodebaseGraph(initial: CodebaseChatState): Promise<CodebaseChatState> {
+    try {
+      return await this.getGraph().invoke(initial);
+    } catch (err) {
+      if (isMoonshotRateLimitError(err)) {
+        throw new HttpException(
+          {
+            statusCode: HttpStatus.TOO_MANY_REQUESTS,
+            error: 'MoonshotRateLimit',
+            message: err.message,
+          },
+          HttpStatus.TOO_MANY_REQUESTS,
+        );
+      }
+      throw err;
+    }
   }
 
   private getGraph(): { invoke: (s: CodebaseChatState) => Promise<CodebaseChatState> } {

@@ -1,4 +1,10 @@
-import { llmChatTemperature, moonshotApiKey, moonshotBaseUrl } from './moonshot-env';
+import {
+  kimiEffectiveMaxOutputTokens,
+  llmChatTemperature,
+  moonshotApiKey,
+  moonshotBaseUrl,
+} from './moonshot-env';
+import { MoonshotRateLimitError } from './moonshot-rate-limit.error';
 import { orchestratorLlmModel } from './orchestrator-llm-config';
 import type { OpenAiStyleMessage } from './openai-llm.adapter';
 
@@ -135,6 +141,7 @@ export async function kimiCallLlm(
   });
   if (!res.ok) {
     const err = await res.text();
+    if (res.status === 429) throw new MoonshotRateLimitError(`Kimi/Moonshot API 429: ${err}`);
     throw new Error(`Kimi/Moonshot API ${res.status}: ${err}`);
   }
   const data = (await res.json()) as { choices?: Array<{ message?: { content?: string } }> };
@@ -151,12 +158,7 @@ export async function kimiCallLlmWithTools(
   tool_calls?: Array<{ id: string; function: { name: string; arguments: string } }>;
 }> {
   const model = orchestratorLlmModel();
-  const floorRaw = process.env.LLM_KIMI_MIN_MAX_TOKENS?.trim();
-  let effectiveMax = maxTokens;
-  if (floorRaw) {
-    const floor = parseInt(floorRaw, 10);
-    if (Number.isFinite(floor) && floor > 0) effectiveMax = Math.max(maxTokens, floor);
-  }
+  const effectiveMax = kimiEffectiveMaxOutputTokens(maxTokens);
   const res = await postChatCompletions({
     model,
     messages,
@@ -165,7 +167,11 @@ export async function kimiCallLlmWithTools(
     temperature: llmChatTemperature(),
     max_tokens: effectiveMax,
   });
-  if (!res.ok) throw new Error(`Kimi/Moonshot API ${res.status}: ${await res.text()}`);
+  if (!res.ok) {
+    const errBody = await res.text();
+    if (res.status === 429) throw new MoonshotRateLimitError(`Kimi/Moonshot API 429: ${errBody}`);
+    throw new Error(`Kimi/Moonshot API ${res.status}: ${errBody}`);
+  }
   const data = (await res.json()) as {
     choices?: Array<{
       message?: {
@@ -207,6 +213,9 @@ export async function kimiChatSimple(system: string, user: string): Promise<stri
     error?: { message?: string };
   };
   if (!res.ok) {
+    if (res.status === 429) {
+      throw new MoonshotRateLimitError(data.error?.message ?? 'Kimi/Moonshot HTTP 429');
+    }
     throw new Error(data.error?.message ?? `Kimi/Moonshot HTTP ${res.status}`);
   }
   return (data.choices?.[0]?.message?.content ?? '').trim();

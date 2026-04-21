@@ -40,6 +40,9 @@ El **ingest** con `ORCHESTRATOR_URL` delega estos endpoints al orchestrator (el 
 - Compatibilidad: `ORCHESTRATOR_LLM_PROVIDER`, `OPENAI_API_KEY`, `GOOGLE_API_KEY`, `MOONSHOT_API_KEY` / `KIMI_API_KEY`, `CHAT_MODEL`, etc.
 
 Detalle: [src/llm/README.md](src/llm/README.md).
+
+**Kimi / 429 TPM:** por defecto el throttle usa **`LLM_MAX_CONCURRENT=1`** y **`LLM_MIN_REQUEST_INTERVAL_MS=2000`**. Tras 429, `POST /codebase/chat/*` responde **HTTP 429** (body JSON `MoonshotRateLimit`); el ingest con `ORCHESTRATOR_URL` repropaga el mismo código al cliente.
+
 - `INGEST_URL` — URL del microservicio ingest (default `http://ingest:3002` en Docker).
 - `INTERNAL_API_KEY` — Debe coincidir con la del ingest; protege `POST /internal/repositories/:id/retriever-tool` y **`POST /internal/repositories/:id/mdd-evidence`**.
 - `REDIS_URL` — Estado de sesión y snapshots `codebase:chat:*` (default `redis://redis:6379` en compose).

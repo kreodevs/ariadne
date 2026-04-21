@@ -8,3 +8,5 @@
 - **`POST /codebase/modification-plan/project/:projectId`** — Igual; `projectId` puede ser proyecto Ariadne o `roots[].id` (repo).
 
 Variables: `INGEST_URL`, `INTERNAL_API_KEY`, y **`LLM_*`** (u opciones legacy) — preguntas de modification-plan y síntesis de analyze/chat. **`CHAT_TOOL_CALL_MAX_TOKENS`** (default 8192): `max_tokens` en la fase retrieve con tools (misma semántica que en ingest). Ver [../llm/README.md](../llm/README.md).
+
+**429 Moonshot/Kimi:** si el proveedor LLM agota reintentos por TPM, este módulo responde **`HttpException` 429** en `POST /codebase/chat/*` (no 500). El ingest debe reenviar ese status a MCP/The Forge para no confundirlo con timeout.

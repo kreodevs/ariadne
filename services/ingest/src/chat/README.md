@@ -38,6 +38,8 @@ Patrones usados: **ReAct** (Thought→Action→Observation), **CoT** (análisis 
 
 Si **`ORCHESTRATOR_URL`** está definido (p. ej. `http://orchestrator:3001` en Docker), **`POST .../chat`** **no ejecuta LLM en ingest**: hace proxy a **`POST /codebase/chat/repository|project/...`** del orchestrator (LangGraph: retrieve → synthesize). Con **`responseMode: evidence_first`**, el orchestrator pide el JSON MDD a **`POST /internal/repositories/:repoId/mdd-evidence`** (mismas cabeceras internas). Con **`responseMode: raw_evidence`** + **`deterministicRetriever: true`**, el orchestrator delega el retrieve a **`POST /internal/repositories/:repoId/raw-evidence-deterministic`** (sin ReAct LLM). El ingest sigue exponiendo **`POST /internal/repositories/:repoId/retriever-tool`** (header **`X-Internal-API-Key`** = **`INTERNAL_API_KEY`**) para que el orchestrator ejecute Cypher/RAG/archivos sin duplicar la capa de datos.
 
+Si el orchestrator responde **HTTP 429** (cuota Moonshot/Kimi TPM tras reintentos), el proxy **repropaga 429** con body JSON (`code: ORCHESTRATOR_RATE_LIMIT`) en lugar de devolver **200** con `answer: "Error: orchestrator …"`.
+
 Sin `ORCHESTRATOR_URL`, el pipeline unificado legacy sigue en este servicio (`runUnifiedPipeline` + `ChatRetrieverToolsService`).
 
 ## API
