@@ -4,6 +4,7 @@
  */
 
 import { Injectable } from '@nestjs/common';
+import { cypherSafe } from 'ariadne-common';
 import { RepositoriesService } from '../repositories/repositories.service';
 import { FileContentService } from '../repositories/file-content.service';
 import { EmbeddingService } from '../embedding/embedding.service';
@@ -160,45 +161,65 @@ export class ChatHandlersService {
     return raw;
   }
 
-  /** Búsqueda semántica (vector). Expuesta para runUnifiedPipeline en ChatService. */
+  /**
+   * Búsqueda semántica (vector). Expuesta para runUnifiedPipeline en ChatService.
+   * @param graphProjectId - `projectId` en Falkor (padre en multi-root vía `resolveProjectIdForRepo`).
+   * @param repositoryIdForEmbedding - fila `repositories.id` para leer espacio de embeddings; si se omite, se usa `graphProjectId` (repo sin proyecto asociado).
+   * @param restrictRepoId - si se define, conteos + `queryNodes` solo consideran nodos con ese `repoId` (fan-out multi-root).
+   */
   async semanticSearchFallback(
-    projectId: string,
+    graphProjectId: string,
     query: string,
     limit = 15,
+    repositoryIdForEmbedding?: string,
+    restrictRepoId?: string,
   ): Promise<{ cypher: string; result: unknown[] }> {
     if (!query.trim()) return { cypher: '', result: [] };
-    const readBinding = await this.embeddingSpaces.getReadBindingForRepository(projectId);
+    const embeddingRepoId = repositoryIdForEmbedding ?? graphProjectId;
+    const readBinding = await this.embeddingSpaces.getReadBindingForRepository(embeddingRepoId);
     const embed = readBinding.provider;
     if (!embed?.isAvailable()) return { cypher: '', result: [] };
     const vProp = readBinding.graphProperty;
+    const repoClause = restrictRepoId ? ' AND n.repoId = $repoId' : '';
+    const countExtra = restrictRepoId ? { repoId: restrictRepoId } : {};
+    const yieldWhere = restrictRepoId
+      ? ` WHERE node.projectId = ${cypherSafe(graphProjectId)} AND node.repoId = ${cypherSafe(restrictRepoId)}`
+      : '';
     try {
       const countFn = await this.cypher.executeCypher(
-        projectId,
-        `MATCH (n:Function) WHERE n.projectId = $projectId AND n.${vProp} IS NOT NULL RETURN count(n) as c`,
+        graphProjectId,
+        `MATCH (n:Function) WHERE n.projectId = $projectId${repoClause} AND n.${vProp} IS NOT NULL RETURN count(n) as c`,
+        countExtra,
       );
       const countComp = await this.cypher.executeCypher(
-        projectId,
-        `MATCH (n:Component) WHERE n.projectId = $projectId AND n.${vProp} IS NOT NULL RETURN count(n) as c`,
+        graphProjectId,
+        `MATCH (n:Component) WHERE n.projectId = $projectId${repoClause} AND n.${vProp} IS NOT NULL RETURN count(n) as c`,
+        countExtra,
       );
       const countDoc = await this.cypher.executeCypher(
-        projectId,
-        `MATCH (n:Document) WHERE n.projectId = $projectId AND n.${vProp} IS NOT NULL RETURN count(n) as c`,
+        graphProjectId,
+        `MATCH (n:Document) WHERE n.projectId = $projectId${repoClause} AND n.${vProp} IS NOT NULL RETURN count(n) as c`,
+        countExtra,
       );
       const countSb = await this.cypher.executeCypher(
-        projectId,
-        `MATCH (n:StorybookDoc) WHERE n.projectId = $projectId AND n.${vProp} IS NOT NULL RETURN count(n) as c`,
+        graphProjectId,
+        `MATCH (n:StorybookDoc) WHERE n.projectId = $projectId${repoClause} AND n.${vProp} IS NOT NULL RETURN count(n) as c`,
+        countExtra,
       );
       const countMd = await this.cypher.executeCypher(
-        projectId,
-        `MATCH (n:MarkdownDoc) WHERE n.projectId = $projectId AND n.${vProp} IS NOT NULL RETURN count(n) as c`,
+        graphProjectId,
+        `MATCH (n:MarkdownDoc) WHERE n.projectId = $projectId${repoClause} AND n.${vProp} IS NOT NULL RETURN count(n) as c`,
+        countExtra,
       );
       const countModel = await this.cypher.executeCypher(
-        projectId,
-        `MATCH (n:Model) WHERE n.projectId = $projectId AND n.${vProp} IS NOT NULL RETURN count(n) as c`,
+        graphProjectId,
+        `MATCH (n:Model) WHERE n.projectId = $projectId${repoClause} AND n.${vProp} IS NOT NULL RETURN count(n) as c`,
+        countExtra,
       );
       const countEnum = await this.cypher.executeCypher(
-        projectId,
-        `MATCH (n:Enum) WHERE n.projectId = $projectId AND n.${vProp} IS NOT NULL RETURN count(n) as c`,
+        graphProjectId,
+        `MATCH (n:Enum) WHERE n.projectId = $projectId${repoClause} AND n.${vProp} IS NOT NULL RETURN count(n) as c`,
+        countExtra,
       );
       const hasFn = (countFn as Array<{ c?: number }>)?.[0]?.c ?? 0;
       const hasComp = (countComp as Array<{ c?: number }>)?.[0]?.c ?? 0;
@@ -214,22 +235,22 @@ export class ChatHandlersService {
       const vecStr = `[${vec.join(',')}]`;
       const k = Math.max(limit, 20);
 
-      const funcVecQ = `CALL db.idx.vector.queryNodes('Function', '${vProp}', ${k}, vecf32(${vecStr})) YIELD node, score RETURN node.name AS name, node.path AS path, node.projectId AS projectId, score`;
-      const compVecQ = `CALL db.idx.vector.queryNodes('Component', '${vProp}', ${k}, vecf32(${vecStr})) YIELD node, score RETURN node.name AS name, node.projectId AS projectId, score`;
-      const docVecQ = `CALL db.idx.vector.queryNodes('Document', '${vProp}', ${k}, vecf32(${vecStr})) YIELD node, score RETURN node.path AS path, node.heading AS heading, node.chunkIndex AS chunkIndex, node.projectId AS projectId, score`;
-      const sbVecQ = `CALL db.idx.vector.queryNodes('StorybookDoc', '${vProp}', ${k}, vecf32(${vecStr})) YIELD node, score RETURN node.title AS name, node.sourcePath AS path, node.projectId AS projectId, score`;
-      const mdDocVecQ = `CALL db.idx.vector.queryNodes('MarkdownDoc', '${vProp}', ${k}, vecf32(${vecStr})) YIELD node, score RETURN node.title AS name, node.sourcePath AS path, node.projectId AS projectId, score`;
-      const modelVecQ = `CALL db.idx.vector.queryNodes('Model', '${vProp}', ${k}, vecf32(${vecStr})) YIELD node, score RETURN node.name AS name, node.path AS path, node.projectId AS projectId, score`;
-      const enumVecQ = `CALL db.idx.vector.queryNodes('Enum', '${vProp}', ${k}, vecf32(${vecStr})) YIELD node, score RETURN node.name AS name, node.path AS path, node.projectId AS projectId, score`;
+      const funcVecQ = `CALL db.idx.vector.queryNodes('Function', '${vProp}', ${k}, vecf32(${vecStr})) YIELD node, score${yieldWhere} RETURN node.name AS name, node.path AS path, node.projectId AS projectId, node.repoId AS repoId, score`;
+      const compVecQ = `CALL db.idx.vector.queryNodes('Component', '${vProp}', ${k}, vecf32(${vecStr})) YIELD node, score${yieldWhere} RETURN node.name AS name, node.projectId AS projectId, node.repoId AS repoId, score`;
+      const docVecQ = `CALL db.idx.vector.queryNodes('Document', '${vProp}', ${k}, vecf32(${vecStr})) YIELD node, score${yieldWhere} RETURN node.path AS path, node.heading AS heading, node.chunkIndex AS chunkIndex, node.projectId AS projectId, node.repoId AS repoId, score`;
+      const sbVecQ = `CALL db.idx.vector.queryNodes('StorybookDoc', '${vProp}', ${k}, vecf32(${vecStr})) YIELD node, score${yieldWhere} RETURN node.title AS name, node.sourcePath AS path, node.projectId AS projectId, node.repoId AS repoId, score`;
+      const mdDocVecQ = `CALL db.idx.vector.queryNodes('MarkdownDoc', '${vProp}', ${k}, vecf32(${vecStr})) YIELD node, score${yieldWhere} RETURN node.title AS name, node.sourcePath AS path, node.projectId AS projectId, node.repoId AS repoId, score`;
+      const modelVecQ = `CALL db.idx.vector.queryNodes('Model', '${vProp}', ${k}, vecf32(${vecStr})) YIELD node, score${yieldWhere} RETURN node.name AS name, node.path AS path, node.projectId AS projectId, node.repoId AS repoId, score`;
+      const enumVecQ = `CALL db.idx.vector.queryNodes('Enum', '${vProp}', ${k}, vecf32(${vecStr})) YIELD node, score${yieldWhere} RETURN node.name AS name, node.path AS path, node.projectId AS projectId, node.repoId AS repoId, score`;
 
       const [fRes, cRes, dRes, sbRes, mdDocRes, modelVecRes, enumVecRes] = await Promise.all([
-        hasFn > 0 ? this.cypher.executeCypherRaw(funcVecQ, projectId) : Promise.resolve([]),
-        hasComp > 0 ? this.cypher.executeCypherRaw(compVecQ, projectId) : Promise.resolve([]),
-        hasDoc > 0 ? this.cypher.executeCypherRaw(docVecQ, projectId) : Promise.resolve([]),
-        hasSb > 0 ? this.cypher.executeCypherRaw(sbVecQ, projectId) : Promise.resolve([]),
-        hasMd > 0 ? this.cypher.executeCypherRaw(mdDocVecQ, projectId) : Promise.resolve([]),
-        hasModel > 0 ? this.cypher.executeCypherRaw(modelVecQ, projectId) : Promise.resolve([]),
-        hasEnum > 0 ? this.cypher.executeCypherRaw(enumVecQ, projectId) : Promise.resolve([]),
+        hasFn > 0 ? this.cypher.executeCypherRaw(funcVecQ, graphProjectId) : Promise.resolve([]),
+        hasComp > 0 ? this.cypher.executeCypherRaw(compVecQ, graphProjectId) : Promise.resolve([]),
+        hasDoc > 0 ? this.cypher.executeCypherRaw(docVecQ, graphProjectId) : Promise.resolve([]),
+        hasSb > 0 ? this.cypher.executeCypherRaw(sbVecQ, graphProjectId) : Promise.resolve([]),
+        hasMd > 0 ? this.cypher.executeCypherRaw(mdDocVecQ, graphProjectId) : Promise.resolve([]),
+        hasModel > 0 ? this.cypher.executeCypherRaw(modelVecQ, graphProjectId) : Promise.resolve([]),
+        hasEnum > 0 ? this.cypher.executeCypherRaw(enumVecQ, graphProjectId) : Promise.resolve([]),
       ]);
 
       const fData = (Array.isArray(fRes) ? fRes : []) as Array<unknown>;
@@ -240,43 +261,81 @@ export class ChatHandlersService {
       const modelVecData = (Array.isArray(modelVecRes) ? modelVecRes : []) as Array<unknown>;
       const enumVecData = (Array.isArray(enumVecRes) ? enumVecRes : []) as Array<unknown>;
 
-      const results: Array<{ tipo: string; path: string; name: string }> = [];
+      const results: Array<{ tipo: string; path: string; name: string; repoId?: string }> = [];
       const seen = new Set<string>();
 
-      const toRow = (r: unknown): Record<string, unknown> =>
-        Array.isArray(r) ? { name: r[0], path: r[1], projectId: r[2], score: r[3] } : (r as Record<string, unknown>);
+      const toRow = (r: unknown): Record<string, unknown> => {
+        if (!Array.isArray(r)) return r as Record<string, unknown>;
+        const a = r as unknown[];
+        if (a.length >= 5) {
+          return { name: a[0], path: a[1], projectId: a[2], repoId: a[3], score: a[4] };
+        }
+        return { name: a[0], path: a[1], projectId: a[2], score: a[3] };
+      };
+
+      const passesRepo = (rid: unknown) =>
+        !restrictRepoId || String(rid ?? '') === restrictRepoId;
 
       for (const row of fData) {
-        const { name, path, projectId: pid } = toRow(row);
-        if (pid !== projectId) continue;
+        const { name, path, projectId: pid, repoId } = toRow(row);
+        if (pid !== graphProjectId || !passesRepo(repoId)) continue;
         const pathStr = String(path ?? '');
         const nameStr = String(name ?? '');
         const key = `Function:${nameStr}:${pathStr}`;
         if (seen.has(key)) continue;
         seen.add(key);
-        results.push({ tipo: 'Function', path: pathStr, name: pathStr ? `${nameStr} — ${pathStr}` : nameStr });
+        const out: { tipo: string; path: string; name: string; repoId?: string } = {
+          tipo: 'Function',
+          path: pathStr,
+          name: pathStr ? `${nameStr} — ${pathStr}` : nameStr,
+        };
+        if (repoId != null && String(repoId)) out.repoId = String(repoId);
+        results.push(out);
         if (results.length >= limit) break;
       }
       for (const row of cData) {
         if (results.length >= limit) break;
         const obj = Array.isArray(row)
-          ? { name: row[0], projectId: row[1], score: row[2] }
+          ? row.length >= 4
+            ? { name: row[0], projectId: row[1], repoId: row[2], score: row[3] }
+            : { name: row[0], projectId: row[1], score: row[2] }
           : (row as Record<string, unknown>);
-        const { name, projectId: pid } = obj;
-        if (pid !== projectId) continue;
+        const { name, projectId: pid, repoId } = obj;
+        if (pid !== graphProjectId || !passesRepo(repoId)) continue;
         const nameStr = String(name ?? '');
         const key = `Component:${nameStr}`;
         if (seen.has(key)) continue;
         seen.add(key);
-        results.push({ tipo: 'Component', path: nameStr, name: nameStr });
+        const out: { tipo: string; path: string; name: string; repoId?: string } = {
+          tipo: 'Component',
+          path: nameStr,
+          name: nameStr,
+        };
+        if (repoId != null && String(repoId)) out.repoId = String(repoId);
+        results.push(out);
       }
       for (const row of dData) {
         if (results.length >= limit) break;
         const obj = Array.isArray(row)
-          ? { path: row[0], heading: row[1], chunkIndex: row[2], projectId: row[3], score: row[4] }
+          ? row.length >= 6
+            ? {
+                path: row[0],
+                heading: row[1],
+                chunkIndex: row[2],
+                projectId: row[3],
+                repoId: row[4],
+                score: row[5],
+              }
+            : {
+                path: row[0],
+                heading: row[1],
+                chunkIndex: row[2],
+                projectId: row[3],
+                score: row[4],
+              }
           : (row as Record<string, unknown>);
         const pid = obj.projectId;
-        if (pid !== projectId) continue;
+        if (pid !== graphProjectId || !passesRepo(obj.repoId)) continue;
         const pathStr = String(obj.path ?? '');
         const heading = String(obj.heading ?? '');
         const ci = obj.chunkIndex != null ? String(obj.chunkIndex) : '';
@@ -284,67 +343,81 @@ export class ChatHandlersService {
         if (seen.has(key)) continue;
         seen.add(key);
         const title = heading ? `${heading} — ${pathStr}` : pathStr;
-        results.push({ tipo: 'Document', path: pathStr, name: title });
+        const out: { tipo: string; path: string; name: string; repoId?: string } = {
+          tipo: 'Document',
+          path: pathStr,
+          name: title,
+        };
+        if (obj.repoId != null && String(obj.repoId)) out.repoId = String(obj.repoId);
+        results.push(out);
       }
       for (const row of sbData) {
         if (results.length >= limit) break;
-        const { name, path, projectId: pid } = toRow(row);
-        if (pid !== projectId) continue;
+        const { name, path, projectId: pid, repoId } = toRow(row);
+        if (pid !== graphProjectId || !passesRepo(repoId)) continue;
         const pathStr = String(path ?? '');
         const titleStr = String(name ?? '');
         const key = `StorybookDoc:${pathStr}`;
         if (seen.has(key)) continue;
         seen.add(key);
-        results.push({
+        const out: { tipo: string; path: string; name: string; repoId?: string } = {
           tipo: 'StorybookDoc',
           path: pathStr,
           name: pathStr ? `${titleStr || 'Storybook'} — ${pathStr}` : titleStr || pathStr,
-        });
+        };
+        if (repoId != null && String(repoId)) out.repoId = String(repoId);
+        results.push(out);
       }
       for (const row of mdDocData) {
         if (results.length >= limit) break;
-        const { name, path, projectId: pid } = toRow(row);
-        if (pid !== projectId) continue;
+        const { name, path, projectId: pid, repoId } = toRow(row);
+        if (pid !== graphProjectId || !passesRepo(repoId)) continue;
         const pathStr = String(path ?? '');
         const titleStr = String(name ?? '');
         const key = `MarkdownDoc:${pathStr}`;
         if (seen.has(key)) continue;
         seen.add(key);
-        results.push({
+        const out: { tipo: string; path: string; name: string; repoId?: string } = {
           tipo: 'MarkdownDoc',
           path: pathStr,
           name: pathStr ? `${titleStr || 'Doc'} — ${pathStr}` : titleStr || pathStr,
-        });
+        };
+        if (repoId != null && String(repoId)) out.repoId = String(repoId);
+        results.push(out);
       }
       for (const row of modelVecData) {
         if (results.length >= limit) break;
-        const { name, path, projectId: pid } = toRow(row);
-        if (pid !== projectId) continue;
+        const { name, path, projectId: pid, repoId } = toRow(row);
+        if (pid !== graphProjectId || !passesRepo(repoId)) continue;
         const pathStr = String(path ?? '');
         const nameStr = String(name ?? '');
         const key = `Model:${nameStr}:${pathStr}`;
         if (seen.has(key)) continue;
         seen.add(key);
-        results.push({
+        const out: { tipo: string; path: string; name: string; repoId?: string } = {
           tipo: 'Model',
           path: pathStr,
           name: pathStr ? `${nameStr} — ${pathStr}` : nameStr,
-        });
+        };
+        if (repoId != null && String(repoId)) out.repoId = String(repoId);
+        results.push(out);
       }
       for (const row of enumVecData) {
         if (results.length >= limit) break;
-        const { name, path, projectId: pid } = toRow(row);
-        if (pid !== projectId) continue;
+        const { name, path, projectId: pid, repoId } = toRow(row);
+        if (pid !== graphProjectId || !passesRepo(repoId)) continue;
         const pathStr = String(path ?? '');
         const nameStr = String(name ?? '');
         const key = `Enum:${nameStr}:${pathStr}`;
         if (seen.has(key)) continue;
         seen.add(key);
-        results.push({
+        const out: { tipo: string; path: string; name: string; repoId?: string } = {
           tipo: 'Enum',
           path: pathStr,
           name: pathStr ? `${nameStr} — ${pathStr}` : nameStr,
-        });
+        };
+        if (repoId != null && String(repoId)) out.repoId = String(repoId);
+        results.push(out);
       }
 
       return {
@@ -358,10 +431,15 @@ export class ChatHandlersService {
 
   /**
    * Explica por qué `semantic_search` pudo devolver 0 filas (config, índice vacío o query).
-   * @param {string} projectId - projectId de grafo FalkorDB.
+   * @param graphProjectId - `projectId` en Falkor (padre en multi-root).
+   * @param repositoryIdForEmbedding - `repositories.id` para el espacio de embeddings (mismo criterio que `semanticSearchFallback`).
    */
-  async getSemanticSearchDiagnostics(projectId: string): Promise<string> {
-    const readBinding = await this.embeddingSpaces.getReadBindingForRepository(projectId);
+  async getSemanticSearchDiagnostics(
+    graphProjectId: string,
+    repositoryIdForEmbedding?: string,
+  ): Promise<string> {
+    const embeddingRepoId = repositoryIdForEmbedding ?? graphProjectId;
+    const readBinding = await this.embeddingSpaces.getReadBindingForRepository(embeddingRepoId);
     const embed = readBinding.provider;
     if (!embed?.isAvailable()) {
       return 'Diagnóstico: búsqueda semántica no disponible (configura EMBEDDING_PROVIDER + API key y embed-index, o espacio de lectura en Postgres). Mientras tanto usa execute_cypher.';
@@ -369,31 +447,31 @@ export class ChatHandlersService {
     const vProp = readBinding.graphProperty;
     try {
       const countFn = await this.cypher.executeCypher(
-        projectId,
+        graphProjectId,
         `MATCH (n:Function) WHERE n.projectId = $projectId AND n.${vProp} IS NOT NULL RETURN count(n) as c`,
       );
       const countComp = await this.cypher.executeCypher(
-        projectId,
+        graphProjectId,
         `MATCH (n:Component) WHERE n.projectId = $projectId AND n.${vProp} IS NOT NULL RETURN count(n) as c`,
       );
       const countDoc = await this.cypher.executeCypher(
-        projectId,
+        graphProjectId,
         `MATCH (n:Document) WHERE n.projectId = $projectId AND n.${vProp} IS NOT NULL RETURN count(n) as c`,
       );
       const countSb = await this.cypher.executeCypher(
-        projectId,
+        graphProjectId,
         `MATCH (n:StorybookDoc) WHERE n.projectId = $projectId AND n.${vProp} IS NOT NULL RETURN count(n) as c`,
       );
       const countMd = await this.cypher.executeCypher(
-        projectId,
+        graphProjectId,
         `MATCH (n:MarkdownDoc) WHERE n.projectId = $projectId AND n.${vProp} IS NOT NULL RETURN count(n) as c`,
       );
       const countModel = await this.cypher.executeCypher(
-        projectId,
+        graphProjectId,
         `MATCH (n:Model) WHERE n.projectId = $projectId AND n.${vProp} IS NOT NULL RETURN count(n) as c`,
       );
       const countEnum = await this.cypher.executeCypher(
-        projectId,
+        graphProjectId,
         `MATCH (n:Enum) WHERE n.projectId = $projectId AND n.${vProp} IS NOT NULL RETURN count(n) as c`,
       );
       const hasFn = (countFn as Array<{ c?: number }>)?.[0]?.c ?? 0;
@@ -1034,7 +1112,7 @@ ${SCHEMA}${EXAMPLES}
           } else if (fn.name === 'semantic_search') {
             const args = JSON.parse(fn.arguments) as { query: string };
             const q = args.query?.trim() || message;
-            const semantic = await this.semanticSearchFallback(projectId, q);
+            const semantic = await this.semanticSearchFallback(projectId, q, 15, repositoryId, undefined);
             if (semantic.result.length > 0) {
               collectedResults = semantic.result;
               toolResult = `Búsqueda semántica encontró ${semantic.result.length} resultados:\n${this.cypher.formatResultsHuman(semantic.result as Record<string, unknown>[], semantic.result.length)}`;

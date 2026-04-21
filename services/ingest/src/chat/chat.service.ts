@@ -909,7 +909,13 @@ Sé conciso en los párrafos pedagógicos. Usa bullet points y tablas. Incluye T
       filesByFunction.forEach((r) => addIfScoped(r.path, r.repoId));
     }
 
-    const semantic = await this.handlers.semanticSearchFallback(projectId, userDescription, 25);
+    const semantic = await this.handlers.semanticSearchFallback(
+      projectId,
+      userDescription,
+      25,
+      repositoryId,
+      undefined,
+    );
     for (const row of semantic.result as Array<{ path?: string; name?: string; tipo?: string; repoId?: string }>) {
       const p = row.path;
       if (
@@ -3226,7 +3232,7 @@ PROHIBIDO: instrucciones genéricas tipo "revisa los controladores", "asegúrate
 
   /**
    * Retrieval fijo (sin ReAct LLM) para `responseMode: raw_evidence` + `deterministicRetriever`.
-   * Orden: get_graph_summary → semantic_search(query=mensaje) → paths `File` relacionados con persistencia (Prisma, `*.entity.ts`, carpetas `entities/`, datasource, migraciones, doc índice esquema; límite `CHAT_DETERMINISTIC_FILE_SAMPLE_LIMIT`).
+   * Orden: get_graph_summary → semantic_search (una vez por repo si `projectScope`, embeddings + filtro `repoId` por `CHAT_DETERMINISTIC_SEMANTIC_REPO_MAX`) → paths `File` persistencia (…; límite `CHAT_DETERMINISTIC_FILE_SAMPLE_LIMIT`).
    */
   private async runDeterministicRetrieverForRawEvidence(
     repositoryId: string,
@@ -3256,14 +3262,39 @@ PROHIBIDO: instrucciones genéricas tipo "revisa los controladores", "asegúrate
       evidenceVerbosity,
     });
     const q = message.trim().slice(0, 4000);
-    await pushTool('semantic_search', {
-      projectScope: ps,
-      scope,
-      tool: 'semantic_search',
-      arguments: { query: q },
-      fallbackMessage: q,
-      evidenceVerbosity,
-    });
+    if (ps) {
+      const maxFanRaw = parseInt(process.env.CHAT_DETERMINISTIC_SEMANTIC_REPO_MAX ?? '24', 10);
+      const maxFan = Math.min(50, Math.max(1, Number.isFinite(maxFanRaw) ? maxFanRaw : 24));
+      const projectRepos = await this.repos.findAll(projectId);
+      let repoIds = projectRepos.map((r) => r.id);
+      if (scope?.repoIds?.length) {
+        const allow = new Set(scope.repoIds);
+        repoIds = repoIds.filter((id) => allow.has(id));
+      }
+      if (repoIds.length === 0) repoIds = [repositoryId];
+      repoIds = repoIds.slice(0, maxFan);
+      for (const rid of repoIds) {
+        await pushTool(`semantic_search:${rid}`, {
+          projectScope: false,
+          scope,
+          tool: 'semantic_search',
+          arguments: { query: q },
+          fallbackMessage: q,
+          evidenceVerbosity,
+          embeddingRepositoryId: rid,
+          semanticRestrictRepoId: rid,
+        });
+      }
+    } else {
+      await pushTool('semantic_search', {
+        projectScope: false,
+        scope,
+        tool: 'semantic_search',
+        arguments: { query: q },
+        fallbackMessage: q,
+        evidenceVerbosity,
+      });
+    }
     const limRaw = parseInt(process.env.CHAT_DETERMINISTIC_FILE_SAMPLE_LIMIT ?? '400', 10);
     const fileLimit = Math.min(2000, Math.max(20, Number.isFinite(limRaw) ? limRaw : 400));
     /** Alineado con `schema-relational-rag-doc.ts` (path virtual del MarkdownDoc de esquema). */

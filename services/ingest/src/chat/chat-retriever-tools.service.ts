@@ -17,6 +17,10 @@ export interface RetrieverToolRequest {
   scope?: ChatScope;
   tool: RetrieverToolName;
   arguments: Record<string, unknown>;
+  /** Solo semantic_search: `repositories.id` del espacio de embeddings (multi-root / fan-out). */
+  embeddingRepositoryId?: string;
+  /** Solo semantic_search: acota vecinos a nodos con este `repoId` en Falkor. */
+  semanticRestrictRepoId?: string;
   /** Si semantic_search viene sin query, se usa este texto (mensaje usuario). */
   fallbackMessage?: string;
   /**
@@ -96,7 +100,16 @@ export class ChatRetrieverToolsService {
       } else if (fn === 'semantic_search') {
         const q =
           String(req.arguments.query ?? '').trim() || String(req.fallbackMessage ?? '').trim();
-        const semantic = await this.handlers.semanticSearchFallback(projectId, q);
+        const embedRepo =
+          String(req.embeddingRepositoryId ?? '').trim() || repositoryId;
+        const restrictRepo = String(req.semanticRestrictRepoId ?? '').trim() || undefined;
+        const semantic = await this.handlers.semanticSearchFallback(
+          projectId,
+          q,
+          15,
+          embedRepo,
+          restrictRepo,
+        );
         let semRows = semantic.result as Array<Record<string, unknown>>;
         if (scope) {
           semRows = semRows.filter((row) =>
@@ -110,7 +123,7 @@ export class ChatRetrieverToolsService {
           toolResult =
             'Búsqueda semántica: todos los candidatos quedaron fuera del alcance (scope). Ajusta repoIds/prefijos/exclusiones o amplía la consulta.';
         } else {
-          const diag = await this.handlers.getSemanticSearchDiagnostics(projectId);
+          const diag = await this.handlers.getSemanticSearchDiagnostics(projectId, embedRepo);
           toolResult = `Búsqueda semántica: 0 resultados.\n${diag}\nPrueba execute_cypher si el índice vectorial no aplica.`;
         }
       } else if (fn === 'get_graph_summary') {
