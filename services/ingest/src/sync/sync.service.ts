@@ -33,6 +33,12 @@ import {
 } from '../pipeline/producer';
 import { buildCypherForPrismaSchema } from '../pipeline/prisma-extract';
 import { buildCypherForOpenApiSpec } from '../pipeline/openapi-spec-ingest';
+import {
+  SCHEMA_RELATIONAL_RAG_SOURCE_PATH,
+  SCHEMA_RELATIONAL_RAG_TITLE,
+  buildCypherForSchemaRelationalRagDoc,
+  buildSchemaRelationalRagDocumentationText,
+} from '../pipeline/schema-relational-rag-doc';
 import { loadRepoTsconfigPaths } from '../pipeline/tsconfig-resolve';
 import { buildProjectMergeCypher } from '../pipeline/project';
 import type { ParsedFile } from '../pipeline/parser';
@@ -548,6 +554,34 @@ export class SyncService {
             if (projectId === projectIds[0]) skippedIndex.push(oaPath);
           }
         }
+
+        try {
+          const openApiSpecs: { path: string; content: string }[] = [];
+          for (const oaPath of openApiPaths) {
+            const oc = await getContent(oaPath);
+            if (oc) openApiSpecs.push({ path: oaPath, content: oc });
+          }
+          const schemaRagText = await buildSchemaRelationalRagDocumentationText({
+            prismaFiles,
+            parsedFiles,
+            openApiSpecs,
+          });
+          const schemaRagCy = buildCypherForSchemaRelationalRagDoc(
+            projectId,
+            repoId,
+            SCHEMA_RELATIONAL_RAG_SOURCE_PATH,
+            SCHEMA_RELATIONAL_RAG_TITLE,
+            schemaRagText,
+          );
+          const schemaRagGraph = await prepareGraph(SCHEMA_RELATIONAL_RAG_SOURCE_PATH);
+          await runCypherBatch(schemaRagGraph, schemaRagCy);
+        } catch (schemaRagErr) {
+          console.warn(
+            '[sync] schema relational RAG MarkdownDoc:',
+            schemaRagErr instanceof Error ? schemaRagErr.message : String(schemaRagErr),
+          );
+        }
+
         const currentSet = new Set(indexedPaths);
         for (const f of previouslyIndexed) {
           if (!currentSet.has(f.path)) {
