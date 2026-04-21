@@ -112,6 +112,19 @@ export interface NestControllerInfo {
   roles?: string[];
 }
 
+/** Ruta HTTP inferida desde decoradores Get/Post/… + `@Roles` / `@UseGuards` en el método (y herencia de clase). */
+export interface NestHttpRouteInfo {
+  controllerName: string;
+  handlerName: string;
+  handlerLine: number;
+  /** GET, POST, … */
+  httpMethod: string;
+  /** Primer argumento string de @Get('…') si existe. */
+  routeSegment?: string;
+  roles: string[];
+  guardNames: string[];
+}
+
 /** NestJS @Injectable() / service class. */
 export interface NestServiceInfo {
   name: string;
@@ -184,6 +197,8 @@ export interface ParsedFile {
   nestModules: NestModuleInfo[];
   /** NestJS controllers. */
   nestControllers: NestControllerInfo[];
+  /** Rutas HTTP por handler (decoradores Get/Post/… + Roles/UseGuards). */
+  nestHttpRoutes: NestHttpRouteInfo[];
   /** NestJS services (Injectable). */
   nestServices: NestServiceInfo[];
   /** Strapi v4 (detected by path pattern). */
@@ -439,6 +454,7 @@ function tryParseTruncated(
       unresolvedCalls: [],
       nestModules: [],
       nestControllers: [],
+      nestHttpRoutes: [],
       nestServices: [],
       strapiContentTypes: [],
       strapiControllers: [],
@@ -527,6 +543,7 @@ export function parseSource(
   unresolvedCalls: [],
   nestModules: [],
   nestControllers: [],
+  nestHttpRoutes: [],
   nestServices: [],
   strapiContentTypes: [],
   strapiControllers: [],
@@ -1274,6 +1291,137 @@ function collectNestRolesForController(classNode: Parser.SyntaxNode, source: str
   return [...acc];
 }
 
+const NEST_HTTP_ROUTE_DECORATORS = new Set([
+  'Get',
+  'Post',
+  'Put',
+  'Patch',
+  'Delete',
+  'Options',
+  'Head',
+  'All',
+]);
+
+/** Decoradores directamente colgando del nodo (clase o método), en orden de fuente. */
+function decoratorsOnNodeOrdered(node: Parser.SyntaxNode): Parser.SyntaxNode[] {
+  return [...findNodesByType(node, 'decorator')]
+    .filter((d) => d.parent === node)
+    .sort((a, b) => a.startIndex - b.startIndex);
+}
+
+function nestHttpVerbAndSegmentFromDecorator(
+  dec: Parser.SyntaxNode,
+  source: string,
+): { httpMethod: string; routeSegment?: string } | null {
+  const calleeName = getDecoratorCallExpressionCalleeName(dec, source);
+  if (!calleeName || !NEST_HTTP_ROUTE_DECORATORS.has(calleeName)) return null;
+  const call = dec.childForFieldName('expression') ?? findNodesByType(dec, 'call_expression')[0];
+  const httpMethod = calleeName.toUpperCase();
+  if (!call || call.type !== 'call_expression') return { httpMethod };
+  const seg = getFirstStringArg(call, source);
+  return seg !== undefined ? { httpMethod, routeSegment: seg } : { httpMethod };
+}
+
+function extractGuardRefsFromArg(node: Parser.SyntaxNode, source: string, out: string[]): void {
+  if (node.type === 'spread_element') {
+    const inner = node.namedChild(0) ?? node.child(1);
+    if (inner) extractGuardRefsFromArg(inner, source, out);
+    return;
+  }
+  if (node.type === 'identifier') {
+    const n = getNodeText(source, node);
+    if (n) out.push(n);
+    return;
+  }
+  if (node.type === 'member_expression' || node.type === 'subscript_expression') {
+    const t = getNodeText(source, node).trim();
+    if (t.length > 0 && t.length < 200) out.push(t);
+    return;
+  }
+  if (node.type === 'array') {
+    for (let i = 0; i < node.childCount; i++) {
+      const c = node.child(i);
+      if (!c || c.type === '[' || c.type === ']' || c.type === ',') continue;
+      extractGuardRefsFromArg(c, source, out);
+    }
+  }
+}
+
+function extractUseGuardsFromDecorator(dec: Parser.SyntaxNode, source: string): string[] {
+  if (getDecoratorCallExpressionCalleeName(dec, source) !== 'UseGuards') return [];
+  const call = dec.childForFieldName('expression') ?? findNodesByType(dec, 'call_expression')[0];
+  if (!call || call.type !== 'call_expression') return [];
+  const args = call.childForFieldName('arguments');
+  const out: string[] = [];
+  if (!args) return out;
+  for (let i = 0; i < args.childCount; i++) {
+    const arg = args.child(i);
+    if (!arg || arg.type === ',' || arg.type === '(' || arg.type === ')') continue;
+    extractGuardRefsFromArg(arg, source, out);
+  }
+  return [...new Set(out)];
+}
+
+function collectClassLevelRolesOnly(classNode: Parser.SyntaxNode, source: string): string[] {
+  const acc = new Set<string>();
+  for (const dec of collectClassLevelDecorators(classNode)) {
+    for (const r of extractRolesFromRolesDecorator(dec, source)) acc.add(r);
+  }
+  return [...acc];
+}
+
+function collectClassLevelUseGuardsOnly(classNode: Parser.SyntaxNode, source: string): string[] {
+  const acc: string[] = [];
+  for (const dec of collectClassLevelDecorators(classNode)) {
+    acc.push(...extractUseGuardsFromDecorator(dec, source));
+  }
+  return [...new Set(acc)];
+}
+
+function collectNestHttpRoutesForController(
+  classNode: Parser.SyntaxNode,
+  source: string,
+  controllerName: string,
+  result: ParsedFile,
+): void {
+  const classRoles = new Set(collectClassLevelRolesOnly(classNode, source));
+  const classGuards = collectClassLevelUseGuardsOnly(classNode, source);
+  const body = classNode.childForFieldName('body');
+  if (!body) return;
+
+  for (let i = 0; i < body.childCount; i++) {
+    const ch = body.child(i);
+    if (!ch || ch.type !== 'method_definition') continue;
+    const nameNode = ch.childForFieldName('name');
+    if (!nameNode) continue;
+    const handlerName = getNodeText(source, nameNode);
+    if (handlerName === 'constructor') continue;
+
+    const methodRoles = new Set(classRoles);
+    const methodGuards = new Set(classGuards);
+    let http: { httpMethod: string; routeSegment?: string } | null = null;
+
+    for (const dec of decoratorsOnNodeOrdered(ch)) {
+      for (const r of extractRolesFromRolesDecorator(dec, source)) methodRoles.add(r);
+      for (const g of extractUseGuardsFromDecorator(dec, source)) methodGuards.add(g);
+      const mapped = nestHttpVerbAndSegmentFromDecorator(dec, source);
+      if (mapped) http = mapped;
+    }
+
+    if (!http) continue;
+
+    result.nestHttpRoutes.push({
+      controllerName,
+      handlerName,
+      handlerLine: ch.startPosition.row + 1,
+      httpMethod: http.httpMethod,
+      ...(http.routeSegment !== undefined ? { routeSegment: http.routeSegment } : {}),
+      roles: [...methodRoles],
+      guardNames: [...methodGuards],
+    });
+  }
+}
+
 function getNestDecoratorKind(classNode: Parser.SyntaxNode, source: string): NestKind | null {
   const decorators = findNodesByType(classNode, 'decorator');
   for (const dec of decorators) {
@@ -1374,6 +1522,7 @@ function collectNestFromClass(
       route !== undefined ? { name: className, route } : { name: className };
     if (roles.length) ctrl.roles = roles;
     result.nestControllers.push(ctrl);
+    collectNestHttpRoutesForController(classNode, source, className, result);
     return;
   }
   if (kind === 'service') {

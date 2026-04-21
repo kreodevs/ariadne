@@ -9,8 +9,8 @@ Servicio de análisis estático que indexa código JS/TS/JSX/TSX con Tree-sitter
 ## Funciones
 
 - **Scanner:** Descubre archivos `.js`, `.jsx`, `.ts`, `.tsx` (excluye `node_modules`, `*.test.*`).
-- **Parser (Tree-sitter):** Extrae imports, componentes React (clase y funcionales), hooks y uso de componentes (RENDERS).
-- **Graph producer:** Genera Cypher con `MERGE` (idempotente) y ejecuta contra FalkorDB.
+- **Parser (Tree-sitter):** Extrae imports, componentes React (clase y funcionales), hooks y uso de componentes (RENDERS), Nest (módulos/controladores/servicios, rutas HTTP `nestHttpRoutes` en paridad con ingest).
+- **Graph producer:** Genera Cypher con `MERGE` (idempotente) y ejecuta contra FalkorDB (incl. `NestRoute` / `NestGuard` cuando aplica).
 - **Multi-proyecto:** Al iniciar, crea/actualiza un nodo `:Project` con `projectId`, `projectName` (de `package.json` o carpeta), `rootPath` y `lastIndexed`. Todos los nodos incluyen `projectId` para aislamiento. Relación `(Project)-[:CONTAINS]->(File)`.
 
 ## Uso

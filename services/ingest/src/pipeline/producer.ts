@@ -50,6 +50,14 @@ function tryResolve(basePath: string, existingPaths: Set<string>): string | null
   return null;
 }
 
+/** Une prefijo `@Controller('a')` y segmento `@Get('b')` en path tipo Nest (`/a/b`). */
+function nestHttpFullPath(controllerRoute: string | null | undefined, routeSegment: string | undefined): string {
+  const prefixParts = (controllerRoute ?? '').split('/').filter(Boolean);
+  const segParts = routeSegment !== undefined ? routeSegment.split('/').filter(Boolean) : [];
+  const parts = [...prefixParts, ...segParts];
+  return parts.length ? `/${parts.join('/')}` : '/';
+}
+
 /** Resuelve alias @/ y @/* al path (p. ej. @/models/X -> {prefix}/src/models/X). */
 function resolvePathAlias(specifier: string, fromPath: string): string[] {
   if (!specifier.startsWith('@/') && !specifier.startsWith('@')) return [];
@@ -364,6 +372,43 @@ export function buildCypherForFile(
       );
     }
   }
+
+  const controllerRouteByName = new Map<string, string | undefined>();
+  for (const c of parsed.nestControllers ?? []) {
+    controllerRouteByName.set(c.name, c.route);
+  }
+  for (const rt of parsed.nestHttpRoutes ?? []) {
+    const fullPath = nestHttpFullPath(controllerRouteByName.get(rt.controllerName), rt.routeSegment);
+    const segProp = rt.routeSegment !== undefined ? cypherSafe(rt.routeSegment) : 'null';
+    const fp = cypherSafe(fullPath);
+    statements.push(
+      `MERGE (nr:NestRoute {path: ${cypherSafe(path)}, controllerName: ${cypherSafe(rt.controllerName)}, handlerName: ${cypherSafe(rt.handlerName)}, projectId: ${pid}, repoId: ${rid}}) ON CREATE SET nr.httpMethod = ${cypherSafe(rt.httpMethod)}, nr.handlerLine = ${rt.handlerLine}, nr.routeSegment = ${segProp}, nr.fullPath = ${fp} ON MATCH SET nr.httpMethod = ${cypherSafe(rt.httpMethod)}, nr.handlerLine = ${rt.handlerLine}, nr.routeSegment = ${segProp}, nr.fullPath = ${fp}`,
+    );
+    statements.push(
+      `MATCH (f:File {path: ${cypherSafe(path)}, projectId: ${pid}, repoId: ${rid}}) MATCH (nr:NestRoute {path: ${cypherSafe(path)}, controllerName: ${cypherSafe(rt.controllerName)}, handlerName: ${cypherSafe(rt.handlerName)}, projectId: ${pid}, repoId: ${rid}}) MERGE (f)-[:CONTAINS]->(nr)`,
+    );
+    statements.push(
+      `MATCH (nc:NestController {path: ${cypherSafe(path)}, name: ${cypherSafe(rt.controllerName)}, projectId: ${pid}, repoId: ${rid}}) MATCH (nr:NestRoute {path: ${cypherSafe(path)}, controllerName: ${cypherSafe(rt.controllerName)}, handlerName: ${cypherSafe(rt.handlerName)}, projectId: ${pid}, repoId: ${rid}}) MERGE (nc)-[:DECLARES_ROUTE]->(nr)`,
+    );
+    for (const role of rt.roles ?? []) {
+      const roleSafe = cypherSafe(role);
+      statements.push(`MERGE (ar:AccessRole {name: ${roleSafe}, projectId: ${pid}, repoId: ${rid}})`);
+      statements.push(
+        `MATCH (nr:NestRoute {path: ${cypherSafe(path)}, controllerName: ${cypherSafe(rt.controllerName)}, handlerName: ${cypherSafe(rt.handlerName)}, projectId: ${pid}, repoId: ${rid}}) MATCH (ar:AccessRole {name: ${roleSafe}, projectId: ${pid}, repoId: ${rid}}) MERGE (nr)-[:REQUIRES_ROLE]->(ar)`,
+      );
+    }
+    for (const gName of rt.guardNames ?? []) {
+      const gSafe = cypherSafe(gName);
+      statements.push(`MERGE (ng:NestGuard {path: ${cypherSafe(path)}, name: ${gSafe}, projectId: ${pid}, repoId: ${rid}})`);
+      statements.push(
+        `MATCH (f:File {path: ${cypherSafe(path)}, projectId: ${pid}, repoId: ${rid}}) MATCH (ng:NestGuard {path: ${cypherSafe(path)}, name: ${gSafe}, projectId: ${pid}, repoId: ${rid}}) MERGE (f)-[:CONTAINS]->(ng)`,
+      );
+      statements.push(
+        `MATCH (nr:NestRoute {path: ${cypherSafe(path)}, controllerName: ${cypherSafe(rt.controllerName)}, handlerName: ${cypherSafe(rt.handlerName)}, projectId: ${pid}, repoId: ${rid}}) MATCH (ng:NestGuard {path: ${cypherSafe(path)}, name: ${gSafe}, projectId: ${pid}, repoId: ${rid}}) MERGE (nr)-[:USES_GUARD]->(ng)`,
+      );
+    }
+  }
+
   for (const s of parsed.nestServices ?? []) {
     statements.push(`MERGE (s:NestService {path: ${cypherSafe(path)}, name: ${cypherSafe(s.name)}, projectId: ${pid}, repoId: ${rid}})`);
     statements.push(
@@ -553,6 +598,12 @@ const FALKOR_INDEXES = [
   'CREATE INDEX FOR (ar:AccessRole) ON (ar.projectId)',
   'CREATE INDEX FOR (ar:AccessRole) ON (ar.projectId, ar.repoId)',
   'CREATE INDEX FOR (ar:AccessRole) ON (ar.name)',
+  'CREATE INDEX FOR (nr:NestRoute) ON (nr.projectId)',
+  'CREATE INDEX FOR (nr:NestRoute) ON (nr.projectId, nr.repoId)',
+  'CREATE INDEX FOR (nr:NestRoute) ON (nr.fullPath)',
+  'CREATE INDEX FOR (ng:NestGuard) ON (ng.projectId)',
+  'CREATE INDEX FOR (ng:NestGuard) ON (ng.projectId, ng.repoId)',
+  'CREATE INDEX FOR (ng:NestGuard) ON (ng.name)',
 ];
 
 /**
@@ -582,6 +633,8 @@ const REPOID_BACKFILL_LABELS = [
   'Enum',
   'NestModule',
   'NestController',
+  'NestRoute',
+  'NestGuard',
   'NestService',
   'AccessRole',
   'StrapiContentType',

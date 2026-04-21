@@ -23,6 +23,7 @@ describe("buildCypherForFile", () => {
       unresolvedCalls: [],
       nestModules: [],
       nestControllers: [],
+      nestHttpRoutes: [],
       nestServices: [],
       strapiContentTypes: [],
       strapiControllers: [],

@@ -52,6 +52,13 @@ export function resolveImportPath(
   return null;
 }
 
+function nestHttpFullPath(controllerRoute: string | null | undefined, routeSegment: string | undefined): string {
+  const prefixParts = (controllerRoute ?? "").split("/").filter(Boolean);
+  const segParts = routeSegment !== undefined ? routeSegment.split("/").filter(Boolean) : [];
+  const parts = [...prefixParts, ...segParts];
+  return parts.length ? `/${parts.join("/")}` : "/";
+}
+
 /** Re-export para callers que importan desde producer. */
 export { buildExportsMap, resolveCrossFileCalls } from "ariadne-common";
 
@@ -170,6 +177,43 @@ export function buildCypherForFile(
       );
     }
   }
+
+  const controllerRouteByName = new Map<string, string | undefined>();
+  for (const c of parsed.nestControllers ?? []) {
+    controllerRouteByName.set(c.name, c.route);
+  }
+  for (const rt of parsed.nestHttpRoutes ?? []) {
+    const fullPath = nestHttpFullPath(controllerRouteByName.get(rt.controllerName), rt.routeSegment);
+    const segProp = rt.routeSegment !== undefined ? cypherSafe(rt.routeSegment) : "null";
+    const fp = cypherSafe(fullPath);
+    statements.push(
+      `MERGE (nr:NestRoute {path: ${cypherSafe(path)}, controllerName: ${cypherSafe(rt.controllerName)}, handlerName: ${cypherSafe(rt.handlerName)}, projectId: ${pid}}) ON CREATE SET nr.httpMethod = ${cypherSafe(rt.httpMethod)}, nr.handlerLine = ${rt.handlerLine}, nr.routeSegment = ${segProp}, nr.fullPath = ${fp} ON MATCH SET nr.httpMethod = ${cypherSafe(rt.httpMethod)}, nr.handlerLine = ${rt.handlerLine}, nr.routeSegment = ${segProp}, nr.fullPath = ${fp}`
+    );
+    statements.push(
+      `MATCH (f:File {path: ${cypherSafe(path)}, projectId: ${pid}}) MATCH (nr:NestRoute {path: ${cypherSafe(path)}, controllerName: ${cypherSafe(rt.controllerName)}, handlerName: ${cypherSafe(rt.handlerName)}, projectId: ${pid}}) MERGE (f)-[:CONTAINS]->(nr)`
+    );
+    statements.push(
+      `MATCH (nc:NestController {path: ${cypherSafe(path)}, name: ${cypherSafe(rt.controllerName)}, projectId: ${pid}}) MATCH (nr:NestRoute {path: ${cypherSafe(path)}, controllerName: ${cypherSafe(rt.controllerName)}, handlerName: ${cypherSafe(rt.handlerName)}, projectId: ${pid}}) MERGE (nc)-[:DECLARES_ROUTE]->(nr)`
+    );
+    for (const role of rt.roles ?? []) {
+      const roleSafe = cypherSafe(role);
+      statements.push(`MERGE (ar:AccessRole {name: ${roleSafe}, projectId: ${pid}})`);
+      statements.push(
+        `MATCH (nr:NestRoute {path: ${cypherSafe(path)}, controllerName: ${cypherSafe(rt.controllerName)}, handlerName: ${cypherSafe(rt.handlerName)}, projectId: ${pid}}) MATCH (ar:AccessRole {name: ${roleSafe}, projectId: ${pid}}) MERGE (nr)-[:REQUIRES_ROLE]->(ar)`
+      );
+    }
+    for (const gName of rt.guardNames ?? []) {
+      const gSafe = cypherSafe(gName);
+      statements.push(`MERGE (ng:NestGuard {path: ${cypherSafe(path)}, name: ${gSafe}, projectId: ${pid}})`);
+      statements.push(
+        `MATCH (f:File {path: ${cypherSafe(path)}, projectId: ${pid}}) MATCH (ng:NestGuard {path: ${cypherSafe(path)}, name: ${gSafe}, projectId: ${pid}}) MERGE (f)-[:CONTAINS]->(ng)`
+      );
+      statements.push(
+        `MATCH (nr:NestRoute {path: ${cypherSafe(path)}, controllerName: ${cypherSafe(rt.controllerName)}, handlerName: ${cypherSafe(rt.handlerName)}, projectId: ${pid}}) MATCH (ng:NestGuard {path: ${cypherSafe(path)}, name: ${gSafe}, projectId: ${pid}}) MERGE (nr)-[:USES_GUARD]->(ng)`
+      );
+    }
+  }
+
   for (const s of parsed.nestServices ?? []) {
     statements.push(`MERGE (s:NestService {path: ${cypherSafe(path)}, name: ${cypherSafe(s.name)}, projectId: ${pid}})`);
     statements.push(

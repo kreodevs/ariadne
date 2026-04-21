@@ -28,7 +28,7 @@ export function Foo({ a, b }: { a: string; b?: number }) {
   it("extracts props from function parameter destructuring", () => {
     const parsed = parseSource(
       "x.jsx",
-      "function Comp({ title, count }) { return null; }"
+      "function Comp({ title, count }) { return <span />; }"
     );
     expect(parsed?.propsByComponent["Comp"]?.map((p) => p.name)).toEqual([
       "title",
