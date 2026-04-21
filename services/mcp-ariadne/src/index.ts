@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * @fileoverview AriadneSpecs Oracle MCP Server. Transporte Streamable HTTP. Tools: get_component_graph, get_legacy_impact, validate_before_edit, semantic_search, etc. Config: PORT, MCP_AUTH_TOKEN, FALKORDB_HOST, INGEST_URL, ARIADNE_API_URL, ARIADNE_API_BEARER (JWT para GET /api/graph/* en Nest). Observabilidad: MCP_TOOL_LOG (default on), MCP_TOOL_LOG_ARG_MAX.
+ * @fileoverview AriadneSpecs Oracle MCP Server. Transporte Streamable HTTP. Tools: get_component_graph, get_legacy_impact, validate_before_edit, semantic_search, etc. Config: PORT, MCP_AUTH_TOKEN, FALKORDB_HOST, INGEST_URL, ARIADNE_API_URL, ARIADNE_API_BEARER (JWT para GET /api/graph/* en Nest). Observabilidad: MCP_TOOL_LOG, MCP_TOOL_LOG_ARG_MAX, MCP_TOOL_LOG_RESPONSE_BLOCK_MAX, MCP_TOOL_LOG_RESPONSE_TOTAL_MAX.
  */
 
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
@@ -168,6 +168,16 @@ const MCP_TOOL_LOG_ARG_MAX = (() => {
   return Number.isFinite(v) && v > 0 ? Math.min(Math.floor(v), 500_000) : 12_000;
 })();
 
+const MCP_TOOL_LOG_RESPONSE_BLOCK_MAX = (() => {
+  const v = Number(process.env.MCP_TOOL_LOG_RESPONSE_BLOCK_MAX ?? "32000");
+  return Number.isFinite(v) && v > 0 ? Math.min(Math.floor(v), 2_000_000) : 32_000;
+})();
+
+const MCP_TOOL_LOG_RESPONSE_TOTAL_MAX = (() => {
+  const v = Number(process.env.MCP_TOOL_LOG_RESPONSE_TOTAL_MAX ?? "120000");
+  return Number.isFinite(v) && v > 0 ? Math.min(Math.floor(v), 5_000_000) : 120_000;
+})();
+
 function isMcpToolInvocationLoggingEnabled(): boolean {
   const v = (process.env.MCP_TOOL_LOG ?? "1").trim().toLowerCase();
   return v !== "0" && v !== "false" && v !== "off" && v !== "no";
@@ -237,6 +247,72 @@ function summarizeMcpToolResultForLog(result: McpCallToolResultShape): {
   };
 }
 
+function redactInlineSecretsInResponseLogText(s: string): string {
+  let o = s;
+  o = o.replace(/Bearer\s+[A-Za-z0-9._+\/-]+/gi, "Bearer [redacted]");
+  if (/^eyJ[A-Za-z0-9_-]+\.eyJ/.test(o.slice(0, 120))) return "[jwt:redacted]";
+  return o;
+}
+
+function truncateForMcpResponseLog(s: string, max: number): { text: string; cut: boolean } {
+  if (s.length <= max) return { text: s, cut: false };
+  return { text: `${s.slice(0, max)}…[+${s.length - max} chars omitted]`, cut: true };
+}
+
+/** Serializa `content[]` de la respuesta MCP para logs (texto completo hasta los topes; bloques no-texto acotados). */
+function buildMcpToolResponseBodyForLog(result: McpCallToolResultShape): {
+  isError: boolean;
+  content: unknown[];
+  responseTruncated: boolean;
+} {
+  const blocks = result.content ?? [];
+  let budget = MCP_TOOL_LOG_RESPONSE_TOTAL_MAX;
+  let responseTruncated = false;
+  const content: unknown[] = [];
+
+  for (const b of blocks) {
+    if (budget <= 0) {
+      responseTruncated = true;
+      break;
+    }
+    if (!b || typeof b !== "object") {
+      content.push(b);
+      continue;
+    }
+    const block = b as Record<string, unknown>;
+    const typ = block.type;
+
+    if (typ === "text" && typeof block.text === "string") {
+      const maxThis = Math.min(MCP_TOOL_LOG_RESPONSE_BLOCK_MAX, budget);
+      const redacted = redactInlineSecretsInResponseLogText(block.text);
+      const { text, cut } = truncateForMcpResponseLog(redacted, maxThis);
+      if (cut) responseTruncated = true;
+      budget -= text.length;
+      content.push({ type: "text", text });
+      continue;
+    }
+
+    const shaped = redactToolArgumentsForLog(block) as Record<string, unknown>;
+    for (const [k, v] of Object.entries(shaped)) {
+      if (typeof v === "string" && v.length > 8000) {
+        shaped[k] = `${v.slice(0, 8000)}…[+${v.length - 8000}]`;
+        responseTruncated = true;
+      }
+    }
+    const ser = JSON.stringify(shaped);
+    budget -= Math.min(ser.length, 12_000);
+    content.push(shaped);
+  }
+
+  if (blocks.length > content.length) responseTruncated = true;
+
+  return {
+    isError: Boolean(result.isError),
+    content,
+    responseTruncated,
+  };
+}
+
 function mcpLogToolInvocationStart(toolName: string, args: unknown): void {
   const argObj = args && typeof args === "object" ? (args as Record<string, unknown>) : {};
   const line = stringifyMcpToolLogPayload({
@@ -257,6 +333,7 @@ function mcpLogToolInvocationEnd(toolName: string, startedMs: number, result: Mc
     tool: toolName,
     ms,
     resultSummary: summarizeMcpToolResultForLog(result),
+    result: buildMcpToolResponseBodyForLog(result),
   });
   console.log(`[mcp-ariadne] ${line}`);
 }
