@@ -581,7 +581,7 @@ export class GraphService {
         ? {
             suggestResync: true,
             messageEs:
-              'Sin aristas depends salientes ni consumidores vía CALLS/RENDERS/IMPORTS en Falkor para este foco. Si es módulo API sin JSX, puede ser normal; si esperas uso desde otros archivos, resync y comprueba projectId. Rutas React: revisa aristas RENDERS tras indexar.',
+              'Sin aristas depends salientes ni consumidores (RENDERS/CALLS/IMPORTS→Component) hacia este foco. En repos **Nest/backend** suele ser **normal**: el índice pone servicios/controladores en :NestService/:NestController y el grafo de **componente** prioriza React (:Component, RENDERS). Para ver acoplamiento usa el **índice del repo**, **C4** o consultas Cypher sobre :Function / :NestService. Si crees que es proyecto React mal enlazado: resync, alcance «solo este repo» y comprueba projectId en Falkor.',
           }
         : undefined;
 

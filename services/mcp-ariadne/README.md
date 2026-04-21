@@ -50,6 +50,8 @@ npm publish
 
 **Enrutamiento y whitelist de dominios:** Con `INGEST_URL`, el MCP llama a **`GET /projects/:id/graph-routing`** y usa **`cypherShardContexts`**: lista de `{ graphName, cypherProjectId }`. Cada consulta Cypher debe filtrar con el `projectId` que realmente tienen los nodos en ese grafo (propio proyecto + proyectos en dominios permitidos en **ProjectDomainDependency**). Sin esto, los grafos “hermanos” devolverían 0 filas. `forEachProjectShardGraph` y búsquedas que fusionan filas pasan el `cypherProjectId` correcto por shard.
 
+**`semantic_search`, `find_similar_implementations` y id de proyecto vs repo:** `list_known_projects` devuelve `roots[].id` (**repositorio**). En Falkor, los nodos llevan `projectId` = UUID del **proyecto** Ariadne cuando el repo está enlazado; `roots[].id` coincide con `repoId`. **`resolve-graph-scope.ts`** llama `GET /repositories/:id` en ingest, mapea al `cypherProjectId` correcto y, si aplica, añade `AND n.repoId = $repoId` para no mezclar repos en multi-root. Ambas herramientas enrutan con `runOnProjectGraphs`/`forEachProjectShardGraph` y el mismo filtro. Sin este paso, filtrar por `roots[].id` como si fuera `projectId` devolvía **0 filas** (MDD vacío pese a índice sano).
+
 Variables: `FALKORDB_HOST`, `FALKORDB_PORT`, `FALKOR_SHARD_BY_PROJECT`, `FALKOR_SHARD_BY_DOMAIN`, `INGEST_URL` (obligatorio para routing completo y herramientas que listan proyectos).
 
 ### Límites de salida (defaults altos — información completa)

@@ -20,6 +20,7 @@ import {
   toAbsoluteIdePath,
 } from "./mcp-scope-enrichment.js";
 import { mcpLimits } from "./mcp-tool-limits.js";
+import { resolveGraphScopeFromProjectOrRepoId, whereProjectRepo } from "./resolve-graph-scope.js";
 
 const MCP_PATH = "/mcp";
 
@@ -318,12 +319,16 @@ function createMcpServer(): Server {
     {
       name: "semantic_search",
       description:
-        "Búsqueda por palabra clave en componentes, funciones y archivos del grafo. Sin projectId: búsqueda global en todos los proyectos. Con projectId: limita al proyecto.",
+        "Búsqueda híbrida (vector + keyword) sobre el grafo. Sin projectId: alcance global. Con projectId: acepta **id del proyecto Ariadne** o **id del repositorio** (`roots[].id`); se resuelve vía ingest al `projectId` almacenado en Falkor y, en multi-root, se filtra por `repoId`.",
       inputSchema: {
         type: "object" as const,
         properties: {
           query: { type: "string", description: "Términos de búsqueda (ej. login, form, auth)" },
-          projectId: { type: "string", description: "ID del proyecto (opcional, limita el ámbito)" },
+          projectId: {
+            type: "string",
+            description:
+              "UUID de proyecto Ariadne o de repositorio (`list_known_projects`). En multi-root suele ser `roots[].id`; el servidor mapea al projectId de nodos Falkor.",
+          },
           limit: { type: "number", description: "Máximo de resultados (default env MCP_SEMANTIC_SEARCH_DEFAULT o 200; tope MCP_SEMANTIC_SEARCH_MAX)" },
         },
         required: ["query"],
@@ -1558,12 +1563,23 @@ async function fetchFileFromIngest(
       };
     }
     const ingestUrl = process.env.INGEST_URL ?? process.env.ARIADNESPEC_INGEST_URL ?? "http://localhost:3002";
+    /** Id pedido por el cliente (a menudo `roots[].id` = repo). */
+    const requestedScopeId = projectId;
+    let graphRouteId: string | undefined = requestedScopeId;
+    let scopeRepoId: string | undefined;
+    if (requestedScopeId) {
+      const scope = await resolveGraphScopeFromProjectOrRepoId(ingestUrl, requestedScopeId);
+      graphRouteId = scope.cypherProjectId;
+      scopeRepoId = scope.repoId;
+    }
+    const hasRepoScope = Boolean(scopeRepoId);
     const results: { type: string; name: string; projectId?: string }[] = [];
     let usedVector = false;
     try {
       const embedParams = new URLSearchParams();
       embedParams.set("text", query);
-      if (projectId) embedParams.set("repositoryId", projectId);
+      /** embed exige `repositories.id`; conservar el id original del caller. */
+      if (requestedScopeId) embedParams.set("repositoryId", requestedScopeId);
       const embedRes = await fetch(`${ingestUrl.replace(/\/$/, "")}/embed?${embedParams.toString()}`);
       if (embedRes.ok) {
         const embedJson = (await embedRes.json()) as { embedding?: number[]; vectorProperty?: string };
@@ -1573,14 +1589,14 @@ async function fetchFileFromIngest(
         if (valid && embedding!.length > 0) {
           const vecStr = `[${embedding!.join(",")}]`;
           const k = Math.min(Math.max(limit, 20), mcpLimits.semanticVectorKMax);
-          const funcVecQ = `CALL db.idx.vector.queryNodes('Function', '${vecProp}', ${k}, vecf32(${vecStr})) YIELD node, score RETURN node.name AS name, node.path AS path, node.projectId AS projectId, score`;
-          const compVecQ = `CALL db.idx.vector.queryNodes('Component', '${vecProp}', ${k}, vecf32(${vecStr})) YIELD node, score RETURN node.name AS name, node.projectId AS projectId, score`;
-          const docVecQ = `CALL db.idx.vector.queryNodes('Document', '${vecProp}', ${k}, vecf32(${vecStr})) YIELD node, score RETURN node.path AS path, node.heading AS heading, node.chunkIndex AS chunkIndex, node.projectId AS projectId, score`;
-          const sbVecQ = `CALL db.idx.vector.queryNodes('StorybookDoc', '${vecProp}', ${k}, vecf32(${vecStr})) YIELD node, score RETURN node.title AS name, node.sourcePath AS path, node.projectId AS projectId, score`;
-          const mdVecQ = `CALL db.idx.vector.queryNodes('MarkdownDoc', '${vecProp}', ${k}, vecf32(${vecStr})) YIELD node, score RETURN node.title AS name, node.sourcePath AS path, node.projectId AS projectId, score`;
+          const funcVecQ = `CALL db.idx.vector.queryNodes('Function', '${vecProp}', ${k}, vecf32(${vecStr})) YIELD node, score RETURN node.name AS name, node.path AS path, node.projectId AS projectId, node.repoId AS repoId, score`;
+          const compVecQ = `CALL db.idx.vector.queryNodes('Component', '${vecProp}', ${k}, vecf32(${vecStr})) YIELD node, score RETURN node.name AS name, node.projectId AS projectId, node.repoId AS repoId, score`;
+          const docVecQ = `CALL db.idx.vector.queryNodes('Document', '${vecProp}', ${k}, vecf32(${vecStr})) YIELD node, score RETURN node.path AS path, node.heading AS heading, node.chunkIndex AS chunkIndex, node.projectId AS projectId, node.repoId AS repoId, score`;
+          const sbVecQ = `CALL db.idx.vector.queryNodes('StorybookDoc', '${vecProp}', ${k}, vecf32(${vecStr})) YIELD node, score RETURN node.title AS name, node.sourcePath AS path, node.projectId AS projectId, node.repoId AS repoId, score`;
+          const mdVecQ = `CALL db.idx.vector.queryNodes('MarkdownDoc', '${vecProp}', ${k}, vecf32(${vecStr})) YIELD node, score RETURN node.title AS name, node.sourcePath AS path, node.projectId AS projectId, node.repoId AS repoId, score`;
           try {
             const seen = new Set<string>();
-            await runOnProjectGraphs(projectId, async (g, ctx) => {
+            await runOnProjectGraphs(graphRouteId, async (g, ctx) => {
               try {
                 const [fRes, cRes, dRes, sbRes, mdRes] = await Promise.all([
                   g.query(funcVecQ) as Promise<{ data?: Array<Record<string, unknown>> }>,
@@ -1604,6 +1620,7 @@ async function fetchFileFromIngest(
                   const path = _rv<string>(row, "path") ?? "";
                   const pid = _rv<string>(row, "projectId");
                   if (ctx.cypherProjectId && pid !== ctx.cypherProjectId) continue;
+                  if (scopeRepoId && _rv<string>(row, "repoId") !== scopeRepoId) continue;
                   const key = `Function:${name}:${path}`;
                   if (seen.has(key)) continue;
                   seen.add(key);
@@ -1618,6 +1635,7 @@ async function fetchFileFromIngest(
                   const name = _rv<string>(row, "name");
                   const pid = _rv<string>(row, "projectId");
                   if (ctx.cypherProjectId && pid !== ctx.cypherProjectId) continue;
+                  if (scopeRepoId && _rv<string>(row, "repoId") !== scopeRepoId) continue;
                   const key = `Component:${name}`;
                   if (seen.has(key)) continue;
                   seen.add(key);
@@ -1630,6 +1648,7 @@ async function fetchFileFromIngest(
                   const ci = _rv<string>(row, "chunkIndex");
                   const pid = _rv<string>(row, "projectId");
                   if (ctx.cypherProjectId && pid !== ctx.cypherProjectId) continue;
+                  if (scopeRepoId && _rv<string>(row, "repoId") !== scopeRepoId) continue;
                   const key = `Document:${path}:${ci ?? ""}`;
                   if (seen.has(key)) continue;
                   seen.add(key);
@@ -1642,6 +1661,7 @@ async function fetchFileFromIngest(
                   const path = _rv<string>(row, "path") ?? "";
                   const pid = _rv<string>(row, "projectId");
                   if (ctx.cypherProjectId && pid !== ctx.cypherProjectId) continue;
+                  if (scopeRepoId && _rv<string>(row, "repoId") !== scopeRepoId) continue;
                   const key = `StorybookDoc:${path}`;
                   if (seen.has(key)) continue;
                   seen.add(key);
@@ -1657,6 +1677,7 @@ async function fetchFileFromIngest(
                   const path = _rv<string>(row, "path") ?? "";
                   const pid = _rv<string>(row, "projectId");
                   if (ctx.cypherProjectId && pid !== ctx.cypherProjectId) continue;
+                  if (scopeRepoId && _rv<string>(row, "repoId") !== scopeRepoId) continue;
                   const key = `MarkdownDoc:${path}`;
                   if (seen.has(key)) continue;
                   seen.add(key);
@@ -1682,20 +1703,24 @@ async function fetchFileFromIngest(
     /** Vector puede ejecutarse pero devolver 0 filas (proyecto, índice vacío o filtro projectId). */
     if (!usedVector || results.length === 0) {
       const kwLim = mcpLimits.semanticKeywordSubqueryLimit;
-      const projFilter = projectId ? " WHERE n.projectId = $projectId" : "";
+      const projFilter = requestedScopeId ? ` WHERE ${whereProjectRepo("n", hasRepoScope)}` : "";
       const compQ = `MATCH (n:Component)${projFilter} RETURN n.name AS name LIMIT ${kwLim}`;
       const funcQ = `MATCH (n:Function)${projFilter} RETURN n.name AS name, n.path AS path LIMIT ${kwLim}`;
       const fileQ = `MATCH (n:File)${projFilter} RETURN n.path AS path LIMIT ${kwLim}`;
       const modelQ = `MATCH (n:Model)${projFilter} RETURN n.name AS name, n.path AS path LIMIT ${kwLim}`;
-      const nestQ = `MATCH (n) WHERE n:NestController OR n:NestService OR n:NestModule${projectId ? " AND n.projectId = $projectId" : ""} RETURN labels(n)[0] AS typ, n.name AS name, n.path AS path, n.route AS route LIMIT ${kwLim}`;
+      const nestQ = requestedScopeId
+        ? `MATCH (n) WHERE (n:NestController OR n:NestService OR n:NestModule) AND ${whereProjectRepo("n", hasRepoScope)} RETURN labels(n)[0] AS typ, n.name AS name, n.path AS path, n.route AS route LIMIT ${kwLim}`
+        : `MATCH (n) WHERE n:NestController OR n:NestService OR n:NestModule RETURN labels(n)[0] AS typ, n.name AS name, n.path AS path, n.route AS route LIMIT ${kwLim}`;
       const routeQ = `MATCH (n:Route)${projFilter} RETURN n.path AS path, n.componentName AS componentName LIMIT ${kwLim}`;
       const domainQ = `MATCH (n:DomainConcept)${projFilter} RETURN n.name AS name, n.category AS category LIMIT ${kwLim}`;
       const sbQ = `MATCH (n:StorybookDoc)${projFilter} RETURN n.title AS title, n.sourcePath AS path LIMIT ${kwLim}`;
       const mdQ = `MATCH (n:MarkdownDoc)${projFilter} RETURN n.title AS title, n.sourcePath AS path LIMIT ${kwLim}`;
       const mergeRows = async (q: string) => {
         const rows: unknown[] = [];
-        await runOnProjectGraphs(projectId, async (g, ctx) => {
-          const p = projectId ? { params: { projectId: ctx.cypherProjectId } } : {};
+        await runOnProjectGraphs(graphRouteId, async (g, ctx) => {
+          const p = requestedScopeId
+            ? { params: { projectId: ctx.cypherProjectId, ...(hasRepoScope ? { repoId: scopeRepoId! } : {}) } }
+            : {};
           const res = (await g.query(q, p)) as { data?: unknown[] };
           for (const row of res.data ?? []) rows.push(row);
         });
@@ -1788,20 +1813,21 @@ async function fetchFileFromIngest(
         }
       }
     }
+    const vectorContributed = countAfterVector > 0;
     const modeLabel =
-      usedVector && countAfterVector > 0
+      vectorContributed
         ? " (vector)"
-        : usedVector && results.length > 0
-          ? " (keyword tras vector sin hits)"
-          : usedVector
-            ? " (vector sin hits)"
-            : " (keyword)";
+        : usedVector
+          ? results.length > 0
+            ? " (keyword tras vector sin coincidencias)"
+            : " (vector sin hits)"
+          : " (keyword)";
     const lines = [`## Búsqueda: "${query}"${modeLabel}`, "", ...results.slice(0, limit).map((r) => `- **${r.type}:** ${r.name}`)];
     if (results.length === 0) {
       lines.push(
         "No se encontraron resultados.",
         "",
-        "_Sugerencias: pasa `projectId` si usas sharding; ejecuta `POST /repositories/:id/embed-index` para búsqueda vectorial; usa términos del código (p. ej. `paciente`, `cita`, `.entity`) o Cypher como en otras secciones._",
+        "_Sugerencias: `projectId` puede ser el id del **repositorio** (`roots[].id`); el MCP resuelve el `projectId` de Falkor. Si sigue vacío: `POST /repositories/:id/embed-index`, términos del código (p. ej. `paciente`, `cita`) o Cypher._",
       );
     }
     return { content: [{ type: "text", text: lines.join("\n") }] };
@@ -2657,14 +2683,23 @@ async function fetchFileFromIngest(
         isError: true,
       };
     }
-    graph = await getGraph(resolvedProjectId ?? undefined);
     const ingestUrl = process.env.INGEST_URL ?? process.env.ARIADNESPEC_INGEST_URL ?? "http://localhost:3002";
+    /** Mismo criterio que semantic_search: el id puede ser proyecto Falkor o `repositories.id` (roots[].id). */
+    const requestedScopeId = resolvedProjectId;
+    let graphRouteId: string | undefined = requestedScopeId;
+    let scopeRepoId: string | undefined;
+    if (requestedScopeId) {
+      const scope = await resolveGraphScopeFromProjectOrRepoId(ingestUrl, requestedScopeId);
+      graphRouteId = scope.cypherProjectId;
+      scopeRepoId = scope.repoId;
+    }
+    const hasRepoScope = Boolean(scopeRepoId);
     const results: { type: string; name: string; projectId?: string }[] = [];
     let usedVector = false;
     try {
       const embedParams = new URLSearchParams();
       embedParams.set("text", query);
-      if (resolvedProjectId) embedParams.set("repositoryId", resolvedProjectId);
+      if (requestedScopeId) embedParams.set("repositoryId", requestedScopeId);
       const embedRes = await fetch(`${ingestUrl.replace(/\/$/, "")}/embed?${embedParams.toString()}`);
       if (embedRes.ok) {
         const embedJson = (await embedRes.json()) as { embedding?: number[]; vectorProperty?: string };
@@ -2674,51 +2709,69 @@ async function fetchFileFromIngest(
         if (valid && embedding!.length > 0) {
           const vecStr = `[${embedding!.join(",")}]`;
           const k = Math.min(Math.max(limit * 2, 20), mcpLimits.findSimilarVectorKMax);
-          const funcVecQ = `CALL db.idx.vector.queryNodes('Function', '${vecProp}', ${k}, vecf32(${vecStr})) YIELD node, score RETURN node.name AS name, node.path AS path, node.projectId AS projectId, score`;
-          const compVecQ = `CALL db.idx.vector.queryNodes('Component', '${vecProp}', ${k}, vecf32(${vecStr})) YIELD node, score RETURN node.name AS name, node.projectId AS projectId, score`;
+          const funcVecQ = `CALL db.idx.vector.queryNodes('Function', '${vecProp}', ${k}, vecf32(${vecStr})) YIELD node, score RETURN node.name AS name, node.path AS path, node.projectId AS projectId, node.repoId AS repoId, score`;
+          const compVecQ = `CALL db.idx.vector.queryNodes('Component', '${vecProp}', ${k}, vecf32(${vecStr})) YIELD node, score RETURN node.name AS name, node.projectId AS projectId, node.repoId AS repoId, score`;
           try {
-            const [fRes, cRes] = await Promise.all([
-              graph.query(funcVecQ) as Promise<{ data?: Array<Record<string, unknown>> }>,
-              graph.query(compVecQ) as Promise<{ data?: Array<Record<string, unknown>> }>,
-            ]);
             const seen = new Set<string>();
-            for (const row of (fRes.data ?? [])) {
-              const name = _rv<string>(row, "name");
-              const path = _rv<string>(row, "path");
-              const pid = _rv<string>(row, "projectId");
-              if (resolvedProjectId && pid !== resolvedProjectId) continue;
-              const key = `Function:${name}:${path}`;
-              if (seen.has(key)) continue;
-              seen.add(key);
-              results.push({ type: "Function", name: path ? `${name ?? ""} — ${path}` : (name ?? ""), projectId: pid });
-              if (results.length >= limit) break;
-            }
-            for (const row of (cRes.data ?? [])) {
-              if (results.length >= limit) break;
-              const name = _rv<string>(row, "name");
-              const pid = _rv<string>(row, "projectId");
-              if (resolvedProjectId && pid !== resolvedProjectId) continue;
-              const key = `Component:${name}`;
-              if (seen.has(key)) continue;
-              seen.add(key);
-              results.push({ type: "Component", name: name ?? "", projectId: pid });
-            }
-            usedVector = true;
-          } catch { /* vector index may not exist */ }
+            await runOnProjectGraphs(graphRouteId, async (g, ctx) => {
+              try {
+                const [fRes, cRes] = await Promise.all([
+                  g.query(funcVecQ) as Promise<{ data?: Array<Record<string, unknown>> }>,
+                  g.query(compVecQ) as Promise<{ data?: Array<Record<string, unknown>> }>,
+                ]);
+                for (const row of asObjRows(fRes.data)) {
+                  if (results.length >= limit) return;
+                  const name = _rv<string>(row, "name");
+                  const path = _rv<string>(row, "path");
+                  const pid = _rv<string>(row, "projectId");
+                  if (ctx.cypherProjectId && pid !== ctx.cypherProjectId) continue;
+                  if (scopeRepoId && _rv<string>(row, "repoId") !== scopeRepoId) continue;
+                  const key = `Function:${name}:${path}`;
+                  if (seen.has(key)) continue;
+                  seen.add(key);
+                  results.push({ type: "Function", name: path ? `${name ?? ""} — ${path}` : (name ?? ""), projectId: pid });
+                  if (results.length >= limit) break;
+                }
+                for (const row of asObjRows(cRes.data)) {
+                  if (results.length >= limit) break;
+                  const name = _rv<string>(row, "name");
+                  const pid = _rv<string>(row, "projectId");
+                  if (ctx.cypherProjectId && pid !== ctx.cypherProjectId) continue;
+                  if (scopeRepoId && _rv<string>(row, "repoId") !== scopeRepoId) continue;
+                  const key = `Component:${name}`;
+                  if (seen.has(key)) continue;
+                  seen.add(key);
+                  results.push({ type: "Component", name: name ?? "", projectId: pid });
+                }
+                usedVector = true;
+              } catch {
+                /* vector index may not exist on this shard */
+              }
+            });
+          } catch {
+            /* vector index may not exist */
+          }
         }
       }
     } catch { /* embed endpoint may not be configured */ }
     if (!usedVector) {
       const qLower = query.toLowerCase();
-      const projFilter = resolvedProjectId ? " WHERE n.projectId = $projectId" : "";
-      const compParams = resolvedProjectId ? { params: { projectId: resolvedProjectId } } : {};
+      const projFilter = requestedScopeId ? ` WHERE ${whereProjectRepo("n", hasRepoScope)}` : "";
+      const mergeRows = async (q: string) => {
+        const rows: unknown[] = [];
+        await runOnProjectGraphs(graphRouteId, async (g, ctx) => {
+          const p = requestedScopeId
+            ? { params: { projectId: ctx.cypherProjectId, ...(hasRepoScope ? { repoId: scopeRepoId! } : {}) } }
+            : {};
+          const res = (await g.query(q, p)) as { data?: unknown[] };
+          for (const row of res.data ?? []) rows.push(row);
+        });
+        return { data: rows as unknown[][] };
+      };
       const fsk = mcpLimits.findSimilarKeywordLimit;
       const compQ = `MATCH (n:Component)${projFilter} RETURN n.name AS name LIMIT ${fsk}`;
       const funcQ = `MATCH (n:Function)${projFilter} RETURN n.name AS name, n.path AS path LIMIT ${fsk}`;
-      const [compRes, funcRes] = await Promise.all([
-        graph.query(compQ, compParams) as Promise<{ data?: unknown[][] }>,
-        graph.query(funcQ, compParams) as Promise<{ data?: unknown[][] }>,
-      ]);
+      const [compRes, funcRes] = await Promise.all([mergeRows(compQ), mergeRows(funcQ)]);
       for (const row of asObjRows(compRes.data)) {
         if (results.length >= limit) break;
         const n = _rv<string>(row, "name");
