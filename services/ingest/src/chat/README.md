@@ -13,7 +13,7 @@ Arquitectura de agentes: **Coordinator** (clasificación LLM) → **CodeAnalysis
 - **`llm-unified.ts`** — `LLM_PROVIDER` / `LLM_MODEL` / `LLM_API_KEY` (y legacy `INGEST_LLM_PROVIDER`, etc.).
 - **`chat-llm-config.ts`** — Reexporta resolución ingest (openai | kimi).
 - **`kimi-chat.adapter.ts`** — Kimi Open Platform (`/v1/chat/completions` compatible OpenAI).
-- **`chat-llm.service.ts`** — callLlm, callLlmWithTools (OpenAI o Kimi según config).
+- **`chat-llm.service.ts`** — callLlm, callLlmWithTools (OpenAI o Kimi según config). **`CHAT_TOOL_CALL_MAX_TOKENS`** (default 8192): tope de salida en la fase con herramientas; valores bajos truncan `tool_calls` y el usuario puede ver solo Cypher a medias sin resultados.
 - **`chat-antipatterns.service.ts`** — Detección de anti-patrones: detectAntipatterns (spaghetti, god functions, circularImports, etc.)
 - **`chat-handlers.service.ts`** — Handlers: answer*, `semanticSearchFallback`, `getSemanticSearchDiagnostics` (por qué semantic devolvió 0 filas)
 
@@ -56,7 +56,7 @@ Sin `ORCHESTRATOR_URL`, el pipeline unificado legacy sigue en este servicio (`ru
 
 **Requisitos LLM:** **`LLM_API_KEY`** + **`LLM_PROVIDER`** (o claves legacy `OPENAI_*` / `MOONSHOT_*`); **`LLM_MODEL`** opcional (defaults `gpt-4o-mini` / `kimi-k2.5`). Con `ORCHESTRATOR_URL`, ask_codebase usa el orchestrator (mismas `LLM_*`).
 
-**Grounding (pipeline unificado `runUnifiedPipeline`):** el Synthesizer exige sección **## Evidencia** cuando se citan rutas; sin datos en contexto → mensaje **sin datos en índice para este alcance**. Fase 1→2: bloque JSON `retrieval_summary` antes del contexto bruto (`CHAT_TWO_PHASE`, desactivar con `0|false|off`). Filtros multi-root: `chat-scope.util.ts` (`hasExplicitChatScopeNarrowing`). Telemetría: `CHAT_TELEMETRY_LOG=1` o `true` — log JSON por request con `pathGroundingRatio`, `chat_scope_effective` (`preflightPathRepoApplied`, `inferred`, `scopeFilterActive`, etc.); ver **`docs/notebooklm/metricas-alcance-chat.md`**. Plan de modificación: tope `MODIFICATION_PLAN_MAX_FILES` (default 150).
+**Grounding (pipeline unificado `runUnifiedPipeline`):** el Synthesizer exige sección **## Evidencia** cuando se citan rutas; sin datos en contexto → mensaje **sin datos en índice para este alcance**. Si el retriever devuelve texto con un bloque fenced `cypher` pero sin `tool_calls`, se intenta **una ejecución fallback** de esa consulta antes de pasar al sintetizador. Fase 1→2: bloque JSON `retrieval_summary` antes del contexto bruto (`CHAT_TWO_PHASE`, desactivar con `0|false|off`). Filtros multi-root: `chat-scope.util.ts` (`hasExplicitChatScopeNarrowing`). Telemetría: `CHAT_TELEMETRY_LOG=1` o `true` — log JSON por request con `pathGroundingRatio`, `chat_scope_effective` (`preflightPathRepoApplied`, `inferred`, `scopeFilterActive`, etc.); ver **`docs/notebooklm/metricas-alcance-chat.md`**. Plan de modificación: tope `MODIFICATION_PLAN_MAX_FILES` (default 150).
 
 **Monorepos (apps/admin, apps/api, apps/worker):** `get_graph_summary` usa muestreo estratificado por prefijo; el prompt del retriever indica explorar NestController, NestService y todas las apps.
 

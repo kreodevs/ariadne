@@ -6,6 +6,14 @@ import { ingestChatLlmModel, resolveIngestChatLlmProvider } from './chat-llm-con
 import { openAiApiKeyForLlm } from './llm-unified';
 import { kimiIngestCallLlm, kimiIngestCallLlmWithTools } from './kimi-chat.adapter';
 
+/** Límite de salida en fase retriever (tool_calls + argumentos JSON pueden ser largos). */
+export function toolCallMaxTokensFromEnv(): number {
+  const raw = process.env.CHAT_TOOL_CALL_MAX_TOKENS?.trim();
+  const n = raw ? parseInt(raw, 10) : NaN;
+  if (Number.isFinite(n) && n >= 1024) return Math.min(n, 32_000);
+  return 8192;
+}
+
 @Injectable()
 export class ChatLlmService {
   async callLlm(
@@ -55,7 +63,7 @@ export class ChatLlmService {
       | { role: 'tool'; tool_call_id: string; content: string }
     >,
     tools: unknown[],
-    maxTokens = 1536,
+    maxTokens = toolCallMaxTokensFromEnv(),
   ): Promise<{
     content?: string;
     tool_calls?: Array<{ id: string; function: { name: string; arguments: string } }>;

@@ -8,6 +8,13 @@ import {
   type OpenAiStyleMessage,
 } from '../llm/orchestrator-llm.facade';
 
+function toolCallMaxTokensFromEnv(): number {
+  const raw = process.env.CHAT_TOOL_CALL_MAX_TOKENS?.trim();
+  const n = raw ? parseInt(raw, 10) : NaN;
+  if (Number.isFinite(n) && n >= 1024) return Math.min(n, 32_000);
+  return 8192;
+}
+
 @Injectable()
 export class OrchestratorLlmService {
   async callLlm(
@@ -20,7 +27,7 @@ export class OrchestratorLlmService {
   async callLlmWithTools(
     messages: OpenAiStyleMessage[],
     tools: unknown[],
-    maxTokens = 1536,
+    maxTokens = toolCallMaxTokensFromEnv(),
   ): Promise<{
     content?: string;
     reasoning_content?: string | null;

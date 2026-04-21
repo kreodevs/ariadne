@@ -3186,6 +3186,16 @@ PROHIBIDO: instrucciones genéricas tipo "revisa los controladores", "asegúrate
     return { gathered: chunks.join('\n\n'), results };
   }
 
+  /** Si el modelo volcó Cypher en markdown en vez de tool_calls, extrae una consulta ejecutable. */
+  private extractCypherFenceFromAssistant(content?: string | null): string | null {
+    if (!content?.trim()) return null;
+    const fenced = content.match(/```(?:cypher)?\s*([\s\S]*?)```/);
+    if (fenced) return fenced[1].trim();
+    const singleLine = content.match(/^MATCH\s[\s\S]+$/m);
+    if (singleLine) return singleLine[0].trim();
+    return null;
+  }
+
   /**
    * Fase 1 (Retriever): ReAct con tools — recopila datos vía Cypher, get_file_content, semantic_search.
    * Fase 2 (Synthesizer): LLM recibe contexto y produce respuesta SIEMPRE en forma humana (prosa, explicación).
@@ -3237,6 +3247,8 @@ Plan: 1) execute_cypher o get_graph_summary. 2) get_file_content en paths releva
 
 **Grounding:** No inventes rutas. Si 0 filas, repórtalo.
 
+**Herramientas:** No pegues Cypher en el chat ni en markdown; usa siempre **execute_cypher** (o get_graph_summary / get_file_content / semantic_search según aplique).
+
 NO escribas la respuesta final al usuario. Máx 4 turnos.
 </instrucciones>
 
@@ -3266,6 +3278,27 @@ ${SCHEMA}${EXAMPLES}
       const resp = await this.llm.callLlmWithTools(messages, tools);
 
       if (!resp.tool_calls?.length) {
+        const fenced = this.extractCypherFenceFromAssistant(resp.content);
+        if (fenced) {
+          try {
+            const r = await this.retrieverTools.executeTool(repositoryId, projectId, {
+              projectScope: options?.projectScope,
+              scope,
+              tool: 'execute_cypher',
+              arguments: { cypher: fenced },
+              fallbackMessage: message,
+            });
+            if (r.lastCypher) lastCypher = r.lastCypher;
+            collectedResults.push(...r.collectedRows);
+            collectedToolOutputs.push(
+              `[fallback: Cypher detectado en texto del modelo]\n${r.toolResult}`,
+            );
+          } catch (err) {
+            collectedToolOutputs.push(
+              `[fallback Cypher] Error: ${err instanceof Error ? err.message : String(err)}`,
+            );
+          }
+        }
         break;
       }
 
