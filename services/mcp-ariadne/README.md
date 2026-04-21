@@ -52,6 +52,8 @@ npm publish
 
 **`semantic_search`, `find_similar_implementations` y id de proyecto vs repo:** `list_known_projects` devuelve `roots[].id` (**repositorio**). En Falkor, los nodos llevan `projectId` = UUID del **proyecto** Ariadne cuando el repo está enlazado; `roots[].id` coincide con `repoId`. **`resolve-graph-scope.ts`** llama `GET /repositories/:id` en ingest, mapea al `cypherProjectId` correcto y, si aplica, añade `AND n.repoId = $repoId` para no mezclar repos en multi-root. Ambas herramientas enrutan con `runOnProjectGraphs`/`forEachProjectShardGraph` y el mismo filtro. Sin este paso, filtrar por `roots[].id` como si fuera `projectId` devolvía **0 filas** (MDD vacío pese a índice sano).
 
+**OpenAPI en `semantic_search`:** el vector suele cubrir `Function` / `Component` / `Document` / `MarkdownDoc`…; los nodos **`:OpenApiOperation`** (spec indexado) no llevan embedding. Tras vector/keyword, si hay cupo en `limit` se **mezclan** operaciones vía `MATCH (op:OpenApiOperation)` filtrando por proyecto/repo (mismos parámetros que el resto). Útil para consultas tipo API/routes/swagger aunque el vector devolviera hits de markdown.
+
 Variables: `FALKORDB_HOST`, `FALKORDB_PORT`, `FALKOR_SHARD_BY_PROJECT`, `FALKOR_SHARD_BY_DOMAIN`, `INGEST_URL` (obligatorio para routing completo y herramientas que listan proyectos).
 
 ### Límites de salida (defaults altos — información completa)

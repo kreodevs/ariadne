@@ -1813,6 +1813,40 @@ async function fetchFileFromIngest(
         }
       }
     }
+
+    /** OpenAPI indexado (:OpenApiOperation) no suele tener embedding → no aparece en vector; mezclar por Cypher si hay cupo. */
+    if (requestedScopeId && results.length < limit) {
+      const kwOp = Math.min(200, mcpLimits.semanticKeywordSubqueryLimit);
+      const openApiQ = `MATCH (op:OpenApiOperation) WHERE ${whereProjectRepo("op", hasRepoScope)} RETURN op.method AS method, op.pathTemplate AS pathTemplate, op.specPath AS specPath LIMIT ${kwOp}`;
+      const opRows: unknown[] = [];
+      await runOnProjectGraphs(graphRouteId, async (g, ctx) => {
+        const p = {
+          params: { projectId: ctx.cypherProjectId, ...(hasRepoScope ? { repoId: scopeRepoId! } : {}) },
+        };
+        const res = (await g.query(openApiQ, p)) as { data?: unknown[] };
+        for (const row of res.data ?? []) opRows.push(row);
+      });
+      const seenOp = new Set(results.map((r) => `${r.type}:${r.name}`));
+      const pushOp = (type: string, name: string) => {
+        if (results.length >= limit) return;
+        const k = `${type}:${name}`;
+        if (seenOp.has(k)) return;
+        seenOp.add(k);
+        results.push({ type, name });
+      };
+      const apiIntent = /\b(api|routes?|endpoints?|controllers?|services|openapi|swagger|nest|http)\b/i.test(query);
+      for (const row of asObjRows(opRows)) {
+        const method = _rv<string>(row, "method");
+        const pathTemplate = _rv<string>(row, "pathTemplate");
+        const specPath = _rv<string>(row, "specPath");
+        const blob = [method, pathTemplate, specPath].filter(Boolean).join(" ");
+        if (!blob) continue;
+        if (apiIntent || textMatchesQuery(blob, query)) {
+          pushOp("OpenApiOperation", `${method ?? ""} ${pathTemplate ?? ""} — ${specPath ?? ""}`.trim());
+        }
+      }
+    }
+
     const vectorContributed = countAfterVector > 0;
     const modeLabel =
       vectorContributed
