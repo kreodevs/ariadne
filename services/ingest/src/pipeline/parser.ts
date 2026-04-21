@@ -640,7 +640,10 @@ export function parseSource(
     }
   }
 
-  const classNodes = findNodesByType(root, 'class_declaration');
+  const classNodes = [
+    ...findNodesByType(root, 'class_declaration'),
+    ...findNodesByType(root, 'abstract_class_declaration'),
+  ];
   for (const node of classNodes) {
     const nameNode = node.childForFieldName('name');
     if (!nameNode) continue;
@@ -1124,9 +1127,30 @@ function collectFunctionsAndCalls(root: Parser.SyntaxNode, source: string, resul
 
 type NestKind = 'module' | 'controller' | 'service';
 
+/**
+ * Decoradores que aplican a la clase (no propiedades/métodos): hijos directos de la clase/abstract class,
+ * y decoradores del `export_statement` padre cuando el estilo es `@Entity()\\nexport class X` (tree-sitter
+ * asocia `@Entity` al export, no al cuerpo de la clase).
+ */
+function collectClassLevelDecorators(classNode: Parser.SyntaxNode): Parser.SyntaxNode[] {
+  const out: Parser.SyntaxNode[] = [];
+  for (let i = 0; i < classNode.childCount; i++) {
+    const ch = classNode.child(i);
+    if (ch?.type === 'decorator') out.push(ch);
+  }
+  const parent = classNode.parent;
+  if (parent?.type === 'export_statement') {
+    for (let i = 0; i < parent.childCount; i++) {
+      const ch = parent.child(i);
+      if (ch?.type === 'decorator') out.push(ch);
+    }
+  }
+  return out;
+}
+
 /** Detecta @Entity() de TypeORM (nombre del decorador Entity). */
 function hasTypeOrmEntityDecorator(classNode: Parser.SyntaxNode, source: string): boolean {
-  const decorators = findNodesByType(classNode, 'decorator');
+  const decorators = collectClassLevelDecorators(classNode);
   for (const dec of decorators) {
     const call = dec.childForFieldName('expression') ?? findNodesByType(dec, 'call_expression')[0];
     if (!call || call.type !== 'call_expression') {

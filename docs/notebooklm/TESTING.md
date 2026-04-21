@@ -4,7 +4,7 @@
 
 - **Framework:** Vitest (`npm test` / `npm run test:watch`).
 - **Incluye:** chat (scope, modification-plan, analytics, job-analysis), **`sync-path-filter`** (e2e / `INDEX_E2E`), etc.
-- **Variables útiles en tests de filtro:** `INDEX_TESTS`, `INDEX_E2E` (ver `src/providers/sync-path-filter.spec.ts`).
+- **Variables útiles en tests de filtro:** `INDEX_TESTS`, `INDEX_E2E`, `INDEX_MIGRATIONS` (ver `src/providers/sync-path-filter.spec.ts`).
 
 ## Frontend (`frontend`)
 

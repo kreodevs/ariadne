@@ -96,6 +96,7 @@ Tras cada sync (normal o resync), se ejecuta automáticamente `embed-index` si h
 - `NODE_ENV` — Si no es `production`, TypeORM usa `synchronize: true`
 - `INDEX_TESTS` — `true` o `1`: incluir archivos `*.test.*` y `*.spec.*` en el indexado (default: excluidos)
 - `INDEX_E2E` — `true` o `1`: incluir carpetas típicas de e2e (`e2e/`, `cypress/`, `playwright/`, `__tests__/`, etc.) y archivos `*.e2e.*` (default: excluidos; ver `sync-path-filter.ts`)
+- `INDEX_MIGRATIONS` — `true` o `1`: incluir rutas bajo un segmento de carpeta `migrations/` (p. ej. TypeORM `src/migrations/*.ts`; default: **excluidas** — suelen añadir ruido al contexto)
 - `TRUNCATE_PARSE_MAX_BYTES` — Límite de bytes para truncar archivos grandes antes de parsear (default 25000). Tree-sitter falla con muchos nodos hermanos; aumentar con cuidado.
 
 **Embeddings:** Si cambias de proveedor (OpenAI ↔ Google ↔ Kimi), reejecuta `POST /repositories/:id/embed-index`; las dimensiones deben ser coherentes con el índice vectorial y FalkorDB no admite mezclar vectores de distinta dimensión en la misma propiedad.

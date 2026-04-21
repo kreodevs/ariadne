@@ -5,6 +5,9 @@
  *
  * Carpetas típicas de **e2e** / Playwright / Cypress y archivos `*.e2e.*` se omiten por defecto.
  * Override: `INDEX_E2E=true` (mismo espíritu que `INDEX_TESTS` para specs).
+ *
+ * Carpetas **`migrations/`** (p. ej. TypeORM `src/migrations/*.ts`) suelen ser ruido en contexto legacy; se omiten por defecto.
+ * Override: `INDEX_MIGRATIONS=true`.
  */
 
 import { isProjectMarkdownPath, isStorybookDocumentationPath } from '../pipeline/storybook-documentation';
@@ -38,6 +41,9 @@ export const SYNC_E2E_STYLE_SEGMENTS = new Set([
   '__mocks__',
 ]);
 
+/** Segmento de ruta `migrations` (ORM); omitido salvo `INDEX_MIGRATIONS=1`. */
+export const SYNC_MIGRATION_STYLE_SEGMENTS = new Set(['migrations']);
+
 /** @deprecated Preferir `SYNC_ALWAYS_SKIP_SEGMENTS` y `SYNC_E2E_STYLE_SEGMENTS`. */
 export const SYNC_IGNORE_DIRS = new Set([
   ...SYNC_ALWAYS_SKIP_SEGMENTS,
@@ -57,10 +63,17 @@ export function indexE2ePathsFromEnv(): boolean {
   return v === 'true' || v === '1';
 }
 
+/** Si true, entran rutas bajo `.../migrations/` (p. ej. TypeORM). Default: excluidas. */
+export function indexMigrationsPathsFromEnv(): boolean {
+  const v = process.env.INDEX_MIGRATIONS?.trim().toLowerCase();
+  return v === 'true' || v === '1';
+}
+
 /** ¿Omitir este directorio al recorrer el árbol (clone / API)? */
 export function shouldSkipWalkDirectory(dirName: string): boolean {
   if (SYNC_ALWAYS_SKIP_SEGMENTS.has(dirName)) return true;
   if (!indexE2ePathsFromEnv() && SYNC_E2E_STYLE_SEGMENTS.has(dirName)) return true;
+  if (!indexMigrationsPathsFromEnv() && SYNC_MIGRATION_STYLE_SEGMENTS.has(dirName)) return true;
   return false;
 }
 
@@ -106,6 +119,9 @@ export function shouldSyncIndexPath(path: string): boolean {
   if (!indexE2ePathsFromEnv()) {
     if (pathHasSegmentIn(norm, SYNC_E2E_STYLE_SEGMENTS)) return false;
     if (E2E_FILE_RE.test(norm)) return false;
+  }
+  if (!indexMigrationsPathsFromEnv() && pathHasSegmentIn(norm, SYNC_MIGRATION_STYLE_SEGMENTS)) {
+    return false;
   }
 
   const ext = norm.slice(norm.lastIndexOf('.')).toLowerCase();

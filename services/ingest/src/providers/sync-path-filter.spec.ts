@@ -3,12 +3,14 @@ import {
   shouldSyncIndexPath,
   shouldSkipWalkDirectory,
   indexE2ePathsFromEnv,
+  indexMigrationsPathsFromEnv,
 } from './sync-path-filter';
 
 describe('sync-path-filter (e2e / tests)', () => {
   afterEach(() => {
     delete process.env.INDEX_E2E;
     delete process.env.INDEX_TESTS;
+    delete process.env.INDEX_MIGRATIONS;
   });
 
   it('omite carpetas e2e y similares en el path', () => {
@@ -34,6 +36,16 @@ describe('sync-path-filter (e2e / tests)', () => {
     process.env.INDEX_E2E = 'true';
     expect(shouldSkipWalkDirectory('e2e')).toBe(false);
     expect(shouldSkipWalkDirectory('node_modules')).toBe(true);
+  });
+
+  it('omite carpetas migrations/ (TypeORM, etc.) salvo INDEX_MIGRATIONS=1', () => {
+    expect(indexMigrationsPathsFromEnv()).toBe(false);
+    expect(shouldSyncIndexPath('src/migrations/1234567890123-CreatePayments.ts')).toBe(false);
+    expect(shouldSkipWalkDirectory('migrations')).toBe(true);
+    process.env.INDEX_MIGRATIONS = '1';
+    expect(indexMigrationsPathsFromEnv()).toBe(true);
+    expect(shouldSyncIndexPath('src/migrations/1234567890123-CreatePayments.ts')).toBe(true);
+    expect(shouldSkipWalkDirectory('migrations')).toBe(false);
   });
 
   it('sigue indexando código normal', () => {

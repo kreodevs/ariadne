@@ -123,7 +123,15 @@ RETURN a.path as fromPath, b.path as toPath
 
 Pregunta: "tablas de base de datos", "esquema BD", "modelos de datos", "entidades", "schema"
 → OPCION A (Prisma): execute_cypher nodos Model/Enum (m.source = 'prisma') y get_file_content del schema si hace falta el texto.
-→ OPCION B (TypeORM/u otro ORM): execute_cypher MATCH (m:Model) RETURN m.path; luego get_file_content en cada path.
+→ OPCION B (TypeORM): nodos :Model con m.source = 'typeorm'. **No uses** (File)-[:CONTAINS]->(Component) con "Entity" en el nombre: Component es UI/React. Listado sin migraciones:
+\`\`\`cypher
+MATCH (m:Model)
+WHERE m.projectId = $projectId AND m.source = 'typeorm'
+AND NOT (m.path CONTAINS '/migrations/')
+RETURN m.path as path, m.name as name
+ORDER BY m.path
+\`\`\`
+(Monorepo un repo: AND m.repoId = $repoId. Nodos viejos: OR m.path CONTAINS ".entity".)
 → OPCION C (monorepo): probar apps/api/prisma/schema.prisma, libs/db/prisma/schema.prisma, libs/*/entity*.ts, **/entities/*.ts
 
 Pregunta: "rutas de API", "endpoints", "listado de rutas REST"
