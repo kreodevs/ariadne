@@ -773,8 +773,8 @@ Sé conciso en los párrafos pedagógicos. Usa bullet points y tablas. Incluye T
     };
   }
 
-  /** Resumen de lo indexado en FalkorDB. full=true devuelve todos los ítems (sin LIMIT); si no, muestras de 12. repoScoped acota nodos al repo indicado (mismo projectId Falkor). */
-  async getGraphSummary(repositoryId: string, full = false, repoScoped = false): Promise<{
+  /** Resumen de lo indexado en FalkorDB. full=true (default) devuelve todos los ítems (sin LIMIT); full=false: muestras estratificadas. repoScoped acota nodos al repo indicado (mismo projectId Falkor). */
+  async getGraphSummary(repositoryId: string, full = true, repoScoped = false): Promise<{
     counts: Record<string, number>;
     samples: Record<string, unknown[]>;
   }> {

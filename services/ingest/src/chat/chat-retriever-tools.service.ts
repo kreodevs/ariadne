@@ -99,12 +99,12 @@ export class ChatRetrieverToolsService {
           const single =
             scope?.repoIds?.length === 1 ? scope.repoIds[0]! : undefined;
           summary = single
-            ? await this.cypher.getGraphSummary(single, false, true)
+            ? await this.cypher.getGraphSummary(single, true, true)
             : await this.cypher.getGraphSummaryForProject(projectId);
         } else {
-          summary = await this.cypher.getGraphSummary(repositoryId, false, true);
+          summary = await this.cypher.getGraphSummary(repositoryId, true, true);
         }
-        toolResult = `Conteos: ${JSON.stringify(summary.counts)}. Muestras: ${JSON.stringify(summary.samples, null, 2).slice(0, 3500)}...`;
+        toolResult = `Conteos: ${JSON.stringify(summary.counts)}. Muestras: ${JSON.stringify(summary.samples, null, 2)}`;
       } else if (fn === 'get_file_content') {
         const p = String(req.arguments.path ?? '').trim();
         if (!p) {

@@ -25,15 +25,15 @@ export class ChatCypherService {
   private static MONOREPO_PREFIXES = ['apps/admin', 'apps/api', 'apps/worker', 'apps/web', 'packages/'];
 
   /** Resumen por projectId directo (multi-root). Usado por analyzeByProject. */
-  async getGraphSummaryForProject(projectId: string, full = false): Promise<{
+  async getGraphSummaryForProject(projectId: string, full = true): Promise<{
     counts: Record<string, number>;
     samples: Record<string, unknown[]>;
   }> {
     return this.getGraphSummaryInternal(projectId, full);
   }
 
-  /** Resumen de lo indexado en FalkorDB. full=true devuelve todos los ítems (sin LIMIT); si no, muestras estratificadas por apps/ para monorepos. */
-  async getGraphSummary(repositoryId: string, full = false, repoScoped = false): Promise<{
+  /** Resumen de lo indexado en FalkorDB. full=true (default) devuelve todos los ítems (sin LIMIT); full=false: muestras estratificadas por apps/ para monorepos. */
+  async getGraphSummary(repositoryId: string, full = true, repoScoped = false): Promise<{
     counts: Record<string, number>;
     samples: Record<string, unknown[]>;
   }> {
@@ -45,7 +45,7 @@ export class ChatCypherService {
 
   private async getGraphSummaryInternal(
     projectId: string,
-    full = false,
+    full = true,
     repoIdFilter?: string,
   ): Promise<{
     counts: Record<string, number>;
@@ -251,10 +251,11 @@ export class ChatCypherService {
     }
   }
 
-  /** Formatea resultados para lectura humana (sin JSON crudo). */
-  formatResultsHuman(rows: unknown[], max = 25): string {
+  /** Formatea resultados para lectura humana (sin JSON crudo). Sin `max`: todas las filas (comportamiento por defecto en chat/MCP). */
+  formatResultsHuman(rows: unknown[], max?: number): string {
     if (rows.length === 0) return '';
-    const arr = rows.slice(0, max) as Record<string, unknown>[];
+    const cap = max ?? rows.length;
+    const arr = rows.slice(0, cap) as Record<string, unknown>[];
     const rawKeys = Array.from(new Set(arr.flatMap((r) => Object.keys(r)))).filter((k) => k !== 'projectId');
     const norm = (r: Record<string, unknown>) => {
       const out: Record<string, unknown> = {};
@@ -277,10 +278,10 @@ export class ChatCypherService {
       }
       const lines: string[] = [];
       for (const [cat, names] of byCategory) {
-        const uniq = Array.from(new Set(names)).slice(0, 15);
-        lines.push(`**${cat}**: ${uniq.join(', ')}${names.length > 15 ? '…' : ''}`);
+        const uniq = Array.from(new Set(names));
+        lines.push(`**${cat}**: ${uniq.join(', ')}`);
       }
-      const more = rows.length > max ? `\n\n_… ${rows.length - max} conceptos más (usa el chat para tipos de cotización)_` : '';
+      const more = rows.length > cap ? `\n\n_… ${rows.length - cap} conceptos más (usa el chat para tipos de cotización)_` : '';
       return lines.join('\n') + more;
     }
 
@@ -302,7 +303,7 @@ export class ChatCypherService {
         const short = path.split('/').pop() ?? path;
         lines.push(`**${short}**\n  ${names.join(', ')}`);
       }
-      const more = rows.length > max ? `\n\n_… y ${rows.length - max} más_` : '';
+      const more = rows.length > cap ? `\n\n_… y ${rows.length - cap} más_` : '';
       return lines.join('\n\n') + more;
     }
 
@@ -311,10 +312,10 @@ export class ChatCypherService {
         const n = norm(r);
         return keys.map((k) => String(n[k] ?? '—')).join(' · ');
       });
-      return lines.join('\n') + (rows.length > max ? `\n\n_… y ${rows.length - max} más_` : '');
+      return lines.join('\n') + (rows.length > cap ? `\n\n_… y ${rows.length - cap} más_` : '');
     }
 
-    return arr.map((r) => JSON.stringify(norm(r))).join('\n') + (rows.length > max ? `\n\n_… y ${rows.length - max} más_` : '');
+    return arr.map((r) => JSON.stringify(norm(r))).join('\n') + (rows.length > cap ? `\n\n_… y ${rows.length - cap} más_` : '');
   }
 
   /** Tabla markdown de Component (listados completos; una fila por componente indexado). */

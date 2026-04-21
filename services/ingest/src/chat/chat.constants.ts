@@ -243,7 +243,8 @@ export const EXPLORER_TOOLS_ALL = [
     type: 'function',
     function: {
       name: 'get_graph_summary',
-      description: 'Obtiene conteos y muestras de nodos indexados (File, Component, Function, Route). Útil para saber qué hay antes de buscar.',
+      description:
+        'Obtiene conteos y listados completos de nodos indexados (File, Component, Function, Route, Model, …), sin LIMIT por defecto. Para muestra acotada usar la API con full=0.',
       parameters: { type: 'object', properties: {}, required: [] },
     },
   },

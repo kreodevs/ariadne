@@ -383,7 +383,7 @@ export class ChatHandlersService {
     const repo = await this.repos.findOne(repositoryId);
     const projectId = await this.resolveProjectIdForRepo(repo.id);
 
-    const summary = await this.cypher.getGraphSummary(repositoryId, false, true);
+    const summary = await this.cypher.getGraphSummary(repositoryId, true, true);
     const routes = await this.cypher.executeCypher(
       projectId,
       `MATCH (r:Route) WHERE r.projectId = $projectId AND r.repoId = $repoId RETURN r.path as path, r.componentName as component ORDER BY r.path`,
@@ -972,7 +972,7 @@ ${SCHEMA}${EXAMPLES}
                 toolResult = `0 resultados. Crítica: ${critique}\nPrueba semantic_search o otra Cypher (términos más amplios).`;
               } else {
                 collectedResults = rows;
-                toolResult = `Resultados (${rows.length} filas):\n${this.cypher.formatResultsHuman(rows as Record<string, unknown>[], 15)}`;
+                toolResult = `Resultados (${rows.length} filas):\n${this.cypher.formatResultsHuman(rows as Record<string, unknown>[], rows.length)}`;
               }
             }
           } else if (fn.name === 'semantic_search') {
@@ -981,12 +981,12 @@ ${SCHEMA}${EXAMPLES}
             const semantic = await this.semanticSearchFallback(projectId, q);
             if (semantic.result.length > 0) {
               collectedResults = semantic.result;
-              toolResult = `Búsqueda semántica encontró ${semantic.result.length} resultados:\n${this.cypher.formatResultsHuman(semantic.result as Record<string, unknown>[], 15)}`;
+              toolResult = `Búsqueda semántica encontró ${semantic.result.length} resultados:\n${this.cypher.formatResultsHuman(semantic.result as Record<string, unknown>[], semantic.result.length)}`;
             } else {
               toolResult = 'Búsqueda semántica no encontró resultados (puede no haber embed-index). Prueba execute_cypher con CONTAINS.';
             }
           } else if (fn.name === 'get_graph_summary') {
-            const summary = await this.cypher.getGraphSummary(repositoryId, false, true);
+            const summary = await this.cypher.getGraphSummary(repositoryId, true, true);
             toolResult = `Conteos: ${JSON.stringify(summary.counts)}. Muestras: ${JSON.stringify(summary.samples, null, 2).slice(0, 1500)}...`;
           } else if (fn.name === 'get_file_content') {
             const args = JSON.parse(fn.arguments) as { path: string };

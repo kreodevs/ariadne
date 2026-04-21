@@ -55,7 +55,7 @@ export async function fetchDiagnosticoIntrinsicBase(params: {
   const scopeActive = isAnalyzeScopeActive(scope);
   const rp = { repoId: repositoryId };
 
-  const graphSummary = await cypher.getGraphSummary(repositoryId, false, true);
+  const graphSummary = await cypher.getGraphSummary(repositoryId, true, true);
 
   const allFilesRows = (await cypher.executeCypher(
     projectId,

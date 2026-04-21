@@ -7,6 +7,7 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.0.0/).
 
 ### Changed
 
+- **Chat / graph-summary / retriever:** `full=true` es el **default** en servicio y `GET .../graph-summary` (subconjunto solo con `full=0` o `full=false`). `formatResultsHuman` sin tope por defecto; `get_graph_summary` tool deja de truncar JSON de muestras. Cliente frontend: solo envía `full=0` cuando se pide muestra explícita. MCP: descripción de `find_similar_implementations.limit` alineada con env (`MCP_FIND_SIMILAR_*`).
 - **Ingest — parser TypeORM:** `@Entity()` en la línea **anterior** a `export class` vive en el nodo `export_statement` en tree-sitter; ahora se considera junto con decoradores de la clase, y se indexan también **`abstract_class_declaration`**. Vitest `parser-typeorm-entity.spec.ts`. Tras desplegar, **resync** del repo para repoblar `m:Model` con `source = 'typeorm'`.
 - **Ingest — indexado:** rutas bajo segmento de carpeta **`migrations/`** (p. ej. TypeORM) quedan **excluidas** por defecto para evitar ruido en contexto; **`INDEX_MIGRATIONS=1`** las vuelve a indexar (`sync-path-filter.ts`, Vitest).
 - **Documentación:** referencias de ayuda (`CHAT_Y_ANALISIS`, `ingestion_flow`, `bitbucket_webhook`, `DEPLOYMENT_DOKPLOY`, `TESTING`, caché/diagnóstico, observabilidad, métricas chat, RELIC, etc.) consolidadas bajo **`docs/notebooklm/`**; `copy-docs.sh`, `DocViewer.tsx`, README raíz, manuales y servicios actualizados.

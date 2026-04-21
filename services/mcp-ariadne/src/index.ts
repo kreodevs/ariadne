@@ -570,7 +570,7 @@ function createMcpServer(): Server {
         properties: {
           query: { type: "string", description: "Descripción de lo que se busca (ej. validación de email, parse de fecha)" },
           projectId: { type: "string", description: "ID del proyecto (opcional, limita ámbito)" },
-          limit: { type: "number", description: "Máximo resultados (default 10)" },
+          limit: { type: "number", description: `Máximo resultados (default env MCP_FIND_SIMILAR_DEFAULT, típ. ${mcpLimits.findSimilarDefault}; tope MCP_FIND_SIMILAR_MAX)` },
           currentFilePath: { type: "string", description: "Ruta del archivo (opcional)" },
         },
         required: ["query"],

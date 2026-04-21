@@ -27,9 +27,11 @@ export class ChatController {
     /** Solo nodos cuyo repoId coincide con :id (útil cuando varios repos comparten proyecto Falkor). */
     @Query('repoScoped') repoScoped?: string,
   ) {
+    /** Subconjunto solo con `full=0` o `full=false` explícitos; por defecto listado completo (sin LIMIT en samples). */
+    const fullSubsetOnly = full === '0' || full === 'false';
     return this.chatService.getGraphSummary(
       id,
-      full === '1' || full === 'true',
+      !fullSubsetOnly,
       repoScoped === '1' || repoScoped === 'true',
     );
   }

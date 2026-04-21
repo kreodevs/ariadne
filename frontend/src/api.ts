@@ -240,7 +240,8 @@ export const api = {
 
   getGraphSummary: (repoId: string, full?: boolean, repoScoped?: boolean) => {
     const q = new URLSearchParams();
-    if (full) q.set('full', '1');
+    /** API default: listado completo; solo enviar full=0 para muestra acotada. */
+    if (full === false) q.set('full', '0');
     if (repoScoped) q.set('repoScoped', '1');
     const qs = q.toString();
     return request<{ counts: Record<string, number>; samples: Record<string, unknown[]> }>(
