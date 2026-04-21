@@ -11,7 +11,8 @@ Capa desacoplada: **OpenAI**, **Google Gemini** o **Kimi (Moonshot)**.
 | `LLM_API_KEY` | Clave única; se usa para el proveedor elegido (junto con `LLM_PROVIDER` si solo hay esta clave). |
 | `LLM_TEMPERATURE` | Opcional (0–2). **Kimi:** si no se define, se envía **1** (requisito de muchos modelos). |
 | `LLM_MAX_CONCURRENT` | Máximo de llamadas LLM **en vuelo** a la vez (default **2**). `0` = sin límite de concurrencia. |
-| `LLM_MIN_REQUEST_INTERVAL_MS` | Separación mínima entre **inicios** de petición al proveedor (default **250** ms). `0` = sin espaciado. |
+| `LLM_MIN_REQUEST_INTERVAL_MS` | Separación mínima entre **inicios** de petición al proveedor (default **250** ms). Con Kimi y 429 TPM, prueba **1500–3000**. `0` = sin espaciado. |
+| `MOONSHOT_TPM_RETRY_COOLDOWN_MS` | Tras 429 TPM, espera base entre reintentos (default **58000** ms). Subir si el plan sigue muy justo. |
 | `LLM_THROTTLE_DISABLED` | `1` / `true` / `yes` desactiva throttling (tests o depuración). |
 
 ## Compatibilidad (sigue funcionando)
@@ -26,7 +27,7 @@ Prioridad modelo: **`LLM_MODEL`** → variables legacy por proveedor → default
 
 ## Kimi / Moonshot (rate limits)
 
-La API puede responder **429** con `rate_limit_reached_error` (p. ej. **TPM** del proyecto: tokens por minuto). El adaptador `kimi-llm.adapter.ts` reintenta automáticamente respuestas **429** y **503** con backoff (y respeta `Retry-After` si el upstream lo envía). Si tras varios intentos el cuota sigue superado, el error se propaga: hay que bajar volumen de prompts, `max_tokens`, concurrencia, o subir plan/límite en Moonshot.
+La API puede responder **429** con `rate_limit_reached_error` (**TPM**: tokens por minuto del proyecto). `kimi-llm.adapter.ts` reintenta **429** y **503** hasta **8** veces: si el cuerpo indica TPM, espera **~58 s + escalonado** (ventana móvil de 1 min) antes de reintentar; si no, backoff exponencial desde 3 s (tope 90 s). Respeta `Retry-After` si viene. Si tras todos los intentos sigue 429, el error sube al handler: reduce prompts / `max_tokens`, **`LLM_MAX_CONCURRENT=1`**, **`LLM_MIN_REQUEST_INTERVAL_MS`**, o sube cuota en [Moonshot límites](https://platform.moonshot.ai/docs/pricing/limits).
 
 ## Archivos
 

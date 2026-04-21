@@ -2,9 +2,45 @@ import { llmChatTemperature, moonshotApiKey, moonshotBaseUrl } from './moonshot-
 import { orchestratorLlmModel } from './orchestrator-llm-config';
 import type { OpenAiStyleMessage } from './openai-llm.adapter';
 
-/** Reintenta 429/503 (TPM/RPM u sobrecarga); respeta Retry-After si viene. */
-const MOONSHOT_RATE_LIMIT_ATTEMPTS = 6;
+/** Reintenta 429/503 (TPM/RPM u sobrecarga); TPM usa esperas largas (~ventana 1 min). */
+const MOONSHOT_RATE_LIMIT_ATTEMPTS = 8;
 const MOONSHOT_RETRY_BASE_MS = 3000;
+
+function isTpmOrTokenRateLimitBody(body: string): boolean {
+  return (
+    body.includes('rate_limit_reached') ||
+    body.includes('TPM') ||
+    body.includes('tokens per minute') ||
+    /project TPM rate limit/i.test(body)
+  );
+}
+
+function moonshotTpmCooldownMs(): number {
+  const raw = process.env.MOONSHOT_TPM_RETRY_COOLDOWN_MS?.trim();
+  const n = raw ? parseInt(raw, 10) : NaN;
+  if (Number.isFinite(n) && n >= 15_000) return n;
+  return 58_000;
+}
+
+/** Espera antes de reintentar 429/503 (Moonshot suele no mandar Retry-After en TPM). */
+function delayBeforeMoonshotRetry(
+  status: number,
+  errText: string,
+  attempt: number,
+  retryAfterHeader: string | null,
+): number {
+  if (retryAfterHeader) {
+    const sec = parseFloat(retryAfterHeader);
+    if (Number.isFinite(sec) && sec > 0) {
+      return Math.min(sec * 1000, 180_000);
+    }
+  }
+  if (status === 429 && isTpmOrTokenRateLimitBody(errText)) {
+    const base = moonshotTpmCooldownMs();
+    return Math.min(180_000, base + attempt * 12_000 + Math.random() * 2500);
+  }
+  return Math.min(MOONSHOT_RETRY_BASE_MS * 2 ** attempt + Math.random() * 1000, 90_000);
+}
 
 async function postChatCompletions(body: Record<string, unknown>): Promise<Response> {
   const key = moonshotApiKey();
@@ -31,14 +67,7 @@ async function postChatCompletions(body: Record<string, unknown>): Promise<Respo
       return new Response(errText, { status: res.status, headers: res.headers });
     }
 
-    const ra = res.headers.get('retry-after');
-    let delayMs: number;
-    if (ra) {
-      const sec = parseFloat(ra);
-      delayMs = Number.isFinite(sec) ? Math.min(sec * 1000, 120_000) : MOONSHOT_RETRY_BASE_MS * 2 ** attempt;
-    } else {
-      delayMs = Math.min(MOONSHOT_RETRY_BASE_MS * 2 ** attempt + Math.random() * 1000, 60_000);
-    }
+    const delayMs = delayBeforeMoonshotRetry(res.status, errText, attempt, res.headers.get('retry-after'));
     await new Promise((r) => setTimeout(r, delayMs));
   }
 }
