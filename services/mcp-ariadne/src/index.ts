@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * @fileoverview AriadneSpecs Oracle MCP Server. Transporte Streamable HTTP. Tools: get_component_graph, get_legacy_impact, validate_before_edit, semantic_search, etc. Config: PORT, MCP_AUTH_TOKEN, FALKORDB_HOST, INGEST_URL, ARIADNE_API_URL, ARIADNE_API_BEARER (JWT para GET /api/graph/* en Nest).
+ * @fileoverview AriadneSpecs Oracle MCP Server. Transporte Streamable HTTP. Tools: get_component_graph, get_legacy_impact, validate_before_edit, semantic_search, etc. Config: PORT, MCP_AUTH_TOKEN, FALKORDB_HOST, INGEST_URL, ARIADNE_API_URL, ARIADNE_API_BEARER (JWT para GET /api/graph/* en Nest). Observabilidad: MCP_TOOL_LOG (default on), MCP_TOOL_LOG_ARG_MAX.
  */
 
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
@@ -163,6 +163,117 @@ function validateAuth(req: IncomingMessage): string | null {
   return null;
 }
 
+const MCP_TOOL_LOG_ARG_MAX = (() => {
+  const v = Number(process.env.MCP_TOOL_LOG_ARG_MAX ?? "12000");
+  return Number.isFinite(v) && v > 0 ? Math.min(Math.floor(v), 500_000) : 12_000;
+})();
+
+function isMcpToolInvocationLoggingEnabled(): boolean {
+  const v = (process.env.MCP_TOOL_LOG ?? "1").trim().toLowerCase();
+  return v !== "0" && v !== "false" && v !== "off" && v !== "no";
+}
+
+function redactToolArgumentsForLog(value: unknown, depth = 0): unknown {
+  if (depth > 10) return "[max-depth]";
+  if (value == null) return value;
+  if (typeof value === "string") {
+    if (/^eyJ[A-Za-z0-9_-]+\.eyJ/.test(value)) return "[jwt:redacted]";
+    const max = 4000;
+    return value.length > max ? `${value.slice(0, max)}…(+${value.length - max} chars)` : value;
+  }
+  if (typeof value !== "object") return value;
+  if (Array.isArray(value)) return value.map((x) => redactToolArgumentsForLog(x, depth + 1));
+  const o = value as Record<string, unknown>;
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(o)) {
+    const lk = k.toLowerCase();
+    if (
+      lk.includes("token") ||
+      lk.includes("secret") ||
+      lk.includes("password") ||
+      lk === "authorization" ||
+      lk.includes("bearer")
+    ) {
+      out[k] = "[redacted]";
+    } else {
+      out[k] = redactToolArgumentsForLog(v, depth + 1);
+    }
+  }
+  return out;
+}
+
+function stringifyMcpToolLogPayload(obj: unknown): string {
+  try {
+    const s = JSON.stringify(obj);
+    if (s.length <= MCP_TOOL_LOG_ARG_MAX) return s;
+    return `${s.slice(0, MCP_TOOL_LOG_ARG_MAX)}…[log_truncated total_chars=${s.length}]`;
+  } catch {
+    return JSON.stringify({ error: "mcp_tool_log_stringify_failed" });
+  }
+}
+
+type McpCallToolResultShape = {
+  content?: Array<{ type?: string; text?: string; [key: string]: unknown }>;
+  isError?: boolean;
+  [key: string]: unknown;
+};
+
+function summarizeMcpToolResultForLog(result: McpCallToolResultShape): {
+  isError: boolean;
+  contentBlocks: number;
+  approxTextChars: number;
+  firstBlockType?: string;
+} {
+  const blocks = result.content ?? [];
+  let approxTextChars = 0;
+  for (const b of blocks) {
+    if (b && typeof b === "object" && typeof b.text === "string") approxTextChars += b.text.length;
+  }
+  return {
+    isError: Boolean(result.isError),
+    contentBlocks: blocks.length,
+    approxTextChars,
+    firstBlockType: blocks[0]?.type,
+  };
+}
+
+function mcpLogToolInvocationStart(toolName: string, args: unknown): void {
+  const argObj = args && typeof args === "object" ? (args as Record<string, unknown>) : {};
+  const line = stringifyMcpToolLogPayload({
+    ts: new Date().toISOString(),
+    event: "mcp_tool_call_start",
+    tool: toolName,
+    argumentKeys: Object.keys(argObj),
+    arguments: redactToolArgumentsForLog(args ?? {}),
+  });
+  console.log(`[mcp-ariadne] ${line}`);
+}
+
+function mcpLogToolInvocationEnd(toolName: string, startedMs: number, result: McpCallToolResultShape): void {
+  const ms = Date.now() - startedMs;
+  const line = stringifyMcpToolLogPayload({
+    ts: new Date().toISOString(),
+    event: "mcp_tool_call_end",
+    tool: toolName,
+    ms,
+    resultSummary: summarizeMcpToolResultForLog(result),
+  });
+  console.log(`[mcp-ariadne] ${line}`);
+}
+
+function mcpLogToolInvocationFailure(toolName: string, args: unknown, startedMs: number, err: unknown): void {
+  const ms = Date.now() - startedMs;
+  const line = stringifyMcpToolLogPayload({
+    ts: new Date().toISOString(),
+    event: "mcp_tool_call_error",
+    tool: toolName,
+    ms,
+    arguments: redactToolArgumentsForLog(args ?? {}),
+    error: err instanceof Error ? err.message : String(err),
+  });
+  console.error(`[mcp-ariadne] ${line}`);
+}
+
 const MCP_INSTRUCTIONS = `AriadneSpecs Oracle: herramientas de análisis de código indexado en FalkorDB.
 
 ## API Nest (paridad con el explorador)
@@ -184,7 +295,13 @@ function createMcpServer(): Server {
     { capabilities: { tools: {} }, instructions: MCP_INSTRUCTIONS }
   );
 
-  srv.setRequestHandler(ListToolsRequestSchema, async () => ({
+  srv.setRequestHandler(ListToolsRequestSchema, async () => {
+    if (isMcpToolInvocationLoggingEnabled()) {
+      console.log(
+        `[mcp-ariadne] ${JSON.stringify({ ts: new Date().toISOString(), event: "mcp_list_tools" })}`,
+      );
+    }
+    return {
   tools: [
     {
       name: "list_known_projects",
@@ -665,7 +782,8 @@ function createMcpServer(): Server {
       },
     },
   ],
-}));
+};
+  });
 
 type GraphType = Awaited<ReturnType<typeof getGraph>>;
 
@@ -1113,6 +1231,10 @@ async function fetchFileFromIngest(
 
   srv.setRequestHandler(CallToolRequestSchema, async (request) => {
   const { name, arguments: args } = request.params;
+  const __mcpCallStarted = Date.now();
+  if (isMcpToolInvocationLoggingEnabled()) mcpLogToolInvocationStart(name, args);
+  try {
+  const __mcpResult = await (async () => {
   let graph = await getGraph(undefined);
 
   if (name === "list_known_projects") {
@@ -3027,6 +3149,13 @@ async function fetchFileFromIngest(
     content: [{ type: "text", text: `Unknown tool: ${name}` }],
     isError: true,
   };
+  })();
+  if (isMcpToolInvocationLoggingEnabled()) mcpLogToolInvocationEnd(name, __mcpCallStarted, __mcpResult);
+  return __mcpResult;
+  } catch (__mcpErr) {
+  if (isMcpToolInvocationLoggingEnabled()) mcpLogToolInvocationFailure(name, args, __mcpCallStarted, __mcpErr);
+  throw __mcpErr;
+  }
   });
   return srv;
 }

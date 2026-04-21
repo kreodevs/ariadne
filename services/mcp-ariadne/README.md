@@ -4,6 +4,8 @@ Servidor MCP que expone herramientas de contexto sobre el grafo en FalkorDB.
 
 **Transporte:** Streamable HTTP (puerto 8080 o `PORT`). **Modo stateless:** un Server+Transport por request, evita el error "Server already initialized" cuando Cursor reintenta el handshake. Auth M2M opcional: `MCP_AUTH_TOKEN` → exige `Authorization: Bearer <token>`.
 
+**Logs de invocación (Dokploy / The Forge):** por defecto cada `tools/call` escribe en stdout JSON en una línea: `mcp_tool_call_start` (nombre, claves de argumentos, payload redactado/truncado), `mcp_tool_call_end` (ms, `resultSummary` con chars aprox. de texto devuelto), o `mcp_tool_call_error`. También `mcp_list_tools` al listar herramientas. Desactivar: `MCP_TOOL_LOG=0`. Límite de tamaño por línea: `MCP_TOOL_LOG_ARG_MAX` (default 12000).
+
 ## Publicar a npm
 
 ```bash
