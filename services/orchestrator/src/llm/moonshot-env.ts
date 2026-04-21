@@ -21,3 +21,27 @@ export function llmChatTemperature(_opts?: { workflowSimple?: boolean }): number
   }
   return 1;
 }
+
+/**
+ * TPM que este proceso intenta no superar en ventana 60s (estimado).
+ * Default bajo (~22k) para varias réplicas contra límite típico ~64k proyecto.
+ * Un solo pod: sube a ~55000. `0` desactiva la ventana TPM en el throttle.
+ */
+export function kimiTpmProcessBudget(): number {
+  const raw = process.env.LLM_KIMI_TPM_BUDGET?.trim();
+  if (raw === '0' || raw?.toLowerCase() === 'false' || raw?.toLowerCase() === 'off') return 0;
+  const n = raw ? parseInt(raw, 10) : NaN;
+  if (Number.isFinite(n) && n > 500) return Math.min(n, 2_000_000);
+  return 22_000;
+}
+
+/** Igual que `kimi-llm.adapter` al armar `max_tokens` (para estimar TPM). */
+export function kimiEffectiveMaxOutputTokens(requestedMax: number): number {
+  const floorRaw = process.env.LLM_KIMI_MIN_MAX_TOKENS?.trim();
+  let effectiveMax = requestedMax;
+  if (floorRaw) {
+    const floor = parseInt(floorRaw, 10);
+    if (Number.isFinite(floor) && floor > 0) effectiveMax = Math.max(requestedMax, floor);
+  }
+  return effectiveMax;
+}
