@@ -18,7 +18,7 @@ import {
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Skeleton } from '@/components/ui/skeleton';
 import { StatusBadge } from '@/components/StatusBadge';
-import { RefreshCw } from 'lucide-react';
+import { Loader2, RefreshCw } from 'lucide-react';
 
 const POLL_MS = 5000;
 
@@ -106,6 +106,9 @@ export function ActiveJobsQueue() {
   const [error, setError] = useState<string | null>(null);
   const [selectedJobIds, setSelectedJobIds] = useState<Set<string>>(new Set());
   const [deletingJobs, setDeletingJobs] = useState(false);
+  /** Repo en el que acabamos de llamar a sync/resync (evita doble submit). */
+  const [syncingRepoId, setSyncingRepoId] = useState<string | null>(null);
+  const [syncFeedback, setSyncFeedback] = useState<string | null>(null);
 
   const load = useCallback(() => {
     return api
@@ -178,6 +181,53 @@ export function ActiveJobsQueue() {
         setError(e instanceof Error ? e.message : String(e));
       } finally {
         setDeletingJobs(false);
+      }
+    },
+    [load],
+  );
+
+  const onTriggerSync = useCallback(
+    async (repositoryId: string) => {
+      setSyncingRepoId(repositoryId);
+      setSyncFeedback(null);
+      try {
+        const res = await api.triggerSync(repositoryId);
+        setSyncFeedback(
+          res.queued ? `Sync encolado (job ${res.jobId.slice(0, 8)}…)` : 'Sync solicitado',
+        );
+        await load();
+      } catch (e) {
+        setError(e instanceof Error ? e.message : String(e));
+      } finally {
+        setSyncingRepoId(null);
+      }
+    },
+    [load],
+  );
+
+  const onTriggerResync = useCallback(
+    async (repositoryId: string) => {
+      if (
+        !window.confirm(
+          '¿Re-sincronizar todo el repositorio? Se borrará el índice en Falkor para este repo y se volverá a indexar desde cero.',
+        )
+      ) {
+        return;
+      }
+      setSyncingRepoId(repositoryId);
+      setSyncFeedback(null);
+      try {
+        const res = await api.triggerResync(repositoryId);
+        const extra =
+          res.deletedNodes != null ? ` · ${res.deletedNodes} nodos eliminados del grafo` : '';
+        setSyncFeedback(
+          res.queued ? `Resync encolado (job ${res.jobId.slice(0, 8)}…)${extra}` : 'Resync solicitado',
+        );
+        await load();
+      } catch (e) {
+        setError(e instanceof Error ? e.message : String(e));
+      } finally {
+        setSyncingRepoId(null);
       }
     },
     [load],
@@ -258,6 +308,12 @@ export function ActiveJobsQueue() {
           </CardDescription>
         </CardHeader>
         <CardContent>
+          {syncFeedback && (
+            <Alert className="mb-4 border-green-500/50 bg-green-500/10">
+              <AlertTitle>Listo</AlertTitle>
+              <AlertDescription>{syncFeedback}</AlertDescription>
+            </Alert>
+          )}
           {error && (
             <Alert variant="destructive" className="mb-4">
               <AlertTitle>Error</AlertTitle>
@@ -394,6 +450,32 @@ export function ActiveJobsQueue() {
                         </TableCell>
                         <TableCell className="text-right whitespace-nowrap">
                           <div className="flex justify-end gap-1 flex-wrap">
+                            <Button
+                              variant="secondary"
+                              size="sm"
+                              title="Encola un sync completo (misma acción que en la ficha del repo)"
+                              disabled={deletingJobs || syncingRepoId === j.repositoryId}
+                              onClick={() => void onTriggerSync(j.repositoryId)}
+                            >
+                              {syncingRepoId === j.repositoryId ? (
+                                <>
+                                  <Loader2 className="w-4 h-4 animate-spin mr-1" aria-hidden />
+                                  Encolar…
+                                </>
+                              ) : (
+                                'Encolar sync'
+                              )}
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="border-orange-500/60 text-orange-600 dark:text-orange-400"
+                              title="Borra nodos del grafo para este repo y encola reindexación completa"
+                              disabled={deletingJobs || syncingRepoId === j.repositoryId}
+                              onClick={() => void onTriggerResync(j.repositoryId)}
+                            >
+                              Resync
+                            </Button>
                             <Button variant="ghost" size="sm" asChild>
                               <Link to={`/repos/${j.repositoryId}`}>Ver repo</Link>
                             </Button>
