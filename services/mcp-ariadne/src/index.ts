@@ -574,7 +574,7 @@ function createMcpServer(): Server {
     {
       name: "ask_codebase",
       description:
-        "Pregunta en lenguaje natural sobre el código. Orquestación agéntica: Coordinador (grafo Falkor + archivos físicos: Prisma, Swagger/OpenAPI, package.json, .env.example, tsconfig) → Validador (cross-check grafo vs archivos). responseMode=default: respuesta en prosa (sintetizador). responseMode=evidence_first: answer = JSON MDD (7 claves) para SDD compacto / LegacyCoordinator (The Forge: seguir usando evidence_first). responseMode=raw_evidence: sin sintetizador ni MDD — answer = JSON parseable (mode, deterministicRetriever?, gatheredContext, collectedResults, cypher); The Forge debe JSON.parse(answer) y sintetizar allí. Opcional deterministicRetriever=true (solo con raw_evidence): retrieval determinista en ingest sin LLM ReAct (graph_summary → semantic_search → muestra paths). Sin deterministicRetriever, retrieval sigue con LLM + tools. Requiere INGEST_URL; LLM en retrieval solo si no usas deterministicRetriever+raw_evidence. Para filesToModify usa get_modification_plan. Routing (menos tokens/latencia): si ya conoces path o símbolo, usa get_file_content / get_definitions / get_references / get_component_graph en lugar de esta tool; en monorepo pasa scope (repoIds=roots[].id, prefijos) o projectId=roots[].id del repo objetivo. Ver docs mcp_server_specs — ask_codebase — Política de routing.",
+        "Pregunta en lenguaje natural sobre el código. **Default MCP (sin `responseMode`):** `raw_evidence` + `deterministicRetriever: true` — mismo retrieve barato que The Forge «evidencia bruta» (JSON para sintetizar fuera; sin LLM en retrieve). responseMode=default: prosa + sintetizador + ReAct en retrieve. responseMode=evidence_first: answer = JSON MDD (7 claves). responseMode=raw_evidence: JSON parseable; con `deterministicRetriever: false` fuerza ReAct+LLM en retrieve. Requiere INGEST_URL. Para filesToModify usa get_modification_plan. Routing (menos tokens/latencia): si ya conoces path o símbolo, usa get_file_content / get_definitions / get_references / get_component_graph en lugar de esta tool; en monorepo pasa scope (repoIds=roots[].id, prefijos) o projectId=roots[].id del repo objetivo. Ver docs mcp_server_specs — ask_codebase — Política de routing.",
       inputSchema: {
         type: "object" as const,
         properties: {
@@ -599,12 +599,12 @@ function createMcpServer(): Server {
             type: "string",
             enum: ["default", "evidence_first", "raw_evidence"],
             description:
-              "default: prosa + sintetizador. evidence_first: answer = JSON MDD (7 secciones) — SDD compacto. raw_evidence: answer = JSON { mode, deterministicRetriever?, gatheredContext, collectedResults, cypher }; cliente (The Forge) parsea y sintetiza. Sin segunda pasada LLM en ingest/orchestrator para la respuesta final.",
+              "Omitido → **raw_evidence** (igual que The Forge evidencia bruta). default: prosa + sintetizador. evidence_first: JSON MDD 7 secciones. raw_evidence: JSON crudo; con deterministicRetriever por defecto true salvo que pases false.",
           },
           deterministicRetriever: {
             type: "boolean",
             description:
-              "Solo con responseMode raw_evidence. Si true: sin LLM en la fase de retrieval (secuencia fija de herramientas en ingest). Ignorado si responseMode no es raw_evidence.",
+              "Solo aplica con responseMode raw_evidence (incluido el default cuando omites responseMode). Default **true** (retrieve fijo sin LLM). Pon **false** para ReAct + LLM en retrieve.",
           },
         },
         required: ["question"],
@@ -2341,17 +2341,25 @@ async function fetchFileFromIngest(
     if (projectId && currentFilePath) {
       scope = await augmentScopeWithInferredRepo(projectId, currentFilePath, scope);
     }
-    const rm = (args?.responseMode as string | undefined)?.trim();
-    const responseMode =
-      rm === "evidence_first" ? "evidence_first" : rm === "raw_evidence" ? "raw_evidence" : undefined;
+    const rm = ((args?.responseMode as string) ?? "").trim().toLowerCase();
+    const responseMode: "default" | "evidence_first" | "raw_evidence" =
+      rm === "evidence_first"
+        ? "evidence_first"
+        : rm === "raw_evidence"
+          ? "raw_evidence"
+          : rm === "default"
+            ? "default"
+            : !rm
+              ? "raw_evidence"
+              : "default";
+    const deterministicRetriever =
+      responseMode === "raw_evidence" ? args?.deterministicRetriever !== false : undefined;
     const body = JSON.stringify({
       message: question,
       ...(scope && Object.keys(scope).length > 0 ? { scope } : {}),
       ...(typeof args?.twoPhase === "boolean" ? { twoPhase: args.twoPhase } : {}),
-      ...(responseMode ? { responseMode } : {}),
-      ...(responseMode === "raw_evidence" && args?.deterministicRetriever === true
-        ? { deterministicRetriever: true }
-        : {}),
+      responseMode,
+      ...(responseMode === "raw_evidence" ? { deterministicRetriever } : {}),
     });
     const askTimeoutMs = (() => {
       const raw = process.env.MCP_ASK_CODEBASE_TIMEOUT_MS?.trim();

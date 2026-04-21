@@ -8,6 +8,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { FalkorDB } from 'falkordb';
 import { IndexedFile } from '../repositories/entities/indexed-file.entity';
+import { cypherSafe } from 'ariadne-common';
 import { getFalkorConfig, graphNameForProject, isProjectShardingEnabled } from '../pipeline/falkor';
 import { RepositoriesService } from '../repositories/repositories.service';
 import { FileContentService } from '../repositories/file-content.service';
@@ -3225,7 +3226,7 @@ PROHIBIDO: instrucciones genéricas tipo "revisa los controladores", "asegúrate
 
   /**
    * Retrieval fijo (sin ReAct LLM) para `responseMode: raw_evidence` + `deterministicRetriever`.
-   * Orden: get_graph_summary → semantic_search(query=mensaje) → muestra de paths File (límite `CHAT_DETERMINISTIC_FILE_SAMPLE_LIMIT`).
+   * Orden: get_graph_summary → semantic_search(query=mensaje) → paths `File` relacionados con persistencia (Prisma, `*.entity.ts`, carpetas `entities/`, datasource, migraciones, doc índice esquema; límite `CHAT_DETERMINISTIC_FILE_SAMPLE_LIMIT`).
    */
   private async runDeterministicRetrieverForRawEvidence(
     repositoryId: string,
@@ -3263,9 +3264,23 @@ PROHIBIDO: instrucciones genéricas tipo "revisa los controladores", "asegúrate
       fallbackMessage: q,
       evidenceVerbosity,
     });
-    const limRaw = parseInt(process.env.CHAT_DETERMINISTIC_FILE_SAMPLE_LIMIT ?? '120', 10);
-    const fileLimit = Math.min(500, Math.max(20, Number.isFinite(limRaw) ? limRaw : 120));
-    const cypher = `MATCH (f:File {projectId: $projectId}) RETURN f.path AS path LIMIT ${fileLimit}`;
+    const limRaw = parseInt(process.env.CHAT_DETERMINISTIC_FILE_SAMPLE_LIMIT ?? '400', 10);
+    const fileLimit = Math.min(2000, Math.max(20, Number.isFinite(limRaw) ? limRaw : 400));
+    /** Alineado con `schema-relational-rag-doc.ts` (path virtual del MarkdownDoc de esquema). */
+    const schemaRagVirtualPath = 'ariadne-internal/relational-schema-rag-index.md';
+    const p = 'toLower(f.path)';
+    const dbRelatedWhere = `(
+  ${p} ENDS WITH '.prisma'
+  OR ${p} ENDS WITH '.entity.ts' OR ${p} ENDS WITH '.entity.tsx'
+  OR ${p} CONTAINS '/entities/'
+  OR ${p} ENDS WITH 'datasource.ts'
+  OR ${p} CONTAINS '/migrations/' OR ${p} CONTAINS '/migration/'
+  OR f.path = ${cypherSafe(schemaRagVirtualPath)}
+)`;
+    const matchFile = ps
+      ? `MATCH (f:File {projectId: $projectId}) WHERE ${dbRelatedWhere}`
+      : `MATCH (f:File {projectId: $projectId, repoId: ${cypherSafe(repositoryId)}}) WHERE ${dbRelatedWhere}`;
+    const cypher = `${matchFile} RETURN DISTINCT f.path AS path ORDER BY f.path LIMIT ${fileLimit}`;
     await pushTool('file_path_sample', {
       projectScope: ps,
       scope,
