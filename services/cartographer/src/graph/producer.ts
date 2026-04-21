@@ -162,6 +162,13 @@ export function buildCypherForFile(
     statements.push(
       `MATCH (f:File {path: ${cypherSafe(path)}, projectId: ${pid}}) MATCH (c:NestController {path: ${cypherSafe(path)}, name: ${cypherSafe(c.name)}, projectId: ${pid}}) MERGE (f)-[:CONTAINS]->(c)`
     );
+    for (const role of c.roles ?? []) {
+      const roleSafe = cypherSafe(role);
+      statements.push(`MERGE (ar:AccessRole {name: ${roleSafe}, projectId: ${pid}})`);
+      statements.push(
+        `MATCH (nc:NestController {path: ${cypherSafe(path)}, name: ${cypherSafe(c.name)}, projectId: ${pid}}) MATCH (ar:AccessRole {name: ${roleSafe}, projectId: ${pid}}) MERGE (nc)-[:ALLOWS_ACCESS_ROLE]->(ar)`
+      );
+    }
   }
   for (const s of parsed.nestServices ?? []) {
     statements.push(`MERGE (s:NestService {path: ${cypherSafe(path)}, name: ${cypherSafe(s.name)}, projectId: ${pid}})`);

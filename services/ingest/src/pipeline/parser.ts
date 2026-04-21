@@ -108,6 +108,8 @@ export interface NestControllerInfo {
   name: string;
   /** Route prefix from @Controller('path') if present. */
   route?: string;
+  /** Literales / identificadores de `@Roles()` a nivel clase o métodos (MVP grafo AccessRole). */
+  roles?: string[];
 }
 
 /** NestJS @Injectable() / service class. */
@@ -671,7 +673,10 @@ export function parseSource(
     if (isDataModelClass(name, path, hasJsx, extendsReact)) {
       result.models.push({ name, description });
     } else if (isReactComponentName(name)) {
-      result.components.push({ name, type: 'Class', isLegacy, description });
+      const allowClassAsReactComponent = hasJsx || normPath.endsWith('.tsx') || extendsReact;
+      if (allowClassAsReactComponent) {
+        result.components.push({ name, type: 'Class', isLegacy, description });
+      }
     }
   }
 
@@ -1191,6 +1196,84 @@ function extractTypeOrmColumnPropertyNames(classNode: Parser.SyntaxNode, source:
   return names;
 }
 
+/** Callee del decorador: `Roles` en `@Roles()`, `Foo` en `@Foo.bar()`. */
+function getDecoratorCallExpressionCalleeName(dec: Parser.SyntaxNode, source: string): string | null {
+  const call = dec.childForFieldName('expression') ?? findNodesByType(dec, 'call_expression')[0];
+  if (!call || call.type !== 'call_expression') {
+    const id = dec.childForFieldName('expression') ?? findNodesByType(dec, 'identifier')[0];
+    if (id?.type === 'identifier') return getNodeText(source, id);
+    return null;
+  }
+  const callee = call.childForFieldName('function') ?? call.childForFieldName('callee');
+  if (!callee) return null;
+  if (callee.type === 'identifier') return getNodeText(source, callee);
+  if (callee.type === 'member_expression') {
+    const prop = callee.childForFieldName('property') ?? callee.lastNamedChild;
+    return prop ? getNodeText(source, prop) : null;
+  }
+  return null;
+}
+
+function extractRoleLiteralsFromArgTree(node: Parser.SyntaxNode, source: string, out: Set<string>): void {
+  if (node.type === 'string' || node.type === 'template_string') {
+    const t = getNodeText(source, node).replace(/^['"`]|['"`]$/g, '').trim();
+    if (t.length > 0 && t.length < 200) out.add(t);
+    return;
+  }
+  if (node.type === 'array') {
+    for (let i = 0; i < node.childCount; i++) {
+      const c = node.child(i);
+      if (!c || c.type === '[' || c.type === ']' || c.type === ',') continue;
+      extractRoleLiteralsFromArgTree(c, source, out);
+    }
+    return;
+  }
+  if (node.type === 'identifier' || node.type === 'member_expression' || node.type === 'subscript_expression') {
+    const t = getNodeText(source, node).trim();
+    if (t.length > 0 && t.length < 200) out.add(t);
+  }
+}
+
+function extractRoleLiteralsFromArgumentsNode(argsNode: Parser.SyntaxNode | null, source: string, out: Set<string>): void {
+  if (!argsNode) return;
+  for (let i = 0; i < argsNode.childCount; i++) {
+    const arg = argsNode.child(i);
+    if (!arg || arg.type === ',' || arg.type === '(' || arg.type === ')') continue;
+    extractRoleLiteralsFromArgTree(arg, source, out);
+  }
+}
+
+function extractRolesFromRolesDecorator(dec: Parser.SyntaxNode, source: string): string[] {
+  if (getDecoratorCallExpressionCalleeName(dec, source) !== 'Roles') return [];
+  const call = dec.childForFieldName('expression') ?? findNodesByType(dec, 'call_expression')[0];
+  if (!call || call.type !== 'call_expression') return [];
+  const args = call.childForFieldName('arguments');
+  const out = new Set<string>();
+  extractRoleLiteralsFromArgumentsNode(args, source, out);
+  return [...out];
+}
+
+/** `@Roles` en clase (incl. export) y en métodos del controlador. */
+function collectNestRolesForController(classNode: Parser.SyntaxNode, source: string): string[] {
+  const acc = new Set<string>();
+  for (const dec of collectClassLevelDecorators(classNode)) {
+    for (const r of extractRolesFromRolesDecorator(dec, source)) acc.add(r);
+  }
+  const body = classNode.childForFieldName('body');
+  if (body) {
+    for (let i = 0; i < body.childCount; i++) {
+      const ch = body.child(i);
+      if (!ch || ch.type !== 'method_definition') continue;
+      for (let j = 0; j < ch.childCount; j++) {
+        const mch = ch.child(j);
+        if (mch?.type !== 'decorator') break;
+        for (const r of extractRolesFromRolesDecorator(mch, source)) acc.add(r);
+      }
+    }
+  }
+  return [...acc];
+}
+
 function getNestDecoratorKind(classNode: Parser.SyntaxNode, source: string): NestKind | null {
   const decorators = findNodesByType(classNode, 'decorator');
   for (const dec of decorators) {
@@ -1286,7 +1369,11 @@ function collectNestFromClass(
       route = getFirstStringArg(call, source);
       break;
     }
-    result.nestControllers.push(route !== undefined ? { name: className, route } : { name: className });
+    const roles = collectNestRolesForController(classNode, source);
+    const ctrl: NestControllerInfo =
+      route !== undefined ? { name: className, route } : { name: className };
+    if (roles.length) ctrl.roles = roles;
+    result.nestControllers.push(ctrl);
     return;
   }
   if (kind === 'service') {

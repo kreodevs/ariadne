@@ -354,6 +354,15 @@ export function buildCypherForFile(
     statements.push(
       `MATCH (f:File {path: ${cypherSafe(path)}, projectId: ${pid}, repoId: ${rid}}) MATCH (c:NestController {path: ${cypherSafe(path)}, name: ${cypherSafe(c.name)}, projectId: ${pid}, repoId: ${rid}}) MERGE (f)-[:CONTAINS]->(c)`,
     );
+    for (const role of c.roles ?? []) {
+      const roleSafe = cypherSafe(role);
+      statements.push(
+        `MERGE (ar:AccessRole {name: ${roleSafe}, projectId: ${pid}, repoId: ${rid}})`,
+      );
+      statements.push(
+        `MATCH (nc:NestController {path: ${cypherSafe(path)}, name: ${cypherSafe(c.name)}, projectId: ${pid}, repoId: ${rid}}) MATCH (ar:AccessRole {name: ${roleSafe}, projectId: ${pid}, repoId: ${rid}}) MERGE (nc)-[:ALLOWS_ACCESS_ROLE]->(ar)`,
+      );
+    }
   }
   for (const s of parsed.nestServices ?? []) {
     statements.push(`MERGE (s:NestService {path: ${cypherSafe(path)}, name: ${cypherSafe(s.name)}, projectId: ${pid}, repoId: ${rid}})`);
@@ -541,6 +550,9 @@ const FALKOR_INDEXES = [
   'CREATE INDEX FOR (md:MarkdownDoc) ON (md.projectId)',
   'CREATE INDEX FOR (md:MarkdownDoc) ON (md.projectId, md.repoId)',
   'CREATE INDEX FOR (md:MarkdownDoc) ON (md.sourcePath)',
+  'CREATE INDEX FOR (ar:AccessRole) ON (ar.projectId)',
+  'CREATE INDEX FOR (ar:AccessRole) ON (ar.projectId, ar.repoId)',
+  'CREATE INDEX FOR (ar:AccessRole) ON (ar.name)',
 ];
 
 /**
@@ -571,6 +583,7 @@ const REPOID_BACKFILL_LABELS = [
   'NestModule',
   'NestController',
   'NestService',
+  'AccessRole',
   'StrapiContentType',
   'StrapiController',
   'StrapiService',
