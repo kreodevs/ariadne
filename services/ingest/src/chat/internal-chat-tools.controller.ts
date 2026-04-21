@@ -34,8 +34,25 @@ export class InternalChatToolsController {
 
   /**
    * POST /internal/repositories/:repoId/retriever-tool
-   * Body: { projectScope?, scope?, tool, arguments, fallbackMessage? }
+   * Body: { projectScope?, scope?, tool, arguments, fallbackMessage?, evidenceVerbosity?: 'default'|'full' }
    */
+  /**
+   * POST /internal/repositories/:repoId/raw-evidence-deterministic
+   * Body: { message, scope?, projectScope? } — misma secuencia que `deterministicRetriever` en chat (sin LLM).
+   */
+  @Post(':repoId/raw-evidence-deterministic')
+  async rawEvidenceDeterministic(
+    @Param('repoId') repoId: string,
+    @Body() body: { message: string; scope?: ChatScope; projectScope?: boolean },
+  ): Promise<{ gatheredContext: string; collectedResults: unknown[]; lastCypher: string }> {
+    await this.repos.findOne(repoId);
+    return this.chat.gatherDeterministicRawEvidence(repoId, {
+      message: body.message ?? '',
+      scope: body.scope,
+      projectScope: body.projectScope,
+    });
+  }
+
   @Post(':repoId/retriever-tool')
   async retrieverTool(
     @Param('repoId') repoId: string,
@@ -49,6 +66,7 @@ export class InternalChatToolsController {
       tool: body.tool,
       arguments: body.arguments ?? {},
       fallbackMessage: body.fallbackMessage,
+      evidenceVerbosity: body.evidenceVerbosity,
     };
     return this.retrieverTools.executeTool(repoId, projectId, req);
   }

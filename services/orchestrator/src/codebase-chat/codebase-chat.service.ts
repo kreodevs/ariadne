@@ -25,7 +25,9 @@ export interface ChatRequest {
   history?: ChatMessage[];
   scope?: ChatScope;
   twoPhase?: boolean;
-  responseMode?: 'default' | 'evidence_first';
+  responseMode?: 'default' | 'evidence_first' | 'raw_evidence';
+  /** Solo con `responseMode: raw_evidence`: retrieval fijo en ingest sin LLM ReAct (orchestrator delega vía internal). */
+  deterministicRetriever?: boolean;
   /** Opcional: observabilidad / reanudación en Redis (codebase:chat:{threadId}). */
   threadId?: string;
 }
@@ -81,6 +83,8 @@ const CodebaseChatStateAnnotation = Annotation.Root({
   scope: Annotation<ChatScope | undefined>({ value: lastValue, default: () => undefined }),
   useTwoPhase: Annotation<boolean>({ value: lastValue, default: () => true }),
   evidenceFirst: Annotation<boolean>({ value: lastValue, default: () => false }),
+  rawEvidence: Annotation<boolean>({ value: lastValue, default: () => false }),
+  deterministicRetriever: Annotation<boolean>({ value: lastValue, default: () => false }),
   threadId: Annotation<string | undefined>({ value: lastValue, default: () => undefined }),
   lastCypher: Annotation<string | undefined>({ value: lastValue, default: () => undefined }),
   collectedResults: Annotation<unknown[]>({
@@ -110,8 +114,9 @@ export class CodebaseChatService {
       .slice(-8)
       .map((m) => `${m.role}: ${m.content}`)
       .join('\n');
-    const evidenceFirst = req.responseMode === 'evidence_first';
-    const useTwoPhase = evidenceFirst ? true : (req.twoPhase ?? defaultTwoPhaseFromEnv());
+    const rawEvidence = req.responseMode === 'raw_evidence';
+    const evidenceFirst = !rawEvidence && req.responseMode === 'evidence_first';
+    const useTwoPhase = rawEvidence || evidenceFirst ? true : (req.twoPhase ?? defaultTwoPhaseFromEnv());
     const initial: CodebaseChatState = {
       repositoryId,
       projectId: repositoryId,
@@ -121,6 +126,8 @@ export class CodebaseChatService {
       scope: req.scope,
       useTwoPhase,
       evidenceFirst,
+      rawEvidence,
+      deterministicRetriever: Boolean(req.deterministicRetriever) && rawEvidence,
       threadId: req.threadId,
       lastCypher: undefined,
       collectedResults: [],
@@ -160,8 +167,9 @@ export class CodebaseChatService {
       .slice(-8)
       .map((m) => `${m.role}: ${m.content}`)
       .join('\n');
-    const evidenceFirst = req.responseMode === 'evidence_first';
-    const useTwoPhase = evidenceFirst ? true : (req.twoPhase ?? defaultTwoPhaseFromEnv());
+    const rawEvidence = req.responseMode === 'raw_evidence';
+    const evidenceFirst = !rawEvidence && req.responseMode === 'evidence_first';
+    const useTwoPhase = rawEvidence || evidenceFirst ? true : (req.twoPhase ?? defaultTwoPhaseFromEnv());
     const initial: CodebaseChatState = {
       repositoryId: firstRepoId,
       projectId,
@@ -171,6 +179,8 @@ export class CodebaseChatService {
       scope: req.scope,
       useTwoPhase,
       evidenceFirst,
+      rawEvidence,
+      deterministicRetriever: Boolean(req.deterministicRetriever) && rawEvidence,
       threadId: req.threadId,
       lastCypher: undefined,
       collectedResults: [],
@@ -213,7 +223,40 @@ export class CodebaseChatService {
   }
 
   private async nodeRetrieve(state: CodebaseChatState): Promise<Partial<CodebaseChatState>> {
+    const rawEv = state.rawEvidence ?? false;
+    const repositoryId = state.repositoryId;
+    const scope = state.scope;
+    const projectScope = state.projectScope;
+
+    if (rawEv && (state.deterministicRetriever ?? false)) {
+      const r = await this.ingest.gatherDeterministicRawEvidence(repositoryId, {
+        message: state.message,
+        scope,
+        projectScope,
+      });
+      const gatheredContext = r.gatheredContext;
+      const collectedResults = r.collectedResults;
+      if (state.threadId?.trim()) {
+        await this.redis.setChatThread(state.threadId.trim(), {
+          phase: 'post_retrieve',
+          repositoryId: state.repositoryId,
+          projectId: state.projectId,
+          gatheredContextChars: gatheredContext.length,
+          collectedRows: collectedResults.length,
+          at: new Date().toISOString(),
+        });
+      }
+      return {
+        lastCypher: r.lastCypher || undefined,
+        collectedResults,
+        gatheredContext,
+      };
+    }
+
     const tools = EXPLORER_TOOLS_ALL;
+    const maxTurns = rawEv
+      ? Math.min(20, Math.max(4, parseInt(process.env.CHAT_RAW_EVIDENCE_RETRIEVER_MAX_TURNS ?? '10', 10) || 10))
+      : 4;
     const retrieverSystem = `<instrucciones>
 Actúa como **Coordinador** y luego como **Validador** (ask_codebase agéntico).
 
@@ -231,7 +274,7 @@ Plan: 1) execute_cypher o get_graph_summary. 2) get_file_content en paths releva
 
 **Grounding:** No inventes rutas. Si una herramienta devuelve 0 filas, repórtalo tal cual.
 
-NO escribas la respuesta final al usuario. Máx 4 turnos.
+NO escribas la respuesta final al usuario. Máx ${maxTurns} turnos.
 </instrucciones>
 
 <schema_cypher>
@@ -252,12 +295,8 @@ ${SCHEMA}${EXAMPLES}
     let lastCypher = '';
     const collectedToolOutputs: string[] = [];
     const collectedResults: unknown[] = [];
-    const MAX_TURNS = 4;
-    const repositoryId = state.repositoryId;
-    const scope = state.scope;
-    const projectScope = state.projectScope;
 
-    for (let turn = 0; turn < MAX_TURNS; turn++) {
+    for (let turn = 0; turn < maxTurns; turn++) {
       const resp = await this.llm.callLlmWithTools(messages, tools);
 
       if (!resp.tool_calls?.length) {
@@ -282,6 +321,7 @@ ${SCHEMA}${EXAMPLES}
             tool: fn.name as RetrieverToolName,
             arguments: args,
             fallbackMessage: message,
+            evidenceVerbosity: rawEv ? 'full' : undefined,
           });
           if (r.lastCypher) lastCypher = r.lastCypher;
           collectedResults.push(...r.collectedRows);
@@ -317,9 +357,28 @@ ${SCHEMA}${EXAMPLES}
   private async nodeSynthesize(state: CodebaseChatState): Promise<Partial<CodebaseChatState>> {
     const message = state.message;
     const evidenceFirst = state.evidenceFirst;
+    const rawEvidence = state.rawEvidence ?? false;
     const useTwoPhase = state.useTwoPhase;
     const gatheredContext = state.gatheredContext ?? '';
     const collectedResults = state.collectedResults ?? [];
+
+    if (rawEvidence) {
+      const jsonAnswer = JSON.stringify(
+        {
+          mode: 'raw_evidence',
+          deterministicRetriever: state.deterministicRetriever ?? false,
+          gatheredContext,
+          collectedResults,
+          cypher: state.lastCypher,
+        },
+        null,
+        2,
+      );
+      return {
+        answer: jsonAnswer,
+        resultOut: collectedResults.length > 0 ? collectedResults : undefined,
+      };
+    }
 
     if (evidenceFirst) {
       try {

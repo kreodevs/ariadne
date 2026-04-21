@@ -41,7 +41,11 @@ import { ChatCypherService } from './chat-cypher.service';
 import { ChatLlmService } from './chat-llm.service';
 import { ChatAntipatternsService } from './chat-antipatterns.service';
 import { ChatHandlersService } from './chat-handlers.service';
-import { ChatRetrieverToolsService, type RetrieverToolName } from './chat-retriever-tools.service';
+import {
+  ChatRetrieverToolsService,
+  type RetrieverToolName,
+  type RetrieverToolRequest,
+} from './chat-retriever-tools.service';
 import { ProjectsService } from '../projects/projects.service';
 import {
   type ChatScope,
@@ -160,8 +164,11 @@ export interface ChatRequest {
   /**
    * `evidence_first`: fuerza two-phase, amplía el recorte de contexto hacia el sintetizador y aplica prompt SDD
    * (## Evidencia obligatoria primero, listados anclados, poca prosa). Pensado para ask_codebase / The Forge legacy.
+   * `raw_evidence`: sin sintetizador ni MDD — devuelve JSON con `gatheredContext` + `collectedResults` completos para que el cliente (p. ej. The Forge) sintetice; `get_file_content` usa recorte alto (`CHAT_RAW_EVIDENCE_FILE_MAX_CHARS`).
    */
-  responseMode?: 'default' | 'evidence_first';
+  responseMode?: 'default' | 'evidence_first' | 'raw_evidence';
+  /** Solo con `responseMode: 'raw_evidence'`: retrieval fijo (graph_summary → semantic_search → muestra de paths) sin ReAct LLM. */
+  deterministicRetriever?: boolean;
   /** Reenviado al orchestrator cuando ORCHESTRATOR_URL está activo (Redis codebase:chat:*). */
   threadId?: string;
   /** Telemetría de alcance; no altera el pipeline. */
@@ -2944,7 +2951,12 @@ PROHIBIDO: instrucciones genéricas tipo "revisa los controladores", "asegúrate
         projectId,
         req.message,
         historyContent,
-        { scope: req.scope, twoPhase: req.twoPhase, responseMode: req.responseMode },
+        {
+          scope: req.scope,
+          twoPhase: req.twoPhase,
+          responseMode: req.responseMode,
+          deterministicRetriever: req.deterministicRetriever,
+        },
       );
     } catch (err) {
       recordChatPipelineError();
@@ -3081,6 +3093,7 @@ PROHIBIDO: instrucciones genéricas tipo "revisa los controladores", "asegúrate
           scope: effectiveScope,
           twoPhase: req.twoPhase,
           responseMode: req.responseMode,
+          deterministicRetriever: req.deterministicRetriever,
           projectRepoRolesContext,
           clientMeta: roleInferenceClientMeta ?? req.clientMeta,
         },
@@ -3186,6 +3199,84 @@ PROHIBIDO: instrucciones genéricas tipo "revisa los controladores", "asegúrate
     return { gathered: chunks.join('\n\n'), results };
   }
 
+  /**
+   * Retrieval fijo (sin ReAct LLM) para `responseMode: raw_evidence` + `deterministicRetriever`.
+   * Orden: get_graph_summary → semantic_search(query=mensaje) → muestra de paths File (límite `CHAT_DETERMINISTIC_FILE_SAMPLE_LIMIT`).
+   */
+  private async runDeterministicRetrieverForRawEvidence(
+    repositoryId: string,
+    projectId: string,
+    message: string,
+    scope: ChatScope | undefined,
+    projectScope: boolean | undefined,
+  ): Promise<{ collectedToolOutputs: string[]; collectedResults: unknown[]; lastCypher: string }> {
+    const evidenceVerbosity = 'full' as const;
+    const ps = Boolean(projectScope);
+    const collectedToolOutputs: string[] = [];
+    const collectedResults: unknown[] = [];
+    let lastCypher = '';
+
+    const pushTool = async (label: string, req: RetrieverToolRequest) => {
+      const r = await this.retrieverTools.executeTool(repositoryId, projectId, req);
+      if (r.lastCypher) lastCypher = r.lastCypher;
+      collectedResults.push(...r.collectedRows);
+      collectedToolOutputs.push(`[deterministic:${label}]\n${r.toolResult}`);
+    };
+
+    await pushTool('get_graph_summary', {
+      projectScope: ps,
+      scope,
+      tool: 'get_graph_summary',
+      arguments: {},
+      evidenceVerbosity,
+    });
+    const q = message.trim().slice(0, 4000);
+    await pushTool('semantic_search', {
+      projectScope: ps,
+      scope,
+      tool: 'semantic_search',
+      arguments: { query: q },
+      fallbackMessage: q,
+      evidenceVerbosity,
+    });
+    const limRaw = parseInt(process.env.CHAT_DETERMINISTIC_FILE_SAMPLE_LIMIT ?? '120', 10);
+    const fileLimit = Math.min(500, Math.max(20, Number.isFinite(limRaw) ? limRaw : 120));
+    const cypher = `MATCH (f:File {projectId: $projectId}) RETURN f.path AS path LIMIT ${fileLimit}`;
+    await pushTool('file_path_sample', {
+      projectScope: ps,
+      scope,
+      tool: 'execute_cypher',
+      arguments: { cypher },
+      fallbackMessage: message,
+      evidenceVerbosity,
+    });
+
+    return { collectedToolOutputs, collectedResults, lastCypher };
+  }
+
+  /**
+   * Expuesto vía POST /internal/repositories/:id/raw-evidence-deterministic (orchestrator con raw_evidence + deterministicRetriever).
+   */
+  async gatherDeterministicRawEvidence(
+    repositoryId: string,
+    body: { message: string; scope?: ChatScope; projectScope?: boolean },
+  ): Promise<{ gatheredContext: string; collectedResults: unknown[]; lastCypher: string }> {
+    const projectId = await this.resolveProjectIdForRepo(repositoryId);
+    const { collectedToolOutputs, collectedResults, lastCypher } =
+      await this.runDeterministicRetrieverForRawEvidence(
+        repositoryId,
+        projectId,
+        body.message ?? '',
+        body.scope,
+        body.projectScope,
+      );
+    return {
+      gatheredContext: collectedToolOutputs.join('\n\n---\n\n'),
+      collectedResults,
+      lastCypher,
+    };
+  }
+
   /** Si el modelo volcó Cypher en markdown en vez de tool_calls, extrae una consulta ejecutable. */
   private extractCypherFenceFromAssistant(content?: string | null): string | null {
     if (!content?.trim()) return null;
@@ -3202,7 +3293,8 @@ PROHIBIDO: instrucciones genéricas tipo "revisa los controladores", "asegúrate
    * @param options.projectScope - Si true, get_file_content busca en todos los repos del proyecto (chat por proyecto).
    * @param options.scope - Filtro repoIds / prefijos / globs (§2).
    * @param options.twoPhase - Si true, inyecta JSON de retrieval antes del contexto bruto (§3); default env `CHAT_TWO_PHASE`.
-   * @param options.responseMode - `evidence_first` fuerza two-phase y prompt de listados SDD.
+   * @param options.responseMode - `evidence_first`: MDD vía buildMddEvidenceDocument. `raw_evidence`: JSON con contexto de herramientas sin sintetizador ni MDD.
+   * @param options.deterministicRetriever - Con `raw_evidence`: retrieval fijo sin ReAct LLM.
    */
   private async runUnifiedPipeline(
     repositoryId: string,
@@ -3213,7 +3305,8 @@ PROHIBIDO: instrucciones genéricas tipo "revisa los controladores", "asegúrate
       projectScope?: boolean;
       scope?: ChatScope;
       twoPhase?: boolean;
-      responseMode?: 'default' | 'evidence_first';
+      responseMode?: 'default' | 'evidence_first' | 'raw_evidence';
+      deterministicRetriever?: boolean;
       projectRepoRolesContext?: string;
       clientMeta?: ChatClientMeta;
     },
@@ -3227,10 +3320,33 @@ PROHIBIDO: instrucciones genéricas tipo "revisa los controladores", "asegúrate
     if (wantsFullGenericIndexedInventory(message)) {
       return this.buildFullIndexedInventoryResponse(projectId, scope);
     }
-    const evidenceFirst = options?.responseMode === 'evidence_first';
-    const useTwoPhase = evidenceFirst ? true : (options?.twoPhase ?? defaultTwoPhaseFromEnv());
-    const tools = EXPLORER_TOOLS_ALL;
-    const retrieverSystem = `<instrucciones>
+    const rawEvidence = options?.responseMode === 'raw_evidence';
+    const evidenceFirst = !rawEvidence && options?.responseMode === 'evidence_first';
+    const useTwoPhase = rawEvidence || evidenceFirst ? true : (options?.twoPhase ?? defaultTwoPhaseFromEnv());
+    const evidenceVerbosity = rawEvidence ? ('full' as const) : ('default' as const);
+    const deterministicRaw = rawEvidence && Boolean(options?.deterministicRetriever);
+
+    let lastCypher = '';
+    const collectedToolOutputs: string[] = [];
+    const collectedResults: unknown[] = [];
+
+    if (deterministicRaw) {
+      const d = await this.runDeterministicRetrieverForRawEvidence(
+        repositoryId,
+        projectId,
+        message,
+        scope,
+        options?.projectScope,
+      );
+      lastCypher = d.lastCypher;
+      collectedToolOutputs.push(...d.collectedToolOutputs);
+      collectedResults.push(...d.collectedResults);
+    } else {
+      const maxRetrieverTurns = rawEvidence
+        ? Math.min(20, Math.max(4, parseInt(process.env.CHAT_RAW_EVIDENCE_RETRIEVER_MAX_TURNS ?? '10', 10) || 10))
+        : 4;
+      const tools = EXPLORER_TOOLS_ALL;
+      const retrieverSystem = `<instrucciones>
 Actúa como **Coordinador** y **Validador** (ask_codebase agéntico).
 
 **Coordinador:** Si la pregunta implica datos, API, esquema o contratos, combina grafo Falkor con archivos físicos: schema.prisma, entidades TypeORM (:Model source=typeorm), swagger/openapi (File openApiTruth / :OpenApiOperation), package.json, .env.example, tsconfig.
@@ -3249,82 +3365,80 @@ Plan: 1) execute_cypher o get_graph_summary. 2) get_file_content en paths releva
 
 **Herramientas:** No pegues Cypher en el chat ni en markdown; usa siempre **execute_cypher** (o get_graph_summary / get_file_content / semantic_search según aplique).
 
-NO escribas la respuesta final al usuario. Máx 4 turnos.
+NO escribas la respuesta final al usuario. Máx ${maxRetrieverTurns} turnos.
 </instrucciones>
 
 <schema_cypher>
 ${SCHEMA}${EXAMPLES}
 </schema_cypher>`;
 
-    const userContent = historyContent
-      ? `${historyContent}\n\n<user>${message}</user>`
-      : `<user>${message}</user>`;
+      const userContent = historyContent
+        ? `${historyContent}\n\n<user>${message}</user>`
+        : `<user>${message}</user>`;
 
-    const messages: Array<
-      | { role: 'user' | 'system'; content: string }
-      | { role: 'assistant'; content?: string | null; tool_calls?: Array<{ id: string; function: { name: string; arguments: string } }> }
-      | { role: 'tool'; tool_call_id: string; content: string }
-    > = [
-        { role: 'system', content: retrieverSystem },
-        { role: 'user', content: userContent },
-      ];
+      const messages: Array<
+        | { role: 'user' | 'system'; content: string }
+        | { role: 'assistant'; content?: string | null; tool_calls?: Array<{ id: string; function: { name: string; arguments: string } }> }
+        | { role: 'tool'; tool_call_id: string; content: string }
+      > = [
+          { role: 'system', content: retrieverSystem },
+          { role: 'user', content: userContent },
+        ];
 
-    let lastCypher = '';
-    const collectedToolOutputs: string[] = [];
-    const collectedResults: unknown[] = [];
-    const MAX_TURNS = 4;
+      for (let turn = 0; turn < maxRetrieverTurns; turn++) {
+        const resp = await this.llm.callLlmWithTools(messages, tools);
 
-    for (let turn = 0; turn < MAX_TURNS; turn++) {
-      const resp = await this.llm.callLlmWithTools(messages, tools);
+        if (!resp.tool_calls?.length) {
+          const fenced = this.extractCypherFenceFromAssistant(resp.content);
+          if (fenced) {
+            try {
+              const r = await this.retrieverTools.executeTool(repositoryId, projectId, {
+                projectScope: options?.projectScope,
+                scope,
+                tool: 'execute_cypher',
+                arguments: { cypher: fenced },
+                fallbackMessage: message,
+                evidenceVerbosity,
+              });
+              if (r.lastCypher) lastCypher = r.lastCypher;
+              collectedResults.push(...r.collectedRows);
+              collectedToolOutputs.push(
+                `[fallback: Cypher detectado en texto del modelo]\n${r.toolResult}`,
+              );
+            } catch (err) {
+              collectedToolOutputs.push(
+                `[fallback Cypher] Error: ${err instanceof Error ? err.message : String(err)}`,
+              );
+            }
+          }
+          break;
+        }
 
-      if (!resp.tool_calls?.length) {
-        const fenced = this.extractCypherFenceFromAssistant(resp.content);
-        if (fenced) {
+        for (const tc of resp.tool_calls) {
+          const fn = tc.function;
+          let toolResult: string;
           try {
+            const args = JSON.parse(fn.arguments) as Record<string, unknown>;
             const r = await this.retrieverTools.executeTool(repositoryId, projectId, {
               projectScope: options?.projectScope,
               scope,
-              tool: 'execute_cypher',
-              arguments: { cypher: fenced },
+              tool: fn.name as RetrieverToolName,
+              arguments: args,
               fallbackMessage: message,
+              evidenceVerbosity,
             });
             if (r.lastCypher) lastCypher = r.lastCypher;
             collectedResults.push(...r.collectedRows);
-            collectedToolOutputs.push(
-              `[fallback: Cypher detectado en texto del modelo]\n${r.toolResult}`,
-            );
+            toolResult = r.toolResult;
           } catch (err) {
-            collectedToolOutputs.push(
-              `[fallback Cypher] Error: ${err instanceof Error ? err.message : String(err)}`,
-            );
+            toolResult = `Error: ${err instanceof Error ? err.message : String(err)}`;
           }
+          collectedToolOutputs.push(toolResult);
+          messages.push(
+            { role: 'assistant', content: null, tool_calls: [tc] },
+            { role: 'tool', tool_call_id: tc.id, content: toolResult },
+          );
         }
-        break;
-      }
-
-      for (const tc of resp.tool_calls) {
-        const fn = tc.function;
-        let toolResult: string;
-        try {
-          const args = JSON.parse(fn.arguments) as Record<string, unknown>;
-          const r = await this.retrieverTools.executeTool(repositoryId, projectId, {
-            projectScope: options?.projectScope,
-            scope,
-            tool: fn.name as RetrieverToolName,
-            arguments: args,
-            fallbackMessage: message,
-          });
-          if (r.lastCypher) lastCypher = r.lastCypher;
-          collectedResults.push(...r.collectedRows);
-          toolResult = r.toolResult;
-        } catch (err) {
-          toolResult = `Error: ${err instanceof Error ? err.message : String(err)}`;
-        }
-        collectedToolOutputs.push(toolResult);
-        messages.push(
-          { role: 'assistant', content: null, tool_calls: [tc] },
-          { role: 'tool', tool_call_id: tc.id, content: toolResult },
-        );
       }
     }
 
@@ -3332,18 +3446,20 @@ ${SCHEMA}${EXAMPLES}
     let effectiveResults = collectedResults;
     let effectiveGathered = gatheredContext;
     let preflightPathRepoApplied = false;
-    const narrowed = await this.tryPreflightNarrowByMessagePath(
-      projectId,
-      `${historyContent ?? ''}\n${message}`,
-      collectedResults,
-      gatheredContext,
-      options?.projectScope,
-      scope,
-    );
-    if (narrowed) {
-      effectiveResults = narrowed.results;
-      effectiveGathered = narrowed.gatheredContext;
-      preflightPathRepoApplied = true;
+    if (!rawEvidence) {
+      const narrowed = await this.tryPreflightNarrowByMessagePath(
+        projectId,
+        `${historyContent ?? ''}\n${message}`,
+        collectedResults,
+        gatheredContext,
+        options?.projectScope,
+        scope,
+      );
+      if (narrowed) {
+        effectiveResults = narrowed.results;
+        effectiveGathered = narrowed.gatheredContext;
+        preflightPathRepoApplied = true;
+      }
     }
 
     if (!effectiveGathered.trim()) {
@@ -3356,6 +3472,34 @@ ${SCHEMA}${EXAMPLES}
         effectiveGathered = fb.gathered;
         effectiveResults = [...effectiveResults, ...fb.results];
       }
+    }
+
+    if (rawEvidence) {
+      const jsonAnswer = JSON.stringify(
+        {
+          mode: 'raw_evidence',
+          deterministicRetriever: Boolean(options?.deterministicRetriever),
+          gatheredContext: effectiveGathered,
+          collectedResults: effectiveResults,
+          cypher: lastCypher || undefined,
+        },
+        null,
+        2,
+      );
+      const durationSec = Number(process.hrtime.bigint() - pipelineStarted) / 1e9;
+      observeChatPipelineComplete({
+        durationSeconds: durationSec,
+        projectScope: projectScopeForMetrics,
+        useTwoPhase,
+        gatheredContext: effectiveGathered,
+        answer: jsonAnswer,
+        collectedResults: effectiveResults,
+      });
+      return {
+        answer: jsonAnswer,
+        cypher: lastCypher || undefined,
+        result: effectiveResults.length > 0 ? effectiveResults : undefined,
+      };
     }
 
     if (evidenceFirst) {
@@ -3503,7 +3647,7 @@ Sintetiza una respuesta clara. Si no hay datos útiles, di explícitamente **sin
             scope?.repoIds?.length || scope?.includePathPrefixes?.length || scope?.excludePathGlobs?.length,
           ),
           twoPhase: useTwoPhase,
-          responseMode: evidenceFirst ? 'evidence_first' : 'default',
+          responseMode: rawEvidence ? 'raw_evidence' : evidenceFirst ? 'evidence_first' : 'default',
           messageChars: message.length,
           contextChars: effectiveGathered.length,
           toolOutputChunks: collectedToolOutputs.length,

@@ -108,11 +108,11 @@ Si la herramienta no existe o falla, la aplicación puede hacer **fallback** con
 
 ### 3.3 `ask_codebase`
 
-- **Uso:** Preguntas en lenguaje natural sobre el codebase indexado (flujo legacy: listar qué existe, contexto para MDD/Workshop). Con **`responseMode: evidence_first`** la respuesta es **JSON MDD** (7 claves: `summary`, `openapi_spec`, `entities`, `api_contracts`, `business_logic`, `infrastructure`, `risk_report`, `evidence_paths`) para **LegacyCoordinator** / The Forge; el backend puede devolver también `mddDocument` en la API HTTP del ingest/orchestrator.
+- **Uso:** Preguntas en lenguaje natural sobre el codebase indexado (flujo legacy: listar qué existe, contexto para MDD/Workshop). **The Forge:** SDD compacto → **`responseMode: evidence_first`** (**JSON MDD** 7 claves). Evidencia bruta + síntesis en el cliente → **`responseMode: raw_evidence`**: `text` es un **JSON** con `gatheredContext`, `collectedResults`, `cypher`, `deterministicRetriever` — hacer **`JSON.parse`** y sintetizar allí. **`deterministicRetriever: true`** (solo con `raw_evidence`) evita LLM en la fase de retrieval (secuencia fija de tools en ingest).
 - **Argumentos:**
   - `question` (string): pregunta en lenguaje natural.
   - `projectId` (string): id del proyecto en Ariadne (o id de repo; el MCP resuelve).
-  - Opcional: `scope`, `twoPhase`, **`responseMode`** (`default` \| `evidence_first`).
+  - Opcional: `scope`, `twoPhase`, **`responseMode`** (`default` \| `evidence_first` \| `raw_evidence`), **`deterministicRetriever`** (boolean, solo con `raw_evidence`).
 
 **Petición de ejemplo:**
 
@@ -132,7 +132,7 @@ Si la herramienta no existe o falla, la aplicación puede hacer **fallback** con
 }
 ```
 
-**Respuesta esperada:** En `result.content[].text`: con **`evidence_first`**, **JSON MDD** parseable; con **`default`**, prosa. Parsear `text` como JSON si empieza por `{`.
+**Respuesta esperada:** En `result.content[].text`: con **`evidence_first`**, **JSON MDD** parseable; con **`raw_evidence`**, **JSON evidencia** (`JSON.parse`); con **`default`**, prosa. Parsear `text` como JSON si empieza por `{`.
 
 ---
 

@@ -20,11 +20,22 @@ Protocol for using the MCP AriadneSpecs Oracle tools (get_component_graph, valid
 |-------------|------|------|
 | **Diagnóstico de archivo/componente/hook** ("diagnóstico de usePauta.tsx", "analiza Board") | `get_component_graph`, `get_legacy_impact`, `get_definitions`, `get_references` | **Use MCP first**, not just Read/Grep. list_known_projects → projectId → get_component_graph + get_legacy_impact + get_definitions/get_references. |
 | Diagnóstico proyecto, duplicados, reingeniería, código muerto, seguridad (`seguridad`) | `get_project_analysis` | list_known_projects → `projectId` (proyecto o `roots[].id`) + `currentFilePath` si multi-root → `get_project_analysis(projectId?, mode, currentFilePath?)`. **Código muerto:** presentar el resultado tal cual. El backend es la fuente de verdad. |
-| "¿Cómo funciona X?", explicar flujo | `ask_codebase` | `projectId` + `question`; opcional `responseMode: evidence_first` (JSON MDD 7 secciones para Forge/LegacyCoordinator) |
+| "¿Cómo funciona X?", explicar flujo | `ask_codebase` | `projectId` + `question`; ver tabla **The Forge / ask_codebase** abajo |
 | Búsqueda por término | `semantic_search`, `find_similar_implementations` | Direct query |
 | Antes de editar componente/función | `validate_before_edit` | Required — returns impact + contract |
 
 **Never invent props or assume IDs.** Use what the graph returns.
+
+## The Forge / `ask_codebase` (alineación contrato)
+
+| `responseMode` | `answer` (texto MCP) | Retrieval |
+|----------------|----------------------|-----------|
+| **`evidence_first`** | JSON **MDD** (7 claves: `summary`, `openapi_spec`, `entities`, `api_contracts`, `business_logic`, `infrastructure`, `risk_report`, `evidence_paths`) | ReAct LLM + tools |
+| **`raw_evidence`** | JSON **`JSON.parse(answer)`**: `mode`, `deterministicRetriever`, `gatheredContext`, `collectedResults`, `cypher` — **The Forge sintetiza** a partir de ahí | ReAct LLM + tools **salvo** si `deterministicRetriever: true` → secuencia fija en ingest (sin LLM en retrieve) |
+| `default` (omitir) | Prosa | ReAct + sintetizador |
+
+- SDD compacto / LegacyCoordinator: **`evidence_first`**.
+- Máximo control y coste de retrieval bajo: **`raw_evidence`** + **`deterministicRetriever: true`** (menos selectivo que ReAct; no “entiende” la pregunta para elegir tools).
 
 ## Before Editing (SDD)
 

@@ -44,6 +44,26 @@ export class IngestChatClient {
     return (await res.json()) as { id: string };
   }
 
+  async gatherDeterministicRawEvidence(
+    repositoryId: string,
+    body: { message: string; scope?: ChatScope; projectScope?: boolean },
+  ): Promise<{ gatheredContext: string; collectedResults: unknown[]; lastCypher: string }> {
+    const url = `${this.ingestBase()}/internal/repositories/${encodeURIComponent(repositoryId)}/raw-evidence-deterministic`;
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Internal-API-Key': this.internalKey(),
+      },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) {
+      const t = await res.text();
+      throw new Error(`ingest raw-evidence-deterministic ${res.status}: ${t}`);
+    }
+    return (await res.json()) as { gatheredContext: string; collectedResults: unknown[]; lastCypher: string };
+  }
+
   async executeRetrieverTool(
     repositoryId: string,
     body: {
@@ -52,6 +72,7 @@ export class IngestChatClient {
       tool: 'execute_cypher' | 'semantic_search' | 'get_graph_summary' | 'get_file_content';
       arguments: Record<string, unknown>;
       fallbackMessage?: string;
+      evidenceVerbosity?: 'default' | 'full';
     },
   ): Promise<RetrieverToolHttpResult> {
     const url = `${this.ingestBase()}/internal/repositories/${encodeURIComponent(repositoryId)}/retriever-tool`;

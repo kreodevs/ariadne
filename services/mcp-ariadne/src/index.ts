@@ -574,7 +574,7 @@ function createMcpServer(): Server {
     {
       name: "ask_codebase",
       description:
-        "Pregunta en lenguaje natural sobre el código. Orquestación agéntica: Coordinador (grafo Falkor + archivos físicos: Prisma, Swagger/OpenAPI, package.json, .env.example, tsconfig) → Validador (cross-check grafo vs archivos). responseMode=default: respuesta en prosa (sintetizador). responseMode=evidence_first: la respuesta útil para SDD/The Forge es JSON MDD de 7 claves en el campo answer (string JSON parseable: summary, openapi_spec, entities, api_contracts, business_logic, infrastructure, risk_report, evidence_paths); con ORCHESTRATOR_URL el orchestrator construye el MDD vía ingest mdd-evidence. No uses respuestas vacías si hay archivos indexados: el ingest inyecta evidencia física. Para filesToModify usa get_modification_plan. Requiere INGEST_URL y LLM.",
+        "Pregunta en lenguaje natural sobre el código. Orquestación agéntica: Coordinador (grafo Falkor + archivos físicos: Prisma, Swagger/OpenAPI, package.json, .env.example, tsconfig) → Validador (cross-check grafo vs archivos). responseMode=default: respuesta en prosa (sintetizador). responseMode=evidence_first: answer = JSON MDD (7 claves) para SDD compacto / LegacyCoordinator (The Forge: seguir usando evidence_first). responseMode=raw_evidence: sin sintetizador ni MDD — answer = JSON parseable (mode, deterministicRetriever?, gatheredContext, collectedResults, cypher); The Forge debe JSON.parse(answer) y sintetizar allí. Opcional deterministicRetriever=true (solo con raw_evidence): retrieval determinista en ingest sin LLM ReAct (graph_summary → semantic_search → muestra paths). Sin deterministicRetriever, retrieval sigue con LLM + tools. Requiere INGEST_URL; LLM en retrieval solo si no usas deterministicRetriever+raw_evidence. Para filesToModify usa get_modification_plan.",
       inputSchema: {
         type: "object" as const,
         properties: {
@@ -597,9 +597,14 @@ function createMcpServer(): Server {
           },
           responseMode: {
             type: "string",
-            enum: ["default", "evidence_first"],
+            enum: ["default", "evidence_first", "raw_evidence"],
             description:
-              "default: prosa explicativa (Coordinador/Validador + sintetizador). evidence_first: prioriza retrieval anclado y devuelve answer como JSON MDD (7 secciones) para LegacyCoordinator/The Forge — no sustituye por markdown genérico; parsear answer como JSON. Alineado con CHAT_TWO_PHASE / pipeline ingest u orchestrator.",
+              "default: prosa + sintetizador. evidence_first: answer = JSON MDD (7 secciones) — SDD compacto. raw_evidence: answer = JSON { mode, deterministicRetriever?, gatheredContext, collectedResults, cypher }; cliente (The Forge) parsea y sintetiza. Sin segunda pasada LLM en ingest/orchestrator para la respuesta final.",
+          },
+          deterministicRetriever: {
+            type: "boolean",
+            description:
+              "Solo con responseMode raw_evidence. Si true: sin LLM en la fase de retrieval (secuencia fija de herramientas en ingest). Ignorado si responseMode no es raw_evidence.",
           },
         },
         required: ["question"],
@@ -2336,15 +2341,31 @@ async function fetchFileFromIngest(
     if (projectId && currentFilePath) {
       scope = await augmentScopeWithInferredRepo(projectId, currentFilePath, scope);
     }
-    const rm = args?.responseMode as string | undefined;
-    const responseMode = rm === "evidence_first" ? "evidence_first" : undefined;
+    const rm = (args?.responseMode as string | undefined)?.trim();
+    const responseMode =
+      rm === "evidence_first" ? "evidence_first" : rm === "raw_evidence" ? "raw_evidence" : undefined;
     const body = JSON.stringify({
       message: question,
       ...(scope && Object.keys(scope).length > 0 ? { scope } : {}),
       ...(typeof args?.twoPhase === "boolean" ? { twoPhase: args.twoPhase } : {}),
       ...(responseMode ? { responseMode } : {}),
+      ...(responseMode === "raw_evidence" && args?.deterministicRetriever === true
+        ? { deterministicRetriever: true }
+        : {}),
     });
-    const opts = { method: "POST" as const, headers: { "Content-Type": "application/json" }, body };
+    const askTimeoutMs = (() => {
+      const raw = process.env.MCP_ASK_CODEBASE_TIMEOUT_MS?.trim();
+      const def = responseMode === "raw_evidence" ? 900_000 : 300_000;
+      if (!raw) return def;
+      const n = parseInt(raw, 10);
+      return Number.isFinite(n) && n >= 30_000 ? n : def;
+    })();
+    const opts = {
+      method: "POST" as const,
+      headers: { "Content-Type": "application/json" },
+      body,
+      signal: AbortSignal.timeout(askTimeoutMs),
+    };
     try {
       let res = await fetch(`${base}/projects/${projectId}/chat`, opts);
       if (res.status === 404) res = await fetch(`${base}/repositories/${projectId}/chat`, opts);

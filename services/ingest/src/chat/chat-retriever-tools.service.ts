@@ -19,12 +19,32 @@ export interface RetrieverToolRequest {
   arguments: Record<string, unknown>;
   /** Si semantic_search viene sin query, se usa este texto (mensaje usuario). */
   fallbackMessage?: string;
+  /**
+   * `full`: volcar `get_file_content` casi completo (The Forge / `responseMode: raw_evidence`).
+   * Límite: `CHAT_RAW_EVIDENCE_FILE_MAX_CHARS` (default 5M). Default recorte: `CHAT_GET_FILE_CONTENT_MAX_CHARS` (default 14k).
+   */
+  evidenceVerbosity?: 'default' | 'full';
 }
 
 export interface RetrieverToolResult {
   toolResult: string;
   lastCypher?: string;
   collectedRows: unknown[];
+}
+
+function parsePositiveIntEnv(name: string, fallback: number, max: number): number {
+  const raw = process.env[name]?.trim();
+  if (raw === undefined || raw === '') return fallback;
+  const n = parseInt(raw, 10);
+  if (!Number.isFinite(n) || n < 1) return fallback;
+  return Math.min(max, n);
+}
+
+function maxCharsForGetFileContent(req: RetrieverToolRequest): number {
+  if (req.evidenceVerbosity === 'full') {
+    return parsePositiveIntEnv('CHAT_RAW_EVIDENCE_FILE_MAX_CHARS', 5_000_000, 50_000_000);
+  }
+  return parsePositiveIntEnv('CHAT_GET_FILE_CONTENT_MAX_CHARS', 14_000, 50_000_000);
 }
 
 @Injectable()
@@ -131,7 +151,7 @@ export class ChatRetrieverToolsService {
           if (!content) {
             toolResult = `No se pudo leer \`${p}\` (o no coincide con el alcance del scope).`;
           } else {
-            const MAX_CHARS = 14000;
+            const MAX_CHARS = maxCharsForGetFileContent(req);
             const truncated = content.length > MAX_CHARS;
             const snippet = truncated ? content.slice(0, MAX_CHARS) + '\n\n...[truncado]' : content;
             toolResult = `Archivo \`${p}\`:\n\`\`\`\n${snippet}\n\`\`\``;
