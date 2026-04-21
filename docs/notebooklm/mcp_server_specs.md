@@ -122,6 +122,29 @@ RETURN dependent.name AS name, labels(dependent) AS labels
 - **Implementación ingest:** Intenta `POST /projects/:projectId/chat` (chat por proyecto, todos los repos); si 404, `POST /repositories/:projectId/chat` (chat por repo). Body admite `message`, `history`, `scope`, `twoPhase`, `responseMode`, `deterministicRetriever`. Respuesta puede incluir **`mddDocument`** (objeto) cuando `responseMode` es `evidence_first` y el backend lo serializa.
 - **Listas exhaustivas:** Usar **`get_modification_plan`** para archivos a modificar y preguntas de afinación (flujo legacy/MaxPrime).
 
+#### Política de routing (coste, tokens, latencia)
+
+`ask_codebase` dispara un pipeline **agéntico** (ReAct + herramientas internas ± sintetizador). Es la opción **más cara** en tokens y tiempo; usarla cuando la pregunta cruce **varias fuentes** (Falkor + Prisma + OpenAPI + archivos de config) o sea **exploratoria**. Cuando el objetivo sea acotado, **otra herramienta MCP suele bastar** y reduce coste.
+
+| Objetivo del agente | Herramienta preferida antes que `ask_codebase` |
+|---------------------|--------------------------------------------------|
+| Leer un archivo cuyo path ya se conoce | **`get_file_content`** |
+| Origen / firma de un símbolo (`Foo`, handler, clase) | **`get_definitions`**, **`get_implementation_details`** |
+| Usos de un símbolo (imports, call sites) | **`get_references`** |
+| Grafo e impacto de un **componente** React | **`get_component_graph`**, **`get_legacy_impact`** |
+| Informe de deuda, duplicados, reingeniería, código muerto, secretos | **`get_project_analysis`** (`mode` explícito) |
+| Archivos candidatos a tocar para una feature/refactor | **`get_modification_plan`** |
+| “Dónde se menciona X” con término suelto | **`semantic_search`** / **`find_similar_implementations`** (acotar `projectId` = `roots[].id` si hace falta) |
+
+**Parámetros que bajan coste en `ask_codebase`:**
+
+1. **`scope`**: `repoIds` (UUID de **`roots[].id`**), `includePathPrefixes`, `excludePathGlobs` — evita barrer monorepos enteros.
+2. **`projectId`**: si el trabajo es en **un solo repo**, usar **`roots[].id`** como `projectId` cuando el ingest lo acepte (resolución automática proyecto ↔ repo según endpoint).
+3. **`currentFilePath`**: con proyecto multi-root y `projectId` del **proyecto** Ariadne, ancla el root correcto.
+4. **`responseMode`**: para JSON estable (SDD / Forge) → **`evidence_first`**. Para minimizar LLM en la fase de retrieve → **`raw_evidence`** + **`deterministicRetriever: true`** (menos selectivo que ReAct; el cliente sintetiza).
+
+**Anti-patrones:** llamar `ask_codebase` solo para “abrir” un archivo; usar `default` cuando el cliente esperaba JSON MDD; omitir `scope` en preguntas amplias sobre un solo paquete dentro de un monorepo.
+
 ### Tool: `get_modification_plan` (contrato MaxPrime / flujo legacy)
 
 - **Descripción:** Devuelve un plan de modificación basado **solo** en el codebase indexado: `filesToModify` (path + repoId por archivo) y `questionsToRefine` (solo negocio).

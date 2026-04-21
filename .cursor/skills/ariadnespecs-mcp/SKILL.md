@@ -20,11 +20,49 @@ Protocol for using the MCP AriadneSpecs Oracle tools (get_component_graph, valid
 |-------------|------|------|
 | **Diagnóstico de archivo/componente/hook** ("diagnóstico de usePauta.tsx", "analiza Board") | `get_component_graph`, `get_legacy_impact`, `get_definitions`, `get_references` | **Use MCP first**, not just Read/Grep. list_known_projects → projectId → get_component_graph + get_legacy_impact + get_definitions/get_references. |
 | Diagnóstico proyecto, duplicados, reingeniería, código muerto, seguridad (`seguridad`) | `get_project_analysis` | list_known_projects → `projectId` (proyecto o `roots[].id`) + `currentFilePath` si multi-root → `get_project_analysis(projectId?, mode, currentFilePath?)`. **Código muerto:** presentar el resultado tal cual. El backend es la fuente de verdad. |
-| "¿Cómo funciona X?", explicar flujo | `ask_codebase` | `projectId` + `question`; ver tabla **The Forge / ask_codebase** abajo |
+| "¿Cómo funciona X?", arquitectura amplia, login end-to-end sin archivo ancla | `ask_codebase` | `projectId` + `question` **concretas** + **`scope`** si multi-root; ver **Routing: `ask_codebase`** y tabla **The Forge** abajo |
+| Ya tienes **path** o **nombre de símbolo** (función, componente, clase) | **`get_file_content`**, **`get_definitions`**, **`get_references`**, **`get_component_graph`** | **No** abras con `ask_codebase` solo para leer un archivo o un grafo local: más lento y más tokens |
 | Búsqueda por término | `semantic_search`, `find_similar_implementations` | Direct query |
 | Antes de editar componente/función | `validate_before_edit` | Required — returns impact + contract |
 
 **Never invent props or assume IDs.** Use what the graph returns.
+
+## Routing: `ask_codebase` (cuándo sí / cuándo no)
+
+`ask_codebase` orquesta **ReAct + tools +** (según modo) **sintetizador** → alto coste en **latencia y tokens**. Úsalo cuando la pregunta sea **exploratoria** o cruce **varias fuentes** (grafo + Prisma + OpenAPI + docs). Evítalo cuando una herramienta **más estrecha** baste.
+
+### Preferir otra tool (mismo resultado, menos coste)
+
+| Situación | Usar primero |
+|-----------|----------------|
+| Contenido de un archivo conocido | `get_file_content` |
+| Dónde se define `Foo` / firma / líneas | `get_definitions`, `get_implementation_details` |
+| Quién importa o llama a `Foo` | `get_references`, grafo (`get_component_graph` si es UI) |
+| Impacto de un **componente** concreto | `get_component_graph` + `get_legacy_impact` |
+| Deuda / duplicados / seguridad / código muerto (informe cerrado) | `get_project_analysis` con `mode` adecuado |
+| Lista de archivos a tocar para un cambio grande | `get_modification_plan` |
+| Solo “¿dónde está X en el repo?” (término suelto) | `semantic_search` o `find_similar_implementations` |
+
+### Si usas `ask_codebase`, acota siempre
+
+1. **`scope`**: en monorepo / multi-root, `repoIds` (= `roots[].id`), `includePathPrefixes` y/o `excludePathGlobs` para no barrer todo el índice.
+2. **`projectId`**: preferir **`roots[].id`** del repo donde vive el código si el cambio es local a ese root.
+3. **`currentFilePath`**: cuando el `projectId` sea el del **proyecto** Ariadne y haya varios roots — ayuda a anclar el repo correcto.
+4. **Pregunta concreta**: nombres de módulos, endpoints, errores, rutas de archivo sospechosas; evita “explícame el proyecto entero” en una sola llamada si puedes partir en 2 preguntas acotadas.
+
+### Modo de respuesta (trade-off)
+
+| Necesidad | `responseMode` | Notas |
+|-----------|----------------|--------|
+| SDD / LegacyCoordinator / JSON estable | **`evidence_first`** | `answer` = JSON MDD |
+| Cliente (Forge) va a sintetizar; quieres **menos LLM en retrieve** | **`raw_evidence`** + **`deterministicRetriever: true`** | Secuencia fija de tools en ingest; menos “inteligente”, más barato/rápido en retrieve |
+| Respuesta legible en prosa sin struct MDD | `default` | Sigue siendo ReAct + sintetizador → no lo uses solo por comodidad si `evidence_first` encaja |
+
+### Anti-patrones (evitar)
+
+- **`ask_codebase`** con pregunta vaga **sin** `scope` en proyecto con varios repos.
+- Repetir **`ask_codebase`** para el mismo subproblema ya resuelto en la sesión (reutiliza paths/evidencia del JSON anterior).
+- **`default`** cuando el consumidor esperaba JSON estructurado (**`evidence_first`** / **`raw_evidence`**).
 
 ## The Forge / `ask_codebase` (alineación contrato)
 
