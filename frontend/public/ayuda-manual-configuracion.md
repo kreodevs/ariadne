@@ -298,6 +298,8 @@ curl -X POST http://localhost:3002/repositories \
    curl http://localhost:3002/repositories/<UUID>
    ```
 
+5. **Alcance del índice (opcional):** `PATCH /repositories/<UUID>` con `indexIncludeRules`: `null` restaura indexado completo; `{ "entries": [ { "kind": "path_prefix"|"file", "path": "…" } ] }` restringe (manifiestos en raíz siempre). UI: `/repos/<UUID>/edit`. Tras cambiar, **resync**. Detalle: [MONOREPO_Y_LIMITACIONES_INDEXADO.md](../../../docs/notebooklm/MONOREPO_Y_LIMITACIONES_INDEXADO.md).
+
 ---
 
 ### 2.3 Chat y análisis (ingest)

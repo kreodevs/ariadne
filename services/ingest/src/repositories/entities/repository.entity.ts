@@ -15,6 +15,7 @@ import { SyncJob } from './sync-job.entity';
 import { IndexedFile } from './indexed-file.entity';
 import { ProjectRepositoryEntity } from './project-repository.entity';
 import { EmbeddingSpaceEntity } from '../../embedding/entities/embedding-space.entity';
+import type { IndexIncludeRules } from '../../providers/index-include-rules';
 
 export type RepositoryStatus = 'pending' | 'syncing' | 'ready' | 'error';
 
@@ -55,6 +56,14 @@ export class RepositoryEntity {
   /** Patrones de dominio inferidos en primera ingesta (componentPatterns, constNames). Por proyecto. */
   @Column({ name: 'domain_config', type: 'jsonb', nullable: true })
   domainConfig!: { componentPatterns?: string[]; constNames?: string[] } | null;
+
+  /**
+   * Alcance de indexado por repo. Null = todo el repo (filtro global `shouldSyncIndexPath`).
+   * Si está definido: siempre raíz `package.json` + `*.json|js|ts|jsx|tsx` en raíz, más `entries`
+   * (`path_prefix` o `file`). `entries: []` = solo esos archivos de raíz.
+   */
+  @Column({ name: 'index_include_rules', type: 'jsonb', nullable: true })
+  indexIncludeRules!: IndexIncludeRules | null;
 
   /** Espacio vectorial activo para búsqueda RAG (query embedding + propiedad en Falkor). Null = legado `embedding` + EMBEDDING_PROVIDER. */
   @Column({ name: 'read_embedding_space_id', type: 'uuid', nullable: true })

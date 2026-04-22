@@ -45,6 +45,12 @@ import type { ParsedFile } from '../pipeline/parser';
 import { recordSyncJobFailed } from '../metrics/ingest-metrics';
 import { scanC4Infrastructure } from '../pipeline/c4-infrastructure';
 import { buildC4IngestCypher } from '../pipeline/c4-cypher';
+import {
+  augmentClonePathsForIndexRules,
+  filterPathsByRepoIndexRules,
+  normalizeIndexPath,
+  isMandatoryDefaultRootIndexPath,
+} from '../providers/index-include-rules';
 
 /**
  * @fileoverview Servicio de sync: mapping, deps, chunking, FalkorDB, embed-index post-sync.
@@ -329,6 +335,15 @@ export class SyncService {
         };
         getLatestCommitSha = () =>
           p.getLatestCommitSha(owner, repoSlug, ref, repo.credentialsRef);
+      }
+
+      if (repo.indexIncludeRules != null) {
+        if (cloneResult) {
+          paths = augmentClonePathsForIndexRules(cloneResult.workDir, paths, repo.indexIncludeRules);
+        } else {
+          paths = await this.mergeIndexIncludeRulesApiPaths(repo, owner, repoSlug, ref, paths);
+        }
+        pathSet = new Set(paths);
       }
 
       await this.updateJobProgress(job.id, { phase: 'mapping_done', filesFound: paths.length });
@@ -751,6 +766,35 @@ export class SyncService {
     if (provider === 'bitbucket') return this.bitbucket;
     if (provider === 'github') return this.github;
     return null;
+  }
+
+  private async mergeIndexIncludeRulesApiPaths(
+    repo: RepositoryEntity,
+    owner: string,
+    repoSlug: string,
+    ref: string,
+    paths: string[],
+  ): Promise<string[]> {
+    const rules = repo.indexIncludeRules;
+    if (!rules) return paths;
+    const set = new Set(paths.map((p) => normalizeIndexPath(p)));
+    let rootNames: string[] = [];
+    try {
+      if (repo.provider === 'github') {
+        rootNames = await this.github.listRootFiles(owner, repoSlug, ref, repo.credentialsRef);
+      } else if (repo.provider === 'bitbucket') {
+        rootNames = await this.bitbucket.listRootFiles(owner, repoSlug, ref, repo.credentialsRef);
+      }
+    } catch (e) {
+      console.warn('Sync: listRootFiles failed', e);
+    }
+    for (const name of rootNames) {
+      if (isMandatoryDefaultRootIndexPath(name)) set.add(name);
+    }
+    for (const e of rules.entries) {
+      if (e.kind === 'file') set.add(normalizeIndexPath(e.path));
+    }
+    return filterPathsByRepoIndexRules([...set], rules);
   }
 
   private async phaseMapping(

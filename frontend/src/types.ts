@@ -6,6 +6,13 @@
 export type RepositoryStatus = 'pending' | 'syncing' | 'ready' | 'error';
 
 /** Entidad repositorio (Bitbucket/GitHub). */
+/** Entrada de alcance de indexado por repo (ingest). */
+export type IndexIncludeEntry =
+  | { kind: 'path_prefix'; path: string }
+  | { kind: 'file'; path: string };
+
+export type IndexIncludeRules = { entries: IndexIncludeEntry[] };
+
 export interface Repository {
   id: string;
   provider: string;
@@ -19,6 +26,8 @@ export interface Repository {
   projectId?: string | null;
   /** IDs de proyectos a los que pertenece (vía project_repositories). Vacío = usa id como projectId en MCP. */
   projectIds?: string[];
+  /** Null = indexar todo el repo (filtro global). Si existe, ver documentación en edición de repo. */
+  indexIncludeRules?: IndexIncludeRules | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -159,6 +168,10 @@ export interface UpdateRepositoryDto {
   credentialsRef?: string | null;
   webhookSecret?: string | null;
   projectId?: string | null;
+  readEmbeddingSpaceId?: string | null;
+  writeEmbeddingSpaceId?: string | null;
+  /** Null = indexado completo; objeto = reglas por repo. */
+  indexIncludeRules?: IndexIncludeRules | null;
 }
 
 /** Entidad credencial (token, app_password, webhook_secret). */

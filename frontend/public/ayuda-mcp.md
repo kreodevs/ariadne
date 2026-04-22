@@ -70,7 +70,7 @@ Reiniciar Cursor. Listo.
 | `validate_before_edit` | **Obligatorio** antes de editar: impacto + contrato en un solo llamado |
 | `semantic_search` | Búsqueda por palabra clave en componentes, funciones, archivos |
 | `get_project_analysis` | Deuda técnica, duplicados, reingeniería, código muerto, **seguridad** (heurística). Multi-root: `currentFilePath` ayuda a resolver el repo vía ingest |
-| `ask_codebase` | Preguntas en NL sobre el código. Opcional **`scope`**, **`twoPhase`**, **`responseMode`** (`default` \| **`evidence_first`** MDD 7 claves \| **`raw_evidence`** JSON para que The Forge haga `JSON.parse` y sintetice). Con **`raw_evidence`** + **`deterministicRetriever: true`**, el retrieve es fijo sin LLM ReAct. |
+| `ask_codebase` | Preguntas en NL sobre el código. Opcional **`scope`** (`repoIds`, `includePathPrefixes`, `excludePathGlobs`) y **`twoPhase`**; ingest: JSON de retrieval + `CHAT_TWO_PHASE`. |
 | `get_definitions` | Origen exacto de clase/función (archivo, líneas) |
 | `get_references` | Todos los lugares donde se usa un símbolo |
 | `get_implementation_details` | Firma, tipos, props, endpoints de un símbolo |

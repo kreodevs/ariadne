@@ -18,6 +18,7 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.0.0/).
 
 ### Added
 
+- **Ingest — alcance del índice por repositorio:** columna `repositories.index_include_rules` (JSONB); `PATCH /repositories/:id` con `indexIncludeRules`; UI en **Editar repositorio** (`/repos/:id/edit`). Con reglas activas: siempre `package.json` y `*.json|js|ts|jsx|tsx` en raíz; entradas `path_prefix` / `file`. Sync full, API `listRootFiles` si no hay clone, webhook incremental Bitbucket. Implementación: `index-include-rules.ts`, migración `1744200000000-RepositoryIndexIncludeRules`. Documentación: `MONOREPO_Y_LIMITACIONES_INDEXADO`, `ingestion_flow`, `architecture`, `db_schema`, manuales, `services/ingest/README`.
 - **Gobierno de arquitectura (dominios, C4, whitelist proyecto→dominio):** entidades TypeORM `Domain`, `ProjectDomainDependency`, `Project.domainId`; ingest `DomainsService`, `C4DslGeneratorService`, `GET /projects/:id/architecture/c4`, `GET /projects/:id/graph-routing` con `cypherShardContexts`; chat/MCP ejecutan Cypher multi-shard con el `cypherProjectId` correcto; frontend `/domains` y pestaña Arquitectura en proyecto (`C4Previewer` / Kroki). Ver README de `services/ingest`, `services/api`, `services/mcp-ariadne`, `frontend`.
 - **Ingest — chat multi-root (Fase 3, primera entrega)**  
   - Inferencia de `repoId` desde mensaje + `project_repositories.role` (`resolve-chat-scope-from-message.util.ts`, `CHAT_INFER_SCOPE_FROM_ROLES`).  

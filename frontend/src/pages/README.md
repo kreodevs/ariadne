@@ -23,7 +23,7 @@ Vistas principales de la aplicación Ariadne (shell SaaS: sidebar + header con b
 - **RepoChat.tsx** — Chat por repositorio + panel de análisis (diagnóstico, duplicados, reingeniería, código muerto, **seguridad** heurística, AGENTS, SKILL, Full Audit). **Alcance opcional** y badges de caché / foco vía `reportMeta`. Ruta: `/repos/:id/chat`.
 - **RepoIndex.tsx** — Navegador del índice Falkor del repo (`GET graph-summary` con `full=1` y **`repoScoped=1`** para no mezclar nodos de otros roots en proyectos multi-root).
 - **CreateRepo.tsx** — Alta de repo; acepta `?projectId=` para asociar al proyecto. Refactor: hook `useCreateRepoDiscovery` y componentes `CreateRepoProviderSelect`, `CreateRepoCredentialSelect` para reducir nesting.
-- **EditRepo.tsx** — Edición de repo.
+- **EditRepo.tsx** — Edición de repo (credencial, branch, webhook) y **alcance del índice**: todo el repo o restringido (`path_prefix` / `file` vía `indexIncludeRules` en PATCH; en servidor columna `index_include_rules`).
 
 ## Otros
 

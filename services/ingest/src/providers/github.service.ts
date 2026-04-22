@@ -152,6 +152,29 @@ export class GitHubService {
   /**
    * List files recursively (uses Git Trees API).
    */
+  /**
+   * Nombres de archivos en la raíz del repo (para reglas de indexado con fallback API).
+   */
+  async listRootFiles(
+    owner: string,
+    repo: string,
+    ref: string,
+    credentialsRef?: string | null,
+  ): Promise<string[]> {
+    const data = await this.request<unknown>(
+      `${this.baseUrl}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/contents?ref=${encodeURIComponent(ref)}`,
+      credentialsRef,
+    );
+    if (!Array.isArray(data)) return [];
+    const out: string[] = [];
+    for (const item of data) {
+      if (!item || typeof item !== 'object') continue;
+      const o = item as { name?: string; type?: string };
+      if (o.type === 'file' && o.name) out.push(o.name);
+    }
+    return out;
+  }
+
   async listFiles(
     owner: string,
     repo: string,

@@ -133,6 +133,22 @@ export class BitbucketService {
     return { contentType: res.headers.get('content-type') ?? '', body: await res.text() };
   }
 
+  /** Archivos en la raíz del repo (sin subcarpetas). */
+  async listRootFiles(
+    workspace: string,
+    repoSlug: string,
+    ref: string,
+    credentialsRef?: string | null,
+  ): Promise<string[]> {
+    const url = `${this.baseUrl}/repositories/${encodeURIComponent(workspace)}/${encodeURIComponent(repoSlug)}/src/${encodeURIComponent(ref)}/`;
+    const page: SrcPage = await this.request<SrcPage>(url, { credentialsRef });
+    const out: string[] = [];
+    for (const v of page.values ?? []) {
+      if (v.type === 'commit_file' && !v.path.includes('/')) out.push(v.path);
+    }
+    return out;
+  }
+
   async listFiles(
     workspace: string,
     repoSlug: string,

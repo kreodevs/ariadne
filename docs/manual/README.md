@@ -87,6 +87,7 @@ Levantar FalkorDB, PostgreSQL y Redis por tu cuenta (binarios o contenedores sue
 - **Credenciales:** `GET /credentials`, `POST /credentials`, `DELETE /credentials/:id`. Tokens cifrados en BD.
 - **Listar:** `GET /repositories`.
 - **Detalle:** `GET /repositories/:id`.
+- **Actualizar repo / alcance del índice:** `PATCH /repositories/:id` — además de branch y credencial: **`indexIncludeRules`**. `null` = indexar todo el repo (filtro `sync-path-filter`). Objeto `{ entries: [{ kind: 'path_prefix'|'file', path }] }` = restringir (siempre entran `package.json` y `*.json|js|ts|jsx|tsx` en raíz; prefijos = subárbol indexable; `file` = ruta exacta). UI `/repos/:id/edit`. Tras cambiar, **resync**. Ver [MONOREPO_Y_LIMITACIONES_INDEXADO.md](../notebooklm/MONOREPO_Y_LIMITACIONES_INDEXADO.md).
 - **Jobs de sync:** `GET /repositories/:id/jobs`.
 - **Full sync:** `POST /repositories/:id/sync` → `{ jobId, queued: true }`. El job se procesa en cola Redis; el grafo se actualiza en FalkorDB al completar.
 - **Re-sincronizar todo:** `POST /repositories/:id/resync` → borra el grafo e índice del proyecto y encola un sync completo. Útil para empezar de cero.

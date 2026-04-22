@@ -26,6 +26,7 @@ import { recordSyncJobFailed } from '../metrics/ingest-metrics';
 import { loadRepoTsconfigPaths } from '../pipeline/tsconfig-resolve';
 import { buildProjectMergeCypher } from '../pipeline/project';
 import type { ParsedFile } from '../pipeline/parser';
+import { shouldIndexPathWithRepoRules } from '../providers/index-include-rules';
 
 interface PushPayload {
   repository?: { full_name?: string; name?: string };
@@ -97,7 +98,14 @@ export class WebhooksService {
         );
         paths.forEach((p) => changedPathsSet.add(p));
       }
-      const pathsToProcess = Array.from(changedPathsSet);
+      const existingFiles = await this.indexedFileRepo.find({
+        where: { repositoryId: repo.id },
+        select: ['path'],
+      });
+      const indexedSet = new Set(existingFiles.map((f) => f.path));
+      const pathsToProcess = Array.from(changedPathsSet).filter(
+        (p) => shouldIndexPathWithRepoRules(p, repo.indexIncludeRules) || indexedSet.has(p),
+      );
       if (pathsToProcess.length === 0) {
         const latestSha = allCommits[allCommits.length - 1] ?? null;
         await this.repoRepo.update(repo.id, {
@@ -114,10 +122,6 @@ export class WebhooksService {
         return;
       }
 
-      const existingFiles = await this.indexedFileRepo.find({
-        where: { repositoryId: repo.id },
-        select: ['path'],
-      });
       const pathSet = new Set([
         ...pathsToProcess,
         ...existingFiles.map((f) => f.path),

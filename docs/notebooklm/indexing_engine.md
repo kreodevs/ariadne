@@ -53,6 +53,7 @@ El **pipeline** (parser + producer) se mantiene igual; la entrada es siempre una
   1. **Fase Mapping:** `listFiles` (API Bitbucket/GitHub o shallow clone).
   2. **Fase Deps:** Lectura de `package.json` → `manifestDeps` en nodo Project.
   3. **Fase Chunking:** Parse Tree-sitter → `line_range` en Function, `commitSha` en File/Function.
+- **Alcance opcional por repo:** Tras el mapping, si existe `repositories.index_include_rules`, se filtra la lista de paths con `index-include-rules.ts` (manifiestos en raíz + `path_prefix` / `file`). `null` = sin este paso adicional.
 - **Incremental:** Webhook Bitbucket. Diff por commit; archivos eliminados → `buildCypherDeleteFile` (orphan cleanup).
 - **Legacy:** Cartographer con chokidar está en desuso.
 

@@ -12,6 +12,7 @@ import { CreateRepositoryDto } from './dto/create-repository.dto';
 import { UpdateRepositoryDto } from './dto/update-repository.dto';
 import { encrypt, decrypt } from '../credentials/crypto.util';
 import { EmbeddingSpaceService } from '../embedding/embedding-space.service';
+import { parseIndexIncludeRulesFromDto } from '../providers/index-include-rules';
 
 /** Servicio de repositorios: create, findAll, findOne, update, remove, jobs. */
 @Injectable()
@@ -152,6 +153,7 @@ export class RepositoriesService {
       webhookSecretEncrypted?: string | null;
       readEmbeddingSpaceId?: string | null;
       writeEmbeddingSpaceId?: string | null;
+      indexIncludeRules?: ReturnType<typeof parseIndexIncludeRulesFromDto>;
     } = {};
     if (dto.defaultBranch != null) updates.defaultBranch = dto.defaultBranch || 'main';
     if (dto.credentialsRef !== undefined) updates.credentialsRef = dto.credentialsRef ?? null;
@@ -170,6 +172,9 @@ export class RepositoriesService {
       const v = dto.writeEmbeddingSpaceId;
       if (v) await this.embeddingSpaces.assertExists(v);
       updates.writeEmbeddingSpaceId = v ?? null;
+    }
+    if (dto.indexIncludeRules !== undefined) {
+      updates.indexIncludeRules = parseIndexIncludeRulesFromDto(dto.indexIncludeRules);
     }
     if (dto.projectId != null && dto.projectId.trim() !== '') await this.addRepoToProject(id, dto.projectId);
     if (Object.keys(updates).length > 0) await this.repo.update(id, updates);

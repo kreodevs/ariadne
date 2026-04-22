@@ -185,6 +185,7 @@ Repositorio remoto Bitbucket/GitHub.
 | `credentials_ref` | varchar(512) nullable | FK lógica a `credentials.id` |
 | `last_commit_sha` | varchar(64) nullable | Webhook bridge |
 | `last_sync_at` | timestamptz nullable | |
+| `index_include_rules` | jsonb nullable | Alcance de indexado por repo (`null` = completo; `{ entries }` = restringido — ver `index-include-rules.ts` y MONOREPO doc) |
 | … | | Ver entidad `RepositoryEntity` |
 
 #### 5.2 `projects`

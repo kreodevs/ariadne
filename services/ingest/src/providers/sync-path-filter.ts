@@ -81,6 +81,12 @@ function pathHasSegmentIn(path: string, set: Set<string>): boolean {
   return splitPathSegments(path).some((s) => set.has(s));
 }
 
+/** Rutas bajo `node_modules`, `.git`, `dist`, etc. — no indexar aunque el usuario pida un archivo explícito ahí. */
+export function pathHasGlobalSkipSegment(path: string): boolean {
+  const norm = path.replace(/\\/g, '/');
+  return pathHasSegmentIn(norm, SYNC_ALWAYS_SKIP_SEGMENTS);
+}
+
 /**
  * Manifiestos y specs que deben entrar en el mapping (clone + API) aunque el resto de .json se excluya.
  */

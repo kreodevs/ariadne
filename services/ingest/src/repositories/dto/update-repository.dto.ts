@@ -1,6 +1,8 @@
 /**
  * @fileoverview DTO para actualizar repositorio: campos opcionales defaultBranch, credentialsRef, webhookSecret.
  */
+import type { IndexIncludeRules } from '../../providers/index-include-rules';
+
 /** DTO para actualizar repositorio (defaultBranch?, credentialsRef?, webhookSecret?, projectId?). */
 export class UpdateRepositoryDto {
   defaultBranch?: string;
@@ -14,4 +16,10 @@ export class UpdateRepositoryDto {
   readEmbeddingSpaceId?: string | null;
   /** UUID embedding_spaces: destino de POST embed-index durante migración de modelo. */
   writeEmbeddingSpaceId?: string | null;
+
+  /**
+   * Reglas de alcance de indexado. `null` explícito restaura indexado completo del repo.
+   * Omitido = no modificar.
+   */
+  indexIncludeRules?: IndexIncludeRules | null;
 }

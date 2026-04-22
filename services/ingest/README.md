@@ -4,7 +4,7 @@ Microservicio NestJS que reemplaza la ingesta basada en directorio local (chokid
 
 ## Flujo de Ingesta
 
-1. **Fase Mapping:** Escaneo del repo (árbol, lenguajes); incluye `.prisma` cuando aplica.
+1. **Fase Mapping:** Escaneo del repo (árbol, lenguajes); incluye `.prisma` cuando aplica. Opcional: **`index_include_rules`** en `repositories` acota paths tras el listado (`index-include-rules.ts`).
 2. **Fase Deps:** Lectura de `package.json` para `manifestDeps` en Project (JSON: **`depKeys`** + **`scripts`**; el C4 y ayudas usan `depKeys`; el formato antiguo solo-array sigue siendo aceptado en lectura).
 3. **Fase Chunking:** Parse Tree-sitter con metadata `line_range` y `commit_sha`; **Prisma** vía `@prisma/internals` (getDMMF) → nodos `:Model`, `:Enum`, relaciones `RELATES_TO` / `USES_ENUM`; **tsconfig** con TypeScript API (`extends` merge) para aliases en `IMPORTS`. Incluye **domain-extract** (DomainConcept).
 4. **Cola Redis/BullMQ:** Sync se encola; worker procesa en background.
@@ -40,6 +40,7 @@ Ver [src/chat/README.md](src/chat/README.md) y [docs/comparativa/Plan_Implementa
 ## Endpoints
 
 - `POST /repositories` — Registrar repositorio (provider, projectKey, repoSlug, defaultBranch, credentialsRef opcional)
+- `PATCH /repositories/:id` — Actualizar repo: `defaultBranch`, `credentialsRef`, `webhookSecret`, `readEmbeddingSpaceId` / `writeEmbeddingSpaceId`, **`indexIncludeRules`** (`null` = indexar todo el repo; `{ entries: [{ kind: 'path_prefix'|'file', path }] }` = alcance restringido + manifiestos en raíz — ver `src/providers/index-include-rules.ts` y [docs/notebooklm/MONOREPO_Y_LIMITACIONES_INDEXADO.md](../../docs/notebooklm/MONOREPO_Y_LIMITACIONES_INDEXADO.md))
 - `GET /repositories` — Listar repositorios
 - `DELETE /repositories/:id` — Borra el repo en Postgres (jobs, `indexed_files`, vínculos a proyectos vía CASCADE) y **antes** elimina en FalkorDB todos los nodos con ese `repoId` en cada `projectId` donde estuvo indexado (`clearProjectRepo`), para no dejar basura consultable vía MCP/RAG.
 - `GET /repositories/:id` — Detalle de un repositorio
@@ -97,6 +98,7 @@ Tras cada sync (normal o resync), se ejecuta automáticamente `embed-index` si h
 - `INDEX_TESTS` — `true` o `1`: incluir archivos `*.test.*` y `*.spec.*` en el indexado (default: excluidos)
 - `INDEX_E2E` — `true` o `1`: incluir carpetas típicas de e2e (`e2e/`, `cypress/`, `playwright/`, `__tests__/`, etc.) y archivos `*.e2e.*` (default: excluidos; ver `sync-path-filter.ts`)
 - `INDEX_MIGRATIONS` — `true` o `1`: incluir rutas bajo un segmento de carpeta `migrations/` (p. ej. TypeORM `src/migrations/*.ts`; default: **excluidas** — suelen añadir ruido al contexto)
+- **Alcance por repositorio (sin env):** columna **`index_include_rules`** en `repositories` — JSON `{ entries: [...] }` o `null`. Lógica en **`index-include-rules.ts`**; sync y webhook incremental la aplican tras el listado global.
 - `TRUNCATE_PARSE_MAX_BYTES` — Límite de bytes para truncar archivos grandes antes de parsear (default 25000). Tree-sitter falla con muchos nodos hermanos; aumentar con cuidado.
 
 **Embeddings:** Si cambias de proveedor (OpenAI ↔ Google ↔ Kimi), reejecuta `POST /repositories/:id/embed-index`; las dimensiones deben ser coherentes con el índice vectorial y FalkorDB no admite mezclar vectores de distinta dimensión en la misma propiedad.

@@ -17,7 +17,19 @@ repo/
 └── package.json
 ```
 
-**El indexador recorre todo el repo** desde la raíz. No hay filtro que excluya `apps/` o `libs/`. Los paths en el grafo son relativos al repo: `apps/admin/src/App.tsx`, `libs/shared/src/utils.ts`.
+**Por defecto** (`repositories.index_include_rules` = `null`), el indexador considera **todo el repo** desde la raíz: entran los paths que pasan el filtro global (`shouldSyncIndexPath` en `sync-path-filter.ts`). No hay exclusión automática de `apps/` o `libs/`. Los paths en el grafo son relativos al repo: `apps/admin/src/App.tsx`, `libs/shared/src/utils.ts`.
+
+### 1.1 Alcance del índice por repositorio (opcional)
+
+Puedes **restringir** qué se indexa por repo (columna **`index_include_rules`**, JSONB; **`PATCH /repositories/:id`** con `indexIncludeRules`; UI **Editar** en `/repos/:id/edit`):
+
+| Valor | Comportamiento |
+|--------|----------------|
+| **`null`** | Igual que siempre: todo el repo sujeto a `shouldSyncIndexPath` (más exclusiones e2e/migrations/tests según env). |
+| **`{ "entries": [] }`** | Solo manifiestos/código en **raíz**: `package.json` y archivos en la raíz del repo (un solo segmento de path, sin dotfile inicial) con extensión `.json`, `.js`, `.ts`, `.jsx`, `.tsx` (p. ej. `tsconfig.json`). |
+| **`{ "entries": […] }`** | Lo anterior **más** cada entrada: **`kind: "path_prefix"`** + `path` → todo lo indexable bajo ese prefijo; **`kind: "file"`** + `path` → ese archivo aunque solo no pasara el filtro global. |
+
+Los prefijos y archivos explícitos **no** desactivan exclusiones de seguridad (`node_modules`, `.git`, `dist`, etc.). Tras cambiar reglas conviene **Re-sincronizar** el repo. El webhook incremental Bitbucket aplica la misma lógica (`index-include-rules.ts`). Si el sync usa API (sin clone), **`listRootFiles`** en GitHub/Bitbucket completa manifiestos en raíz.
 
 ---
 

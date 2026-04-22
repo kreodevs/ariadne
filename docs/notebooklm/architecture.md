@@ -29,6 +29,7 @@ Cada servicio es una aplicación NestJS desplegable de forma independiente. Comu
   3. **Fase Chunking semántico:** Parser Tree-sitter por unidades lógicas (funciones, clases) con metadata `line_range` y `commit_sha`.
 - **Cola de mensajes:** Redis/BullMQ. `POST /repositories/:id/sync` encola el job; un worker lo procesa de forma asíncrona.
 - **Full sync:** Shallow clone opcional (`git clone --depth 1`) o API (Bitbucket/GitHub). Se filtran `node_modules`, `dist`, `venv`, `.env`, `*.log`; pipeline: parse → producer Cypher → FalkorDB; estado en PostgreSQL (repos, sync_jobs, indexed_files).
+- **Alcance del índice por repositorio:** columna `repositories.index_include_rules` (JSONB). `null` = todo el repo (filtro global). Con `{ entries: [...] }` se restringe a prefijos/archivos + manifiestos en raíz; `PATCH /repositories/:id` y UI `/repos/:id/edit`. Ver `services/ingest/src/providers/index-include-rules.ts`.
 - **Incremental:** Webhook (Bitbucket push) llama a `POST /webhooks/bitbucket`; diff por commit; archivos borrados se eliminan del grafo (orphan cleanup).
 - **Webhook bridge:** Se persiste `lastCommitSha` tras cada sync; permite diff entre SHA conocido y nuevo para indexar solo cambios.
 - **Proveedores:** Bitbucket (API REST 2.0), GitHub (API REST v3). Alternativa: shallow clone vía `runShallowClone()`.

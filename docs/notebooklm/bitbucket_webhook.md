@@ -27,6 +27,7 @@ El ingest obtiene la lista de archivos modificados en un commit con `GET .../rep
 - **Event key:** `repo:push`
 - El payload incluye `repository.full_name` (workspace/repo_slug) y `push.changes` con commits.
 - El ingest busca un repositorio registrado con `provider=bitbucket`, `projectKey=workspace` y `repoSlug=repo_slug`; si existe, ejecuta la ingesta incremental solo para los archivos cambiados en esos commits.
+- Si el repo tiene **`index_include_rules`** definido en PostgreSQL, los paths del diff se filtran con la misma lógica que el full sync (`index-include-rules.ts`), además de rutas ya presentes en `indexed_files` cuando aplica.
 
 ## Registro del repositorio
 

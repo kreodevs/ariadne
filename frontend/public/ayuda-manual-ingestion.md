@@ -11,6 +11,7 @@ Escaneo del repo para generar estructura y lenguajes:
 - Listado recursivo de archivos (API o shallow clone)
 - Detección de lenguajes por extensión (`.js`, `.ts`, `.tsx`, etc.)
 - Árbol de directorios derivado de los paths
+- **Alcance por repo (opcional):** si `repositories.index_include_rules` no es `null`, el ingest aplica `index-include-rules.ts` tras el listado (manifiestos en raíz + prefijos/archivos). Ver [MONOREPO_Y_LIMITACIONES_INDEXADO.md](../../../docs/notebooklm/MONOREPO_Y_LIMITACIONES_INDEXADO.md).
 
 ### Fase 2 — Análisis de Dependencias
 
