@@ -14,6 +14,7 @@ import { ChatAntipatternsService } from './chat-antipatterns.service';
 import { ChatLlmService } from './chat-llm.service';
 import { SCHEMA, EXAMPLES, EXPLORER_TOOLS_ALL, getExplorerToolsKnowledge } from './chat.constants';
 import { normalizeOptions, extractSearchTerms, getSearchTermsWithSynonyms } from './chat-analysis.utils';
+import { isNonSourceEvidenceNoisePath } from './chat-evidence-path-filter';
 
 /** Respuesta con answer opcional cypher/result (para AgentResponse). */
 export interface HandlerResponse {
@@ -166,6 +167,8 @@ export class ChatHandlersService {
    * @param graphProjectId - `projectId` en Falkor (padre en multi-root vía `resolveProjectIdForRepo`).
    * @param repositoryIdForEmbedding - fila `repositories.id` para leer espacio de embeddings; si se omite, se usa `graphProjectId` (repo sin proyecto asociado).
    * @param restrictRepoId - si se define, conteos + `queryNodes` solo consideran nodos con ese `repoId` (fan-out multi-root).
+   * @param opts.dropNonSourceEvidenceNoisePaths — omite filas cuyo `path` encaje en el mismo criterio que
+   *   `wherePathNotNonSourceEvidenceNoise` (deterministic raw_evidence).
    */
   async semanticSearchFallback(
     graphProjectId: string,
@@ -173,6 +176,7 @@ export class ChatHandlersService {
     limit = 15,
     repositoryIdForEmbedding?: string,
     restrictRepoId?: string,
+    opts?: { dropNonSourceEvidenceNoisePaths?: boolean },
   ): Promise<{ cypher: string; result: unknown[] }> {
     if (!query.trim()) return { cypher: '', result: [] };
     const embeddingRepoId = repositoryIdForEmbedding ?? graphProjectId;
@@ -185,6 +189,8 @@ export class ChatHandlersService {
     const yieldWhere = restrictRepoId
       ? ` WHERE node.projectId = ${cypherSafe(graphProjectId)} AND node.repoId = ${cypherSafe(restrictRepoId)}`
       : '';
+    const dropNoise = Boolean(opts?.dropNonSourceEvidenceNoisePaths);
+    const skipNoisePath = (pathStr: string) => dropNoise && isNonSourceEvidenceNoisePath(pathStr);
     try {
       const countFn = await this.cypher.executeCypher(
         graphProjectId,
@@ -284,6 +290,7 @@ export class ChatHandlersService {
         const key = `Function:${nameStr}:${pathStr}`;
         if (seen.has(key)) continue;
         seen.add(key);
+        if (skipNoisePath(pathStr)) continue;
         const out: { tipo: string; path: string; name: string; repoId?: string } = {
           tipo: 'Function',
           path: pathStr,
@@ -342,6 +349,7 @@ export class ChatHandlersService {
         const key = `Document:${pathStr}:${ci}`;
         if (seen.has(key)) continue;
         seen.add(key);
+        if (skipNoisePath(pathStr)) continue;
         const title = heading ? `${heading} — ${pathStr}` : pathStr;
         const out: { tipo: string; path: string; name: string; repoId?: string } = {
           tipo: 'Document',
@@ -360,6 +368,7 @@ export class ChatHandlersService {
         const key = `StorybookDoc:${pathStr}`;
         if (seen.has(key)) continue;
         seen.add(key);
+        if (skipNoisePath(pathStr)) continue;
         const out: { tipo: string; path: string; name: string; repoId?: string } = {
           tipo: 'StorybookDoc',
           path: pathStr,
@@ -377,6 +386,7 @@ export class ChatHandlersService {
         const key = `MarkdownDoc:${pathStr}`;
         if (seen.has(key)) continue;
         seen.add(key);
+        if (skipNoisePath(pathStr)) continue;
         const out: { tipo: string; path: string; name: string; repoId?: string } = {
           tipo: 'MarkdownDoc',
           path: pathStr,
@@ -394,6 +404,7 @@ export class ChatHandlersService {
         const key = `Model:${nameStr}:${pathStr}`;
         if (seen.has(key)) continue;
         seen.add(key);
+        if (skipNoisePath(pathStr)) continue;
         const out: { tipo: string; path: string; name: string; repoId?: string } = {
           tipo: 'Model',
           path: pathStr,
@@ -411,6 +422,7 @@ export class ChatHandlersService {
         const key = `Enum:${nameStr}:${pathStr}`;
         if (seen.has(key)) continue;
         seen.add(key);
+        if (skipNoisePath(pathStr)) continue;
         const out: { tipo: string; path: string; name: string; repoId?: string } = {
           tipo: 'Enum',
           path: pathStr,

@@ -18,6 +18,7 @@ import { resolveWithTsconfig } from './tsconfig-resolve';
 import type { StorybookDocumentationExtract } from './storybook-documentation';
 import { STORYBOOK_MAX_EMBED_CHARS } from './storybook-documentation';
 import { importInfosToStorybookBindings, isStorybookStoriesPath } from './storybook-csf-ast';
+import { isNonSourceEvidenceNoisePath } from '../chat/chat-evidence-path-filter';
 
 export type { GraphClient } from 'ariadne-common';
 
@@ -517,7 +518,7 @@ export function buildCypherForFile(
   }
 
   const pmd = parsed.projectMarkdown;
-  if (pmd) {
+  if (pmd && !isNonSourceEvidenceNoisePath(path)) {
     const resolvedTargets = collectResolvedStorybookTargets(path, pmd, allFilePaths, importResolveOpts ?? null);
     const appendix =
       resolvedTargets.length > 0

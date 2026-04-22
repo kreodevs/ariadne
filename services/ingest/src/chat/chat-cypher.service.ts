@@ -41,6 +41,7 @@ export class ChatCypherService {
    * Excluye de **muestras** (File/Function/archivos en joins) documentación suelta, scripts de repo,
    * lockfiles y configs de tooling que no aportan a “arquitectura de código”. No afecta COUNT.
    */
+  /** Mantener criterio alineado con `chat-evidence-path-filter.isNonSourceEvidenceNoisePath`. */
   private static wherePathNotNonSourceEvidenceNoise(pathExpr: string): string {
     const p = `toLower(coalesce(toString(${pathExpr}), ''))`;
     return `(

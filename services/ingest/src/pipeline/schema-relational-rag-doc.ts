@@ -1,6 +1,7 @@
 /**
  * Documento sintético :MarkdownDoc por repo/proyecto: texto orientado a preguntas de esquema relacional
- * para RAG (embed-index vectoriza `documentationText`). Path reservado bajo `ariadne-internal/`.
+ * para RAG (embed-index vectoriza `documentationText`). Path virtual reservado (no coincide con exclusiones
+ * de evidencia “código fuente” en `chat-evidence-path-filter` / Cypher `wherePathNotNonSourceEvidenceNoise`).
  */
 import { getDMMF } from '@prisma/internals';
 import { cypherSafe } from 'ariadne-common';
@@ -9,7 +10,7 @@ import { listOpenApiOperations } from './openapi-spec-ingest';
 import { STORYBOOK_MAX_EMBED_CHARS } from './storybook-documentation';
 
 /** Path virtual (no existe en el repo); no se registra en `indexed_files`. */
-export const SCHEMA_RELATIONAL_RAG_SOURCE_PATH = 'ariadne-internal/relational-schema-rag-index.md';
+export const SCHEMA_RELATIONAL_RAG_SOURCE_PATH = 'graph-internal/relational-schema-rag-index.md';
 
 export const SCHEMA_RELATIONAL_RAG_TITLE = 'Esquema relacional (vista índice RAG)';
 

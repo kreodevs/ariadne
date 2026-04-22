@@ -9,6 +9,7 @@ import { FileContentService } from '../repositories/file-content.service';
 import { RepositoriesService } from '../repositories/repositories.service';
 import type { ChatScope } from './chat-scope.util';
 import { filterCypherRowsByScope, matchesChatScope } from './chat-scope.util';
+import { shouldDropEvidenceNoiseCypherRow } from './chat-evidence-path-filter';
 
 export type RetrieverToolName = 'execute_cypher' | 'semantic_search' | 'get_graph_summary' | 'get_file_content';
 
@@ -23,6 +24,11 @@ export interface RetrieverToolRequest {
   semanticRestrictRepoId?: string;
   /** Si semantic_search viene sin query, se usa este texto (mensaje usuario). */
   fallbackMessage?: string;
+  /**
+   * Deterministic raw_evidence: omite filas cuyo `path` sea ruido de no-código-fuente
+   * (mismo criterio que `wherePathNotNonSourceEvidenceNoise` en Cypher).
+   */
+  dropNonSourceEvidenceNoisePaths?: boolean;
   /**
    * `full`: volcar `get_file_content` casi completo (The Forge / `responseMode: raw_evidence`).
    * Límite: `CHAT_RAW_EVIDENCE_FILE_MAX_CHARS` (default 5M). Default recorte: `CHAT_GET_FILE_CONTENT_MAX_CHARS` (default 14k).
@@ -86,7 +92,10 @@ export class ChatRetrieverToolsService {
         } else {
           lastCypher = cypher;
           const rawRows = await this.cypher.executeCypher(projectId, cypher);
-          const rows = filterCypherRowsByScope(rawRows as Record<string, unknown>[], scope) as typeof rawRows;
+          let rows = filterCypherRowsByScope(rawRows as Record<string, unknown>[], scope) as typeof rawRows;
+          if (req.dropNonSourceEvidenceNoisePaths) {
+            rows = rows.filter((row) => !shouldDropEvidenceNoiseCypherRow(row as Record<string, unknown>));
+          }
           if (rawRows.length > 0 && rows.length === 0) {
             toolResult = `0 filas tras aplicar el alcance (scope): ${rawRows.length} filas en crudo omitidas por repoIds/prefijos/exclusiones. Ajusta el scope o la consulta.`;
           } else if (rows.length === 0) {
@@ -109,6 +118,7 @@ export class ChatRetrieverToolsService {
           15,
           embedRepo,
           restrictRepo,
+          req.dropNonSourceEvidenceNoisePaths ? { dropNonSourceEvidenceNoisePaths: true } : undefined,
         );
         let semRows = semantic.result as Array<Record<string, unknown>>;
         if (scope) {

@@ -10,6 +10,7 @@ import { FalkorDB } from 'falkordb';
 import { IndexedFile } from '../repositories/entities/indexed-file.entity';
 import { cypherSafe } from 'ariadne-common';
 import { getFalkorConfig, graphNameForProject, isProjectShardingEnabled } from '../pipeline/falkor';
+import { SCHEMA_RELATIONAL_RAG_SOURCE_PATH } from '../pipeline/schema-relational-rag-doc';
 import { RepositoriesService } from '../repositories/repositories.service';
 import { FileContentService } from '../repositories/file-content.service';
 import { EmbeddingService } from '../embedding/embedding.service';
@@ -3252,8 +3253,9 @@ PROHIBIDO: instrucciones genéricas tipo "revisa los controladores", "asegúrate
     const collectedResults: unknown[] = [];
     let lastCypher = '';
 
+    const evidenceNoiseOpts = { dropNonSourceEvidenceNoisePaths: true as const };
     const pushTool = async (label: string, req: RetrieverToolRequest) => {
-      const r = await this.retrieverTools.executeTool(repositoryId, projectId, req);
+      const r = await this.retrieverTools.executeTool(repositoryId, projectId, { ...req, ...evidenceNoiseOpts });
       if (r.lastCypher) lastCypher = r.lastCypher;
       collectedResults.push(...r.collectedRows);
       collectedToolOutputs.push(`[deterministic:${label}]\n${r.toolResult}`);
@@ -3302,8 +3304,6 @@ PROHIBIDO: instrucciones genéricas tipo "revisa los controladores", "asegúrate
     }
     const limRaw = parseInt(process.env.CHAT_DETERMINISTIC_FILE_SAMPLE_LIMIT ?? '400', 10);
     const fileLimit = Math.min(2000, Math.max(20, Number.isFinite(limRaw) ? limRaw : 400));
-    /** Alineado con `schema-relational-rag-doc.ts` (path virtual del MarkdownDoc de esquema). */
-    const schemaRagVirtualPath = 'ariadne-internal/relational-schema-rag-index.md';
     const p = 'toLower(f.path)';
     const dbRelatedWhere = `(
   ${p} ENDS WITH '.prisma'
@@ -3311,7 +3311,7 @@ PROHIBIDO: instrucciones genéricas tipo "revisa los controladores", "asegúrate
   OR ${p} CONTAINS '/entities/'
   OR ${p} ENDS WITH 'datasource.ts'
   OR ${p} CONTAINS '/migrations/' OR ${p} CONTAINS '/migration/'
-  OR f.path = ${cypherSafe(schemaRagVirtualPath)}
+  OR f.path = ${cypherSafe(SCHEMA_RELATIONAL_RAG_SOURCE_PATH)}
 )`;
     const matchFile = ps
       ? `MATCH (f:File {projectId: $projectId}) WHERE ${dbRelatedWhere}`
