@@ -19,6 +19,8 @@ Panel **Alcance opcional**: prefijos de ruta y globs de exclusión (una línea p
 - **MDD / SDD** — `responseMode: evidence_first`: una respuesta JSON MDD (7 claves); **ChatAssistantContent** lo muestra formateado.
 - **Evidencia bruta** — `responseMode: raw_evidence` + `deterministicRetriever: true`: sin LLM en la fase de retrieve en ingest.
 
+**MCP `ask_codebase`:** mismos tres comportamientos con `responseMode` = `default` \| `evidence_first` \| `raw_evidence`. **Ojo:** si el agente **omite** `responseMode`, el servidor MCP fuerza `raw_evidence` + `deterministicRetriever: true` (equivalente a “Evidencia bruta”), no a “Chat normal”; para prosa+ReAct hay que pasar **`responseMode: "default"`**. Detalle: [docs/notebooklm/mcp_server_specs.md](../../../docs/notebooklm/mcp_server_specs.md) (subsection *Modo The Forge*).
+
 `api.chat` reintenta hasta 3 veces ante **429** con backoff.
 
 ## Componentes de chat

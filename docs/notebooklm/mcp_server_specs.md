@@ -122,6 +122,31 @@ RETURN dependent.name AS name, labels(dependent) AS labels
 - **Implementación ingest:** Intenta `POST /projects/:projectId/chat` (chat por proyecto, todos los repos); si 404, `POST /repositories/:projectId/chat` (chat por repo). Body admite `message`, `history`, `scope`, `twoPhase`, `responseMode`, `deterministicRetriever`. Respuesta puede incluir **`mddDocument`** (objeto) cuando `responseMode` es `evidence_first` y el backend lo serializa.
 - **Listas exhaustivas:** Usar **`get_modification_plan`** para archivos a modificar y preguntas de afinación (flujo legacy/MaxPrime).
 
+#### Modo The Forge (UI) ↔ `ask_codebase` en MCP
+
+En **The Forge** (`/repos/:id/chat`, `RepoChat` + `ChatPipelineModeSelect`) los tres modos mapean al ingest así:
+
+| Modo en UI | Body hacia `POST …/chat` (ingest) | MCP `ask_codebase` (argumentos) |
+|------------|-----------------------------------|-----------------------------------|
+| **Chat normal** | No se envía `responseMode` (prosa; ReAct en retrieve, p. ej. hasta 4 turnos). | **`"responseMode": "default"`** |
+| **MDD / SDD (recomendado)** | `"responseMode": "evidence_first"` | **`"responseMode": "evidence_first"`** |
+| **Evidencia bruta (barato)** | `"responseMode": "raw_evidence"` y `"deterministicRetriever": true` | **`"responseMode": "raw_evidence"`** y **`"deterministicRetriever": true`** (opcional: ver abajo) |
+
+**Importante — default del servidor MCP:** si en **`ask_codebase` omites** `responseMode`, el MCP **no** replica “Chat normal”: rellena **`raw_evidence`** y **`deterministicRetriever: true`** (retrieve fijo sin LLM en esa fase; mismo espíritu que “Evidencia bruta” en la UI). Para **prosa + ReAct** como en la UI “Chat normal”, pasa explícitamente **`responseMode: "default"`**. Con `raw_evidence`, si omites `deterministicRetriever`, el MCP asume **`true`**; pon **`deterministicRetriever": false`** si quieres ReAct+LLM en retrieve con salida JSON de evidencia (más costoso).
+
+Ejemplo mínimo (JSON del tool `ask_codebase`):
+
+```json
+{
+  "name": "ask_codebase",
+  "arguments": {
+    "projectId": "<uuid proyecto o roots[].id>",
+    "question": "¿Cómo está modelado el login?",
+    "responseMode": "evidence_first"
+  }
+}
+```
+
 #### Política de routing (coste, tokens, latencia)
 
 `ask_codebase` dispara un pipeline **agéntico** (ReAct + herramientas internas ± sintetizador). Es la opción **más cara** en tokens y tiempo; usarla cuando la pregunta cruce **varias fuentes** (Falkor + Prisma + OpenAPI + archivos de config) o sea **exploratoria**. Cuando el objetivo sea acotado, **otra herramienta MCP suele bastar** y reduce coste.
