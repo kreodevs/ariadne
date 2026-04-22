@@ -153,7 +153,10 @@ export class ChatCypherService {
               else if (label === 'Hook') sampleQuery = `MATCH (n:Hook) WHERE n.projectId = $projectId${wn} RETURN n.name as name ORDER BY n.name${limit}`;
               else if (label === 'Context') sampleQuery = `MATCH (f:File)-[:CONTAINS]->(n:Context) WHERE n.projectId = $projectId AND f.projectId = $projectId${wfn} RETURN n.name as name, f.path as path ORDER BY n.name, f.path${limit}`;
               else if (label === 'DomainConcept') sampleQuery = `MATCH (n:DomainConcept) WHERE n.projectId = $projectId${wn} RETURN n.name as name, n.category as category, n.sourcePath as path ORDER BY n.category, n.name${limit}`;
-              else sampleQuery = `MATCH (n:${label}) WHERE n.projectId = $projectId${wn} RETURN n.name as name, n.path as path ORDER BY n.path, n.name${limit}`;
+              else if (label === 'OpenApiOperation') {
+                /** Ver `openapi-spec-ingest.ts`: no hay `name`/`path` en el nodo, solo pathTemplate, method, specPath. */
+                sampleQuery = `MATCH (n:OpenApiOperation) WHERE n.projectId = $projectId${wn} RETURN coalesce(n.method, '') + ' ' + coalesce(n.pathTemplate, '') AS name, coalesce(n.specPath, '') AS path ORDER BY n.specPath, n.pathTemplate, n.method${limit}`;
+              } else sampleQuery = `MATCH (n:${label}) WHERE n.projectId = $projectId${wn} RETURN n.name as name, n.path as path ORDER BY n.path, n.name${limit}`;
 
               const sampleRes = await graph.query(sampleQuery, { params });
               const chunk = (sampleRes as { data?: Record<string, unknown>[] })?.data ?? [];
