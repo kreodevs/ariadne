@@ -37,6 +37,68 @@ export class ChatCypherService {
     )`;
   }
 
+  /**
+   * Excluye de **muestras** (File/Function/archivos en joins) documentación suelta, scripts de repo,
+   * lockfiles y configs de tooling que no aportan a “arquitectura de código”. No afecta COUNT.
+   */
+  private static wherePathNotNonSourceEvidenceNoise(pathExpr: string): string {
+    const p = `toLower(coalesce(toString(${pathExpr}), ''))`;
+    return `(
+      ${p} = ''
+      OR NOT (
+        ${p} ENDS WITH '.md'
+        OR ${p} ENDS WITH '.mdx'
+        OR ${p} ENDS WITH '.rst'
+        OR ${p} STARTS WITH 'docs/'
+        OR ${p} STARTS WITH 'documents/'
+        OR ${p} STARTS WITH 'scripts/'
+        OR ${p} STARTS WITH 'prompts/'
+        OR ${p} STARTS WITH 'ariadne-internal/'
+        OR ${p} STARTS WITH '.github/'
+        OR ${p} CONTAINS '/__tests__/'
+        OR ${p} CONTAINS '/__mocks__/'
+        OR ${p} CONTAINS '/coverage/'
+        OR ${p} CONTAINS '/playwright-report/'
+        OR ${p} CONTAINS '.stories.'
+        OR ${p} CONTAINS '/e2e/'
+        OR ${p} CONTAINS '/tests/'
+        OR ${p} CONTAINS '/test/'
+        OR ${p} = 'package.json'
+        OR ${p} = 'package-lock.json'
+        OR ${p} = 'pnpm-lock.yaml'
+        OR ${p} = 'yarn.lock'
+        OR ${p} = 'openapi.json'
+        OR ${p} ENDS WITH '/openapi.json'
+        OR ${p} STARTS WITH 'eslint'
+        OR ${p} STARTS WITH 'playwright.'
+        OR ${p} STARTS WITH 'postcss.'
+        OR ${p} STARTS WITH 'tailwind.'
+        OR ${p} STARTS WITH 'vite.'
+        OR ${p} STARTS WITH 'vitest.'
+        OR ${p} STARTS WITH 'jest.'
+        OR ${p} STARTS WITH 'webpack.'
+        OR ${p} STARTS WITH 'rollup.'
+        OR ${p} STARTS WITH 'biome.'
+        OR ${p} STARTS WITH 'ecosystem.'
+        OR ${p} CONTAINS 'fix-eslint-warnings'
+      )
+    )`;
+  }
+
+  /** Prioriza carpetas de código antes que raíz genérica (mejor evidencia con LIMIT). */
+  private static orderByArchitecturePath(pathAlias: string): string {
+    const p = `toLower(coalesce(toString(${pathAlias}), ''))`;
+    return `ORDER BY CASE
+      WHEN ${p} STARTS WITH 'src/' THEN 0
+      WHEN ${p} STARTS WITH 'apps/' THEN 1
+      WHEN ${p} STARTS WITH 'packages/' THEN 2
+      WHEN ${p} STARTS WITH 'lib/' THEN 3
+      WHEN ${p} STARTS WITH 'server/' THEN 3
+      WHEN ${p} STARTS WITH 'api/' THEN 3
+      ELSE 9
+    END, ${pathAlias}`;
+  }
+
   private static dedupeSampleRows(rows: unknown[]): unknown[] {
     const seen = new Set<string>();
     const out: unknown[] = [];
@@ -111,6 +173,8 @@ export class ChatCypherService {
     const noiseF = ChatCypherService.wherePathNotGraphNoise('f.path');
     const noiseSource = ChatCypherService.wherePathNotGraphNoise('n.sourcePath');
     const noiseSpec = ChatCypherService.wherePathNotGraphNoise('n.specPath');
+    const archN = ChatCypherService.wherePathNotNonSourceEvidenceNoise('n.path');
+    const archF = ChatCypherService.wherePathNotNonSourceEvidenceNoise('f.path');
     const labels = [
       'File',
       'Component',
@@ -163,11 +227,11 @@ export class ChatCypherService {
               for (const prefix of ChatCypherService.MONOREPO_PREFIXES) {
                 let q: string;
                 if (label === 'File') {
-                  q = `MATCH (n:File) WHERE n.projectId = $projectId${wn} AND n.path STARTS WITH $prefix AND ${noiseN} RETURN n.path as path ORDER BY n.path${limitPerPrefix}`;
+                  q = `MATCH (n:File) WHERE n.projectId = $projectId${wn} AND n.path STARTS WITH $prefix AND ${noiseN} AND ${archN} RETURN n.path as path ${ChatCypherService.orderByArchitecturePath('n.path')}${limitPerPrefix}`;
                 } else if (label === 'Component') {
-                  q = `MATCH (f:File)-[:CONTAINS]->(n:Component) WHERE n.projectId = $projectId AND f.projectId = $projectId${wfn} AND f.path STARTS WITH $prefix AND ${noiseF} RETURN f.path as path, n.name as name ORDER BY f.path, n.name${limitPerPrefix}`;
+                  q = `MATCH (f:File)-[:CONTAINS]->(n:Component) WHERE n.projectId = $projectId AND f.projectId = $projectId${wfn} AND f.path STARTS WITH $prefix AND ${noiseF} AND ${archF} RETURN f.path as path, n.name as name ORDER BY f.path, n.name${limitPerPrefix}`;
                 } else if (label === 'Function') {
-                  q = `MATCH (n:Function) WHERE n.projectId = $projectId${wn} AND n.path STARTS WITH $prefix AND ${noiseN} RETURN n.path as path, n.name as name ORDER BY n.path, n.name${limitPerPrefix}`;
+                  q = `MATCH (n:Function) WHERE n.projectId = $projectId${wn} AND n.path STARTS WITH $prefix AND ${noiseN} AND ${archN} RETURN n.path as path, n.name as name ORDER BY n.path, n.name${limitPerPrefix}`;
                 } else if (label === 'Model') {
                   q = `MATCH (n:Model) WHERE n.projectId = $projectId${wn} AND n.path STARTS WITH $prefix AND ${noiseN} RETURN n.path as path, n.name as name ORDER BY n.path, n.name${limitPerPrefix}`;
                 } else if (label === 'Route') {
@@ -197,20 +261,24 @@ export class ChatCypherService {
             const needDefaultSamples = !useStratified || stratifiedMerged.length === 0;
             if (needDefaultSamples) {
               let sampleQuery: string;
-              if (label === 'File') sampleQuery = `MATCH (n:File) WHERE n.projectId = $projectId${wn} AND ${noiseN} RETURN n.path as path ORDER BY n.path${rowLimit}`;
-              else if (label === 'Component') sampleQuery = `MATCH (f:File)-[:CONTAINS]->(n:Component) WHERE n.projectId = $projectId AND f.projectId = $projectId${wfn} AND ${noiseF} RETURN f.path as path, n.name as name ORDER BY f.path, n.name${rowLimit}`;
-              else if (label === 'Function') sampleQuery = `MATCH (n:Function) WHERE n.projectId = $projectId${wn} AND ${noiseN} RETURN n.path as path, n.name as name, n.endpointCalls as endpointCalls ORDER BY n.path, n.name${rowLimit}`;
+              if (label === 'File')
+                sampleQuery = `MATCH (n:File) WHERE n.projectId = $projectId${wn} AND ${noiseN} AND ${archN} RETURN n.path as path ${ChatCypherService.orderByArchitecturePath('n.path')}${rowLimit}`;
+              else if (label === 'Component')
+                sampleQuery = `MATCH (f:File)-[:CONTAINS]->(n:Component) WHERE n.projectId = $projectId AND f.projectId = $projectId${wfn} AND ${noiseF} AND ${archF} RETURN f.path as path, n.name as name ORDER BY f.path, n.name${rowLimit}`;
+              else if (label === 'Function')
+                sampleQuery = `MATCH (n:Function) WHERE n.projectId = $projectId${wn} AND ${noiseN} AND ${archN} RETURN n.path as path, n.name as name, n.endpointCalls as endpointCalls ORDER BY n.path, n.name${rowLimit}`;
               else if (label === 'Model') sampleQuery = `MATCH (n:Model) WHERE n.projectId = $projectId${wn} AND ${noiseN} RETURN n.path as path, n.name as name ORDER BY n.path, n.name${rowLimit}`;
               else if (label === 'Route') sampleQuery = `MATCH (n:Route) WHERE n.projectId = $projectId${wn} AND ${noiseN} RETURN n.path as path, n.componentName as componentName ORDER BY n.path${rowLimit}`;
               else if (label === 'Hook') sampleQuery = `MATCH (n:Hook) WHERE n.projectId = $projectId${wn} RETURN n.name as name ORDER BY n.name${rowLimit}`;
-              else if (label === 'Context') sampleQuery = `MATCH (f:File)-[:CONTAINS]->(n:Context) WHERE n.projectId = $projectId AND f.projectId = $projectId${wfn} AND ${noiseF} RETURN n.name as name, f.path as path ORDER BY n.name, f.path${rowLimit}`;
+              else if (label === 'Context')
+                sampleQuery = `MATCH (f:File)-[:CONTAINS]->(n:Context) WHERE n.projectId = $projectId AND f.projectId = $projectId${wfn} AND ${noiseF} AND ${archF} RETURN n.name as name, f.path as path ORDER BY n.name, f.path${rowLimit}`;
               else if (label === 'DomainConcept') sampleQuery = `MATCH (n:DomainConcept) WHERE n.projectId = $projectId${wn} AND ${noiseSource} RETURN n.name as name, n.category as category, n.sourcePath as path ORDER BY n.category, n.name${rowLimit}`;
               else if (label === 'OpenApiOperation') {
                 /** Ver `openapi-spec-ingest.ts`: method, pathTemplate, specPath (sin concat `+` por compat Falkor). */
                 sampleQuery = `MATCH (n:OpenApiOperation) WHERE n.projectId = $projectId${wn} AND ${noiseSpec} RETURN n.method AS method, n.pathTemplate AS pathTemplate, n.specPath AS specPath ORDER BY n.specPath, n.pathTemplate, n.method${rowLimit}`;
               } else if (label === 'Prop') {
                 sampleQuery = `MATCH (n:Prop) WHERE n.projectId = $projectId${wn} RETURN n.name AS name, coalesce(n.componentName, '') AS path ORDER BY n.componentName, n.name${rowLimit}`;
-              } else sampleQuery = `MATCH (n:${label}) WHERE n.projectId = $projectId${wn} AND ${noiseN} RETURN n.name as name, n.path as path ORDER BY n.path, n.name${rowLimit}`;
+              } else sampleQuery = `MATCH (n:${label}) WHERE n.projectId = $projectId${wn} AND ${noiseN} AND ${archN} RETURN n.name as name, n.path as path ORDER BY n.path, n.name${rowLimit}`;
 
               const sampleRes = await graph.query(sampleQuery, { params });
               const chunk = (sampleRes as { data?: Record<string, unknown>[] })?.data ?? [];
