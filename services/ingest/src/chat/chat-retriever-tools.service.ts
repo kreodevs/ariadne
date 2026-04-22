@@ -127,15 +127,19 @@ export class ChatRetrieverToolsService {
           toolResult = `Búsqueda semántica: 0 resultados.\n${diag}\nPrueba execute_cypher si el índice vectorial no aplica.`;
         }
       } else if (fn === 'get_graph_summary') {
+        const graphSampleCap =
+          req.evidenceVerbosity === 'full'
+            ? parsePositiveIntEnv('CHAT_RAW_EVIDENCE_GRAPH_SAMPLE_CAP', 120, 2000)
+            : undefined;
         let summary: Awaited<ReturnType<ChatCypherService['getGraphSummary']>>;
         if (projectScope) {
           const single =
             scope?.repoIds?.length === 1 ? scope.repoIds[0]! : undefined;
           summary = single
-            ? await this.cypher.getGraphSummary(single, true, true)
-            : await this.cypher.getGraphSummaryForProject(projectId);
+            ? await this.cypher.getGraphSummary(single, true, true, graphSampleCap)
+            : await this.cypher.getGraphSummaryForProject(projectId, true, graphSampleCap);
         } else {
-          summary = await this.cypher.getGraphSummary(repositoryId, true, true);
+          summary = await this.cypher.getGraphSummary(repositoryId, true, true, graphSampleCap);
         }
         toolResult = `Conteos: ${JSON.stringify(summary.counts)}. Muestras: ${JSON.stringify(summary.samples, null, 2)}`;
       } else if (fn === 'get_file_content') {
