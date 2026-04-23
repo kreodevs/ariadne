@@ -165,4 +165,4 @@ F0 métricas → F1 CI PR → F2 vector + expansión grafo
 
 ---
 
-*Última actualización: marzo 2026 — plan vivo; revisar prioridades tras Fase 0.*
+*Última actualización: abril 2026 — plan vivo; revisar prioridades tras Fase 0.*

@@ -1,4 +1,4 @@
-# Observabilidad — Fase 0 (marzo 2026)
+# Observabilidad — Fase 0 (abril 2026)
 
 Implementación mínima para medir **latencia de chat/RAG**, **tasa de retrieval vacío**, **calidad de grounding de rutas**, **fallos de sync** y **parser (truncado / fallo)**.
 

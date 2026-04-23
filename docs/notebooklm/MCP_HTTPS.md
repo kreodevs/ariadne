@@ -383,7 +383,7 @@ Estos datos **no están siempre en el grafo** (Prisma no se indexa; .env nunca).
 
 ## 12. Volúmenes de salida (límites configurables)
 
-El servidor MCP y el MDD del ingest usan **variables de entorno** con defaults altos para no truncar agresivamente listas y snippets. The Forge / clientes pueden bajarlas si saturan contexto o Falkor. Ver:
+El servidor MCP y el MDD del ingest usan **variables de entorno** con defaults altos para no truncar agresivamente listas y snippets. Clientes (UI, IDE, otros hosts MCP) pueden bajarlas si saturan contexto o Falkor. Ver:
 
 - `services/mcp-ariadne/README.md` — prefijos **`MCP_*`** (`semantic_search`, `get_file_context`, `trace_reachability`, etc.).
 - `services/ingest/src/chat/README.md` — prefijos **`MDD_*`** (JSON `evidence_first` / `mdd-evidence`).

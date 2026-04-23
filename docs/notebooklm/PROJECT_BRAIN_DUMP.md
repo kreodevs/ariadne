@@ -1,7 +1,7 @@
 # PROJECT_BRAIN_DUMP — Ariadne / AriadneSpecs
 
 > **Propósito del documento:** fuente de verdad técnica para un cuaderno **NotebookLM**. Describe el monorepo real (no proyectos de clientes indexados en Falkor).  
-> **Última revisión según árbol de código:** marzo 2026.
+> **Última revisión según árbol de código:** abril 2026.
 
 ---
 
@@ -36,7 +36,7 @@ No es MVC clásico: es **API + workers + graph DB + MCP**.
 | `services/orchestrator` | LangGraph + Redis: flujos de validación SDD (refactor). |
 | `services/mcp-ariadne` | Servidor MCP (tools → Falkor + ingest HTTP). |
 | `services/cartographer` | Legacy / shadow según docs; ingest asume pipeline principal remoto. |
-| `frontend` | Vite + React 19: repos, credenciales, chat, grafo de componente (React Flow). |
+| `frontend` | Vite + React 19: shell con sidebar (Gobierno / Ingeniería / Plataforma), repos, jobs, credenciales, chat por repo/proyecto, C4, explorador de grafo (React Flow). |
 | `docs/` | Arquitectura, MCP, chat, despliegue, esquema DB. |
 
 ### Flujo de datos principal

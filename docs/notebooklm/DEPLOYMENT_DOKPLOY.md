@@ -117,7 +117,7 @@ El MCP tiene `FALKORDB_HOST=falkordb`, `INGEST_URL=http://ingest:3002` y escucha
 
 ### Opción B: MCP local + túnel SSH
 
-Si prefieres el MCP local (npx) con túnel SSH: ver [INSTALACION_MCP_CURSOR.md](notebooklm/INSTALACION_MCP_CURSOR.md) — Escenario C.
+Si prefieres el MCP local (npx) con túnel SSH: ver [INSTALACION_MCP_CURSOR.md](INSTALACION_MCP_CURSOR.md) — Escenario C.
 
 ## 7. Postgres y migraciones
 

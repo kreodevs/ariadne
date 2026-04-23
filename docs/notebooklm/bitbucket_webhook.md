@@ -2,7 +2,7 @@
 
 Para que el microservicio de ingesta reciba actualizaciones incrementales al hacer push, configura un webhook en Bitbucket Cloud apuntando al servicio de ingesta.
 
-**Permisos del App Password / Token:** La credencial usada para sync debe tener: **Account: Read**, **Workspace membership: Read**, **Repositories: Read**. Ver tabla de permisos en [manual/CONFIGURACION_Y_USO.md](manual/CONFIGURACION_Y_USO.md).
+**Permisos del App Password / Token:** La credencial usada para sync debe tener: **Account: Read**, **Workspace membership: Read**, **Repositories: Read**. Ver tabla de permisos en [CONFIGURACION_Y_USO.md](../manual/CONFIGURACION_Y_USO.md).
 
 ## Pasos
 

@@ -38,12 +38,28 @@
 | **RELIC_ESTRATEGIA_INVERSION.md** | Estrategia / roadmap (esta carpeta). |
 | **RELIC_PRESENTACION_EJECUTIVA.md** | Presentación ejecutiva (esta carpeta). |
 
+## Calidad y límites
+
+| Doc | Descripción |
+|-----|-------------|
+| **TESTING.md** | Vitest ingest/frontend, Playwright, CI. |
+| **MONOREPO_Y_LIMITACIONES_INDEXADO.md** | Alcance de índice y filtros. |
+| **OBSERVABILIDAD_FASE0.md** | Observabilidad fase 0. |
+| **metricas-alcance-chat.md** | Métricas de chat. |
+| **diagnostico-layer-dependencies.md** / **plan-analyze-layer-cache.md** | Diagnóstico y caché analyze. |
+
 ## Otros
 
 | Doc | Descripción |
 |-----|-------------|
+| **ariadne-common.md** | Paquete compartido. |
+| **parser-ejemplo-circulo-activo.md** | Ejemplo parser. |
+| **PROJECT_BRAIN_DUMP.md** | Brain dump monorepo. |
 | **ariadne-project.example** | Ejemplo de `.ariadne-project` para fijar `projectId` en el repo que se mantiene con Ariadne. |
 | **cursor-rule-relic-project.mdc** | Regla de Cursor: usar `projectId` de `.ariadne-project` en llamadas al MCP. |
 | **constitution.md** | Principios y convenciones del proyecto. |
+| **Mejoras_Ariadne_Marzo.md** | Mejoras / roadmap. |
+
+**Shell frontend:** Gobierno (Dashboard, Dominios, Proyectos); Ingeniería (Repositorios, Cola de Sync, Nuevo Repo, C4 Viewer); Plataforma (Grafo, Credenciales, Ayuda). `/` → `/dashboard`.
 
 En la raíz del repo: **AGENTS.md** — Protocolo para agentes (list_known_projects al inicio, preferencia projectId, flujos de diagnóstico y SDD).

@@ -66,6 +66,10 @@ Servidor que implementa el **Model Context Protocol** para exponer las herramien
 - **Seguridad:** Capa de abstracción que impide a la IA ejecutar queries destructivas.
 - **Enriquecimiento:** No solo entrega nodos del grafo, sino que formatea la respuesta en Markdown estructurado para que la IA lo consuma fácilmente.
 
+### D. Frontend (shell administrativo)
+
+Aplicación **Vite + React** (`frontend/`): autenticación JWT, layout con sidebar y grupos **Gobierno** (Dashboard `/dashboard`, Dominios, Proyectos), **Ingeniería** (Repositorios → `/repos`, Cola de Sync → `/jobs`, Nuevo Repo → `/repos/new`, C4 Viewer → `/c4`) y **Plataforma** (Grafo `/graph-explorer`, Credenciales, Ayuda). La ruta `/` redirige a `/dashboard`. El chat por repositorio vive en **`/repos/:id/chat`** (modos `responseMode` alineados con MCP `ask_codebase`; ver [mcp_server_specs.md](mcp_server_specs.md)).
+
 ---
 
 ## 5. Flujo de Datos Detallado
@@ -104,7 +108,7 @@ Para **AriadneSpecs**, el modelo relacional es el siguiente:
 
 ## 8. Credenciales (PostgreSQL)
 
-Tabla `credentials`: tokens y secrets cifrados con AES-256-GCM. Tipos: `token`, `app_password`, `webhook_secret`. Cada repositorio puede referenciar una credencial (`credentialsRef`). Si no hay referencia, se usan variables de entorno. Ver [manual/CONFIGURACION_Y_USO.md](manual/CONFIGURACION_Y_USO.md).
+Tabla `credentials`: tokens y secrets cifrados con AES-256-GCM. Tipos: `token`, `app_password`, `webhook_secret`. Cada repositorio puede referenciar una credencial (`credentialsRef`). Si no hay referencia, se usan variables de entorno. Ver [CONFIGURACION_Y_USO.md](../manual/CONFIGURACION_Y_USO.md).
 
 ## 9. Consideraciones de Escalabilidad
 

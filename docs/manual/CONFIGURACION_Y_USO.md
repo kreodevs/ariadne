@@ -398,15 +398,21 @@ URL: `http://localhost:5173`
 
 | Ruta              | Descripción                                                            |
 | ----------------- | ---------------------------------------------------------------------- |
-| `/`               | Lista de **proyectos** Ariadne                                         |
+| `/`               | Redirección a **`/dashboard`**                                         |
+| `/dashboard`      | Resumen (KPIs / accesos rápidos)                                       |
 | `/domains`        | CRUD de dominios de arquitectura                                       |
+| `/projects`       | Listado de proyectos Ariadne                                           |
 | `/projects/:id`   | Detalle: General (repos, roles, sync) y **Arquitectura** (dominio, whitelist, C4) |
 | `/projects/:id/chat` | Chat NL multi-repo del proyecto                                    |
-| `/repos`          | Lista de repositorios                                                  |
+| `/repos`          | Lista de repositorios (título de vista *The Forge* en UI)               |
+| `/jobs`           | Cola de sync (jobs activos / historial según implementación)           |
 | `/repos/new`      | Alta de repositorio                                                    |
-| `/repos/:id`      | Detalle, Sync, Resync, tabla de jobs                                   |
+| `/repos/:id`      | Detalle, Sync, Resync, jobs del repo                                   |
 | `/repos/:id/chat` | Chat con el repo (preguntas NL, Diagnóstico, Duplicados, Reingeniería) |
+| `/c4`             | C4 Viewer (Kroki / DSL)                                                |
+| `/graph-explorer` | Explorador de grafo de componentes                                     |
 | `/credentials`    | Credenciales cifradas                                                  |
+| `/ayuda/*`        | Ayuda (MCP + manual embebido)                                          |
 
 ---
 
