@@ -37,6 +37,7 @@ const navigationGroups: SidebarGroup[] = [
       { label: 'Repositorios', href: '/repos', icon: FolderGit2 },
       { label: 'Cola de Sync', href: '/jobs', icon: ListOrdered },
       { label: 'Nuevo Repo', href: '/repos/new', icon: FolderPlus },
+      { label: 'Credenciales', href: '/credentials', icon: Key },
       { label: 'C4 Viewer', href: '/c4', icon: Boxes },
     ],
   },
