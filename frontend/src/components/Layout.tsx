@@ -8,7 +8,9 @@ import {
   LayoutDashboard,
   FolderKanban,
   Layers,
-  Flame,
+  FolderGit2,
+  ListOrdered,
+  FolderPlus,
   Boxes,
   Share2,
   Key,
@@ -32,16 +34,9 @@ const navigationGroups: SidebarGroup[] = [
   {
     title: 'Ingeniería',
     items: [
-      {
-        label: 'The Forge',
-        href: '/repos',
-        icon: Flame,
-        children: [
-          { label: 'Repositorios', href: '/repos' },
-          { label: 'Cola de sync', href: '/jobs' },
-          { label: 'Nuevo repo', href: '/repos/new' },
-        ],
-      },
+      { label: 'Repositorios', href: '/repos', icon: FolderGit2 },
+      { label: 'Cola de Sync', href: '/jobs', icon: ListOrdered },
+      { label: 'Nuevo Repo', href: '/repos/new', icon: FolderPlus },
       { label: 'C4 Viewer', href: '/c4', icon: Boxes },
     ],
   },
