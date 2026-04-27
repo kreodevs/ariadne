@@ -351,6 +351,15 @@ function mcpLogToolInvocationFailure(toolName: string, args: unknown, startedMs:
   console.error(`[mcp-ariadne] ${line}`);
 }
 
+/** Intervalo entre logs de progreso para `ask_codebase` (ingest puede tardar minutos). `0`/`off` desactiva. */
+function mcpAskCodebaseProgressLogIntervalMs(): number {
+  const raw = process.env.MCP_ASK_CODEBASE_PROGRESS_LOG_MS?.trim() ?? "";
+  const lower = raw.toLowerCase();
+  if (lower === "0" || lower === "off" || lower === "false" || lower === "no") return 0;
+  const n = parseInt(raw || "60000", 10);
+  return Number.isFinite(n) && n > 0 ? n : 60_000;
+}
+
 const MCP_INSTRUCTIONS = `AriadneSpecs Oracle: herramientas de análisis de código indexado en FalkorDB.
 
 ## API Nest (paridad con el explorador)
@@ -2374,6 +2383,29 @@ async function fetchFileFromIngest(
       body,
       signal: AbortSignal.timeout(askTimeoutMs),
     };
+    const progressEvery = mcpAskCodebaseProgressLogIntervalMs();
+    let progressTimer: ReturnType<typeof setInterval> | undefined;
+    const ingestFetchStarted = Date.now();
+    if (isMcpToolInvocationLoggingEnabled() && progressEvery > 0) {
+      progressTimer = setInterval(() => {
+        const now = Date.now();
+        console.log(
+          `[mcp-ariadne] ${stringifyMcpToolLogPayload({
+            ts: new Date().toISOString(),
+            event: "mcp_tool_call_progress",
+            tool: "ask_codebase",
+            phase: "ingest_chat_fetch",
+            elapsedIngestFetchMs: now - ingestFetchStarted,
+            elapsedSinceToolStartMs: now - __mcpCallStarted,
+            responseMode,
+            projectIdPrefix: projectId ? `${String(projectId).slice(0, 8)}…` : null,
+            ingestAbortAfterMs: askTimeoutMs,
+            note:
+              "mcp_tool_call_end con ms total llega al terminar este POST a ingest/orchestrator; si solo ves progress, el pipeline sigue en curso.",
+          })}`,
+        );
+      }, progressEvery);
+    }
     try {
       let res = await fetch(`${base}/projects/${projectId}/chat`, opts);
       if (res.status === 404) res = await fetch(`${base}/repositories/${projectId}/chat`, opts);
@@ -2408,6 +2440,8 @@ async function fetchFileFromIngest(
         ],
         isError: true,
       };
+    } finally {
+      if (progressTimer) clearInterval(progressTimer);
     }
   }
 
