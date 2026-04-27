@@ -4,8 +4,7 @@ import {
   resolveIngestLlmProvider,
 } from './llm-unified';
 
-/** @deprecated usar resolveIngestLlmProvider */
-export type IngestChatLlmProvider = 'openai' | 'kimi';
+export type IngestChatLlmProvider = 'openrouter';
 
 export function resolveIngestChatLlmProvider(): IngestChatLlmProvider {
   return resolveIngestLlmProvider();

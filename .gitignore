@@ -30,3 +30,38 @@ temp
 # OS metadata files
 Thumbs.db
 Desktop.ini
+
+# Hermes Agent CLI (estado local / transcripciones de sesión)
+auth.json
+auth.lock
+.hermes_history
+.skills_prompt_snapshot.json
+.update_check
+sessions/
+# Sesiones paralelas con `hermes -w` / worktrees aislados (ver upstream hermes-agent)
+.worktrees/
+config.yaml
+models_dev_cache.json
+models_cache.json
+ollama_cloud_models_cache.json
+ollama_cloud_model_mappings.json
+SOUL.md
+state.db
+state.db-shm
+state.db-wal
+state.db-journal
+state.db-lock
+state.db-lock-shm
+state.db-lock-wal
+state.db-lock-journal
+state.db-lock-lock
+state.db-lock-lock-shm
+state.db-lock-lock-wal
+state.db-lock-lock-journal
+skills/
+sandboxes/
+memories/
+cache/
+bin/
+cron/
+examples/

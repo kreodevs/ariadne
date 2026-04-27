@@ -2381,7 +2381,7 @@ async function fetchFileFromIngest(
         const msg = await res.text();
         const rateHint =
           res.status === 429
-            ? "\n\n_(Cuota Moonshot/Kimi TPM — orchestrator: `LLM_MAX_CONCURRENT`, `LLM_MIN_REQUEST_INTERVAL_MS`, `MOONSHOT_*`; evita otras cargas con la misma API key.)_"
+            ? "\n\n_(Límite de tasa OpenRouter u orquestador: `LLM_MAX_CONCURRENT`, `LLM_MIN_REQUEST_INTERVAL_MS`; evita otras cargas con la misma API key.)_"
             : "";
         return {
           content: [{ type: "text", text: `**Error ${res.status}:** ${msg || res.statusText}${rateHint}` }],
@@ -2397,7 +2397,7 @@ async function fetchFileFromIngest(
       const isTimeout =
         /AbortError|timeout|ETIMEDOUT|HeadersTimeoutError|BodyTimeoutError/i.test(msg);
       const hint = isTimeout
-        ? " Timeout de red o `AbortSignal` (sube `MCP_ASK_CODEBASE_TIMEOUT_MS` o `THEFORGE_MCP_TIMEOUT_MS` en el cliente). Si el ingest devolvió **429**, es cuota Moonshot/Kimi (TPM), no timeout MCP."
+        ? " Timeout de red o `AbortSignal` (sube `MCP_ASK_CODEBASE_TIMEOUT_MS` o `THEFORGE_MCP_TIMEOUT_MS` en el cliente). Si el ingest devolvió **429**, es límite de tasa del proveedor (p. ej. OpenRouter), no timeout MCP."
         : "";
       return {
         content: [

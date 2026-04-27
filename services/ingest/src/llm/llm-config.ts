@@ -1,0 +1,50 @@
+/**
+ * OpenRouter (chat + embeddings) — misma convención que The Forge.
+ */
+
+export const OPENROUTER_DEFAULT_BASE = 'https://openrouter.ai/api/v1';
+export const OPENROUTER_DEFAULT_CHAT_MODEL = 'nousresearch/hermes-3-llama-3.1-405b';
+export const OPENROUTER_DEFAULT_EMBEDDING_MODEL = 'openai/text-embedding-3-small';
+
+export function resolveOpenRouterApiKey(): string {
+  return (
+    process.env.OPENROUTER_API_KEY?.trim() ??
+    process.env.AI_API_KEY?.trim() ??
+    process.env.OPENAI_API_KEY?.trim() ??
+    ''
+  );
+}
+
+export function resolveOpenRouterBaseUrl(): string {
+  return process.env.OPENROUTER_BASE_URL?.trim() || OPENROUTER_DEFAULT_BASE;
+}
+
+export function openRouterDefaultHeaders(): Record<string, string> | undefined {
+  const referer = process.env.OPENROUTER_HTTP_REFERER?.trim();
+  const title = process.env.OPENROUTER_APP_TITLE?.trim();
+  if (!referer && !title) return undefined;
+  return {
+    ...(referer ? { 'HTTP-Referer': referer } : {}),
+    ...(title ? { 'X-OpenRouter-Title': title } : {}),
+  };
+}
+
+export function resolveOpenRouterChatModel(): string {
+  return (
+    process.env.LLM_MODEL?.trim() ||
+    process.env.OPENROUTER_CHAT_MODEL?.trim() ||
+    process.env.CHAT_MODEL?.trim() ||
+    OPENROUTER_DEFAULT_CHAT_MODEL
+  );
+}
+
+export function resolveOpenRouterEmbeddingModel(): string {
+  return process.env.OPENROUTER_EMBEDDING_MODEL?.trim() || OPENROUTER_DEFAULT_EMBEDDING_MODEL;
+}
+
+export function defaultEmbeddingDimension(): number {
+  const raw = process.env.OPENAI_EMBEDDING_DIM?.trim();
+  const n = raw ? parseInt(raw, 10) : NaN;
+  if (Number.isFinite(n) && n >= 1) return n;
+  return 1536;
+}

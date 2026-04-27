@@ -1,10 +1,13 @@
 /**
- * Chat completions (OpenAI o Kimi/Moonshot, API compatible).
+ * Chat completions vía OpenRouter (API compatible OpenAI).
  */
 import { Injectable } from '@nestjs/common';
-import { ingestChatLlmModel, resolveIngestChatLlmProvider } from './chat-llm-config';
-import { openAiApiKeyForLlm } from './llm-unified';
-import { kimiIngestCallLlm, kimiIngestCallLlmWithTools } from './kimi-chat.adapter';
+import { ingestChatLlmModel } from './chat-llm-config';
+import {
+  openRouterDefaultHeaders,
+  resolveOpenRouterApiKey,
+  resolveOpenRouterBaseUrl,
+} from '../llm/llm-config';
 
 /** Límite de salida en fase retriever (tool_calls + argumentos JSON pueden ser largos). */
 export function toolCallMaxTokensFromEnv(): number {
@@ -14,37 +17,43 @@ export function toolCallMaxTokensFromEnv(): number {
   return 8192;
 }
 
+function chatUrl(): string {
+  return `${resolveOpenRouterBaseUrl().replace(/\/$/, '')}/chat/completions`;
+}
+
+function authHeaders(): Record<string, string> {
+  const key = resolveOpenRouterApiKey();
+  if (!key) {
+    throw new Error('OPENROUTER_API_KEY (o AI_API_KEY / OPENAI_API_KEY) no configurada. Necesaria para chat.');
+  }
+  const extra = openRouterDefaultHeaders();
+  return {
+    'Content-Type': 'application/json',
+    Authorization: `Bearer ${key}`,
+    ...extra,
+  };
+}
+
 @Injectable()
 export class ChatLlmService {
   async callLlm(
     messages: Array<{ role: 'user' | 'assistant' | 'system'; content: string }>,
     maxTokens = 1024,
   ): Promise<string> {
-    const p = resolveIngestChatLlmProvider();
-    if (p === 'kimi') return kimiIngestCallLlm(messages, maxTokens);
-
-    const key = openAiApiKeyForLlm();
-    if (!key) {
-      throw new Error('LLM_API_KEY u OPENAI_API_KEY no configurada. Necesaria para chat.');
-    }
-
-    const res = await fetch('https://api.openai.com/v1/chat/completions', {
+    const res = await fetch(chatUrl(), {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${key}`,
-      },
+      headers: authHeaders(),
       body: JSON.stringify({
         model: ingestChatLlmModel(),
         messages,
-        temperature: 0.1,
+        temperature: parseFloat(process.env.LLM_TEMPERATURE || '0.1') || 0.1,
         max_tokens: maxTokens,
       }),
     });
 
     if (!res.ok) {
       const err = await res.text();
-      throw new Error(`OpenAI API ${res.status}: ${err}`);
+      throw new Error(`OpenRouter API ${res.status}: ${err}`);
     }
 
     const data = (await res.json()) as { choices?: Array<{ message?: { content?: string } }> };
@@ -68,26 +77,20 @@ export class ChatLlmService {
     content?: string;
     tool_calls?: Array<{ id: string; function: { name: string; arguments: string } }>;
   }> {
-    const p = resolveIngestChatLlmProvider();
-    if (p === 'kimi') return kimiIngestCallLlmWithTools(messages, tools, maxTokens);
-
-    const key = openAiApiKeyForLlm();
-    if (!key) throw new Error('LLM_API_KEY u OPENAI_API_KEY no configurada.');
-
-    const res = await fetch('https://api.openai.com/v1/chat/completions', {
+    const res = await fetch(chatUrl(), {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
+      headers: authHeaders(),
       body: JSON.stringify({
         model: ingestChatLlmModel(),
         messages,
         tools,
         tool_choice: 'auto',
-        temperature: 0.1,
+        temperature: parseFloat(process.env.LLM_TEMPERATURE || '0.1') || 0.1,
         max_tokens: maxTokens,
       }),
     });
 
-    if (!res.ok) throw new Error(`OpenAI API ${res.status}: ${await res.text()}`);
+    if (!res.ok) throw new Error(`OpenRouter API ${res.status}: ${await res.text()}`);
 
     const data = (await res.json()) as {
       choices?: Array<{

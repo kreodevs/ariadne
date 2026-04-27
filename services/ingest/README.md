@@ -48,7 +48,7 @@ Ver [src/chat/README.md](src/chat/README.md) y [docs/comparativa/Plan_Implementa
 - `POST /repositories/:id/embed-index` — Embeddings en **Function**, **Component**, **Document** (chunks legado), **StorybookDoc**, **MarkdownDoc**, **Model** (Prisma + TypeORM `@Entity`) y **Enum** (Prisma) para RAG; EMBEDDING_PROVIDER + API key, FalkorDB 4.0+
 - `GET /repositories/:id/jobs` — Listar sync_jobs del repositorio
 - `GET /repositories/:id/jobs/:jobId/analysis` — Análisis de un job **incremental** (impacto en grafo, heurística de secretos, resumen); el job debe pertenecer a ese repositorio
-- `GET /embed?text=` — Vector de embedding para RAG (requiere EMBEDDING_PROVIDER + OPENAI_API_KEY o GOOGLE_API_KEY)
+- `GET /embed?text=` — Vector de embedding para RAG (requiere `OPENROUTER_API_KEY` y `EMBEDDING_PROVIDER=openrouter`, o alias `openai`)
 - `POST /repositories/:id/sync` — Encola job de full sync; retorna `{ jobId, queued: true }`
 - `POST /repositories/:id/resync` — Borra en Falkor solo los nodos de **este** repositorio (`projectId` + `repoId` por cada vínculo; no el grafo de otros repos del mismo proyecto) y `indexed_files` del repo; encola sync completo. Retorna `{ jobId, queued, deletedNodes? }`
 - `POST /repositories/:id/chat` — Chat NL→Cypher. Body: `{ message, history?, scope?, twoPhase?, responseMode?, … }`. Requiere LLM (`LLM_*`). Con **`responseMode: evidence_first`** la respuesta es **JSON MDD** (7 secciones) cuando el pipeline unificado no delega en orchestrator. Ver [src/chat/README.md](src/chat/README.md).
@@ -82,18 +82,17 @@ Tras cada sync (normal o resync), se ejecuta automáticamente `embed-index` si h
 - `CREDENTIALS_ENCRYPTION_KEY` — Clave para cifrar credenciales en BD (32 bytes base64). Requerida si se usan credenciales en BD.
 - `BITBUCKET_TOKEN` / `BITBUCKET_APP_PASSWORD` — Bitbucket (fallback si no hay credentialsRef). Permisos requeridos: Account: Read, Workspace membership: Read, Repositories: Read (ver [docs/manual/CONFIGURACION_Y_USO.md](../../docs/manual/CONFIGURACION_Y_USO.md))
 - `GITHUB_TOKEN` — GitHub (fallback)
-- `EMBEDDING_PROVIDER` — openai, google, kimi/moonshot u ollama
-- **`LLM_PROVIDER`**, **`LLM_MODEL`**, **`LLM_API_KEY`**, **`LLM_TEMPERATURE`** — Config homologada de chat (ingest + orchestrator); ver `src/chat/llm-unified.ts` y orchestrator `src/llm/llm-unified.ts`.
-- `OPENAI_API_KEY` — Legacy; embeddings openai y chat OpenAI si no usas `LLM_API_KEY`.
-- `MOONSHOT_API_KEY` / `KIMI_API_KEY` — Legacy Kimi; embeddings kimi y chat Kimi.
-- `KIMI_EMBEDDING_MODEL`, `KIMI_EMBEDDING_DIMENSION` — Opcionales si `EMBEDDING_PROVIDER=kimi` sin catálogo Postgres: defaults **`moonshot-v1`** y **1024** (ver `src/embedding/README.md`).
-- `CHAT_MODEL` — Legacy; preferir `LLM_MODEL`. Diagnóstico/reingeniería truncan datos automáticamente para evitar context_length_exceeded (128k tokens).
+- `EMBEDDING_PROVIDER` — `openrouter` (default) o `openai` (alias al mismo API en OpenRouter)
+- **`LLM_MODEL`**, **`LLM_API_KEY`**, **`LLM_TEMPERATURE`** — Config homologada de chat (ingest + orchestrator); ver `src/llm/llm-config.ts`, `src/chat/llm-unified.ts` y orchestrator `src/llm/`.
+- `OPENROUTER_API_KEY` — Clave principal; alias: `AI_API_KEY`, `OPENAI_API_KEY`.
+- `OPENROUTER_CHAT_MODEL` — Default en código: `nousresearch/hermes-3-llama-3.1-405b` (alineado con The Forge).
+- `OPENROUTER_EMBEDDING_MODEL` — Default `openai/text-embedding-3-small`; `OPENAI_EMBEDDING_DIM` default 1536.
+- `CHAT_MODEL` — Compatibilidad; preferir `LLM_MODEL` u `OPENROUTER_CHAT_MODEL`. Diagnóstico/reingeniería truncan datos automáticamente para evitar context_length_exceeded (128k tokens).
 - `CHAT_TELEMETRY_LOG` — `1` o `true`: log JSON por request del pipeline unificado (tamaños, citas de paths, `pathGroundingRatio` vs retrieval).
 - `METRICS_ENABLED` — `0` o `false`: desactiva Prometheus (`GET /metrics` responde 503). Por defecto las métricas están activas (Fase 0 — ver [docs/notebooklm/OBSERVABILIDAD_FASE0.md](../../docs/notebooklm/OBSERVABILIDAD_FASE0.md)).
 - `CHAT_TWO_PHASE` — `0` / `false` / `off`: desactiva el bloque JSON de retrieval antes del contexto bruto en el sintetizador (default: activo).
 - `CHAT_EVIDENCE_FIRST_MAX_CHARS` — tope de caracteres del contexto hacia el builder MDD cuando el modo **`evidence_first`** prepara contexto antes del JSON (default `18000`, mínimo efectivo `4000`, máximo `100000`). Si **`ORCHESTRATOR_URL`** está activo, el ingest no sintetiza MDD en local para ese path; el orchestrator llama **`POST /internal/repositories/:id/mdd-evidence`**.
 - `MODIFICATION_PLAN_MAX_FILES` — Tope de entradas en `get_modification_plan` (default 150, máx. 2000).
-- `GOOGLE_API_KEY` / `GEMINI_API_KEY` — Si provider=google
 - `NODE_ENV` — Si no es `production`, TypeORM usa `synchronize: true`
 - `INDEX_TESTS` — `true` o `1`: incluir archivos `*.test.*` y `*.spec.*` en el indexado (default: excluidos)
 - `INDEX_E2E` — `true` o `1`: incluir carpetas típicas de e2e (`e2e/`, `cypress/`, `playwright/`, `__tests__/`, etc.) y archivos `*.e2e.*` (default: excluidos; ver `sync-path-filter.ts`)
@@ -101,7 +100,7 @@ Tras cada sync (normal o resync), se ejecuta automáticamente `embed-index` si h
 - **Alcance por repositorio (sin env):** columna **`index_include_rules`** en `repositories` — JSON `{ entries: [...] }` o `null`. Lógica en **`index-include-rules.ts`**; sync y webhook incremental la aplican tras el listado global.
 - `TRUNCATE_PARSE_MAX_BYTES` — Límite de bytes para truncar archivos grandes antes de parsear (default 25000). Tree-sitter falla con muchos nodos hermanos; aumentar con cuidado.
 
-**Embeddings:** Si cambias de proveedor (OpenAI ↔ Google ↔ Kimi), reejecuta `POST /repositories/:id/embed-index`; las dimensiones deben ser coherentes con el índice vectorial y FalkorDB no admite mezclar vectores de distinta dimensión en la misma propiedad.
+**Embeddings:** Si cambias de modelo o dimensión (`OPENROUTER_EMBEDDING_MODEL` / `OPENAI_EMBEDDING_DIM`), reejecuta `POST /repositories/:id/embed-index`; FalkorDB no admite mezclar vectores de distinta dimensión en la misma propiedad.
 
 ## Desarrollo
 

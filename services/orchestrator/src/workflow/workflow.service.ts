@@ -245,7 +245,7 @@ async function reviseCodeWithLlm(state: RefactorState): Promise<Partial<Refactor
     const raw = await orchestratorChatSimple(system, user);
     const code = stripCodeFence(raw);
     if (!code) {
-      return { error: 'LLM no configurado o respuesta vacía del modelo (LLM_PROVIDER / LLM_API_KEY)', approved: false };
+      return { error: 'LLM no configurado o respuesta vacía del modelo (OPENROUTER_API_KEY)', approved: false };
     }
     return {
       proposedCode: code,
@@ -300,7 +300,7 @@ async function generateTests(state: RefactorState): Promise<Partial<RefactorStat
   const props = state.contractProps.length ? state.contractProps : state.shadowCompareResult?.mainProps ?? [];
   if (!hasOrchestratorLlmConfigured()) {
     const lines = [
-      `// Tests sugeridos para ${state.nodeId} (generar con ORCHESTRATOR + LLM_API_KEY para código completo)`,
+      `// Tests sugeridos para ${state.nodeId} (generar con ORCHESTRATOR + OPENROUTER_API_KEY para código completo)`,
       `// Props del contrato: ${JSON.stringify(props)}`,
       `import { describe, it, expect } from 'vitest';`,
       `// TODO: render/mount ${state.nodeId} y validar props requeridas`,

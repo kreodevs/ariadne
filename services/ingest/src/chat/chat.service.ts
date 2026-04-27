@@ -2923,7 +2923,7 @@ PROHIBIDO: instrucciones genéricas tipo "revisa los controladores", "asegúrate
   }
 
   /**
-   * Propaga HTTP del orchestrator (p. ej. 429 Kimi TPM) para que MCP/The Forge no lo confundan con timeout genérico.
+   * Propaga HTTP del orchestrator (p. ej. 429 del proveedor LLM) para que MCP/The Forge no lo confundan con timeout genérico.
    */
   private throwOrchestratorFailure(res: Response, bodyText: string): never {
     const status = res.status;
