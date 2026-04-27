@@ -226,7 +226,7 @@ export class SyncService {
   }
 
   /**
-   * Ejecuta full sync: mapping → deps → chunking (parse + producer) → FalkorDB → embed-index.
+   * Ejecuta full sync: mapping → deps → chunking (parse + producer) → FalkorDB → embed-index (mismo job; ver payload.embedIndex).
    * Escribe nodos en cada proyecto al que pertenece el repo (standalone + project_repositories).
    * @param {string} repositoryId - ID del repositorio.
    * @param {string} [existingSyncJobId] - ID de job ya creado (opcional).
@@ -679,6 +679,62 @@ export class SyncService {
         if (!Number.isFinite(n) || n < 0) return 10_000;
         return Math.min(n, 100_000);
       })();
+
+      // Upsert IndexedFile with revision (commitSha) — antes del embed y del cierre del job.
+      await this.indexedFileRepo.delete({ repositoryId });
+      for (const p of indexedPaths) {
+        await this.indexedFileRepo.save(
+          this.indexedFileRepo.create({
+            repositoryId,
+            path: p,
+            revision: commitSha ?? undefined,
+            indexedAt: new Date(),
+          }),
+        );
+      }
+
+      /** Vectores Falkor: mismo paso que sync/resync (no hace falta botón aparte salvo reparación). */
+      let embedIndexPayload: Record<string, unknown> = { embedIndex: { ran: false } };
+      const skipEmbed =
+        process.env.SYNC_SKIP_EMBED_INDEX === 'true' ||
+        process.env.SYNC_SKIP_EMBED_INDEX === '1' ||
+        process.env.INGEST_SKIP_EMBED_INDEX === 'true' ||
+        process.env.INGEST_SKIP_EMBED_INDEX === '1';
+      if (skipEmbed) {
+        console.log('[sync] Embed-index post-sync skipped (SYNC_SKIP_EMBED_INDEX / INGEST_SKIP_EMBED_INDEX)');
+        embedIndexPayload = {
+          embedIndex: {
+            ran: false,
+            skipped: true,
+            reason: 'SYNC_SKIP_EMBED_INDEX or INGEST_SKIP_EMBED_INDEX',
+          },
+        };
+      } else {
+        try {
+          const embedRes = await this.embedIndex.runEmbedIndex(repositoryId);
+          console.log(`Embed-index post-sync: ${embedRes.indexed} indexed, ${embedRes.errors} errors`);
+          embedIndexPayload = {
+            embedIndex: {
+              ran: true,
+              skipped: false,
+              indexed: embedRes.indexed,
+              errors: embedRes.errors,
+            },
+          };
+        } catch (e) {
+          const msg = e instanceof Error ? e.message : String(e);
+          console.warn('Embed-index post-sync failed:', msg);
+          embedIndexPayload = {
+            embedIndex: {
+              ran: true,
+              skipped: false,
+              failed: true,
+              message: msg,
+            },
+          };
+        }
+      }
+
       await this.syncJobRepo.update(job.id, {
         finishedAt: new Date(),
         status: 'completed',
@@ -699,37 +755,9 @@ export class SyncService {
             index: skippedIndex.slice(0, 100),
           },
           ...(commitSha != null && { commitSha }),
+          ...embedIndexPayload,
         } as object,
       });
-
-      // Upsert IndexedFile with revision (commitSha)
-      await this.indexedFileRepo.delete({ repositoryId });
-      for (const p of indexedPaths) {
-        await this.indexedFileRepo.save(
-          this.indexedFileRepo.create({
-            repositoryId,
-            path: p,
-            revision: commitSha ?? undefined,
-            indexedAt: new Date(),
-          }),
-        );
-      }
-
-      const skipEmbed =
-        process.env.SYNC_SKIP_EMBED_INDEX === 'true' ||
-        process.env.SYNC_SKIP_EMBED_INDEX === '1' ||
-        process.env.INGEST_SKIP_EMBED_INDEX === 'true' ||
-        process.env.INGEST_SKIP_EMBED_INDEX === '1';
-      if (skipEmbed) {
-        console.log('[sync] Embed-index post-sync skipped (SYNC_SKIP_EMBED_INDEX / INGEST_SKIP_EMBED_INDEX)');
-      } else {
-        try {
-          const embedRes = await this.embedIndex.runEmbedIndex(repositoryId);
-          console.log(`Embed-index post-sync: ${embedRes.indexed} indexed, ${embedRes.errors} errors`);
-        } catch (e) {
-          console.warn('Embed-index post-sync skipped:', e instanceof Error ? e.message : String(e));
-        }
-      }
 
       await this.repos.pruneOldJobs(repositoryId, 5);
       return { jobId: job.id, indexed: indexedPaths.length };

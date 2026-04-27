@@ -110,14 +110,18 @@ export function RepoDetailRepoCard({
           <Button variant="destructive" size="sm" onClick={onDelete} disabled={deleting}>
             {deleting ? 'Eliminando...' : 'Eliminar'}
           </Button>
-          <Button onClick={onSync} disabled={syncing}>
+          <Button
+            onClick={onSync}
+            disabled={syncing}
+            title="Clona/indexa en Falkor y, si no está desactivado en el servidor, ejecuta embed-index al final del mismo job (vectores)."
+          >
             {syncing ? 'Encolando...' : 'Sync ahora'}
           </Button>
           <Button
             variant="outline"
             onClick={onResync}
             disabled={syncing}
-            title="Borrar índice y re-sincronizar desde cero"
+            title="Borra el slice Falkor del repo y vuelve a indexar; incluye embed-index al final del job salvo SYNC_SKIP_EMBED_INDEX / fallo de vector."
           >
             Re-sincronizar todo
           </Button>
@@ -126,9 +130,9 @@ export function RepoDetailRepoCard({
             size="sm"
             onClick={onEmbedIndex}
             disabled={embedding || syncing}
-            title="Vectores en Falkor: código, chunks .md legados, StorybookDoc y MarkdownDoc (tras Fase 4 o cambio de modelo)."
+            title="Solo re-vectorizar nodos ya indexados (p. ej. tras cambiar modelo de embedding o si el post-sync falló). Sync / resync ya encadenan esto cuando el ingest está bien configurado."
           >
-            {embedding ? 'Embeddings…' : 'Indexar embeddings'}
+            {embedding ? 'Embeddings…' : 'Solo vectores (reparar)'}
           </Button>
           {syncFeedback && (
             <span className="text-sm text-green-600 dark:text-green-400">{syncFeedback}</span>
