@@ -109,6 +109,7 @@ export function ActiveJobsQueue() {
   /** Repo en el que acabamos de llamar a sync/resync (evita doble submit). */
   const [syncingRepoId, setSyncingRepoId] = useState<string | null>(null);
   const [syncFeedback, setSyncFeedback] = useState<string | null>(null);
+  const [cancellingJobKey, setCancellingJobKey] = useState<string | null>(null);
 
   const load = useCallback(() => {
     return api
@@ -233,6 +234,37 @@ export function ActiveJobsQueue() {
     [load],
   );
 
+  const onCancelJob = useCallback(
+    async (repositoryId: string, jobId: string, status: string) => {
+      if (
+        !window.confirm(
+          status === 'running'
+            ? '¿Cancelar este sync en curso? Se marcará como fallido y se quitará de Redis; el worker puede tardar unos segundos en detenerse.'
+            : '¿Quitar este job de la cola (encolado) y marcarlo como cancelado?',
+        )
+      ) {
+        return;
+      }
+      const key = `${repositoryId}:${jobId}`;
+      setCancellingJobKey(key);
+      setSyncFeedback(null);
+      try {
+        const res = await api.cancelSyncJob(repositoryId, jobId);
+        setSyncFeedback(
+          res.bullRemoved > 0
+            ? `Job cancelado · ${res.bullRemoved} entrada(s) quitada(s) de Redis`
+            : 'Job cancelado (no había job en Redis para este id)',
+        );
+        await load();
+      } catch (e) {
+        setError(e instanceof Error ? e.message : String(e));
+      } finally {
+        setCancellingJobKey(null);
+      }
+    },
+    [load],
+  );
+
   const onDeleteSelected = useCallback(async () => {
     if (selectedJobIds.size === 0) return;
     if (
@@ -267,7 +299,7 @@ export function ActiveJobsQueue() {
           <h1 className="text-2xl font-semibold tracking-tight">Cola de sincronización</h1>
           <p className="text-[var(--foreground-muted)] mt-1 text-sm">
             Jobs en cola o en ejecución, y los últimos terminados con resumen de indexación (auditoría).
-            Se actualiza cada {POLL_MS / 1000}s.
+            Se actualiza cada {POLL_MS / 1000}s. Usa Cancelar para encolados o en curso; Borrar solo historial cuando ya no están activos.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -450,6 +482,24 @@ export function ActiveJobsQueue() {
                         </TableCell>
                         <TableCell className="text-right whitespace-nowrap">
                           <div className="flex justify-end gap-1 flex-wrap">
+                            {active && (j.status === 'queued' || j.status === 'running') && (
+                              <Button
+                                variant="destructive"
+                                size="sm"
+                                title="Quita el job de Redis y lo marca como cancelado en la base de datos"
+                                disabled={deletingJobs || cancellingJobKey === `${j.repositoryId}:${j.id}`}
+                                onClick={() => void onCancelJob(j.repositoryId, j.id, j.status)}
+                              >
+                                {cancellingJobKey === `${j.repositoryId}:${j.id}` ? (
+                                  <>
+                                    <Loader2 className="w-4 h-4 animate-spin mr-1" aria-hidden />
+                                    Cancelando…
+                                  </>
+                                ) : (
+                                  'Cancelar'
+                                )}
+                              </Button>
+                            )}
                             <Button
                               variant="secondary"
                               size="sm"

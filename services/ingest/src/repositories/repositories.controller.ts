@@ -92,6 +92,12 @@ export class RepositoriesController {
     return this.service.removeJob(id, jobId);
   }
 
+  /** Marca el job como fallido, quita entradas en Redis (Bull) y evita que el worker deje el índice en “running” eterno. */
+  @Post(':id/jobs/:jobId/cancel')
+  cancelJob(@Param('id') id: string, @Param('jobId') jobId: string) {
+    return this.service.cancelJob(id, jobId);
+  }
+
   /** Análisis de cambios de un job incremental: impacto, seguridad, resumen. */
   @Get(':id/jobs/:jobId/analysis')
   getJobAnalysis(@Param('id') id: string, @Param('jobId') jobId: string) {

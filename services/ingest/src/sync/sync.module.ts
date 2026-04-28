@@ -50,7 +50,8 @@ function getRedisConnection() {
   ],
   controllers: [SyncController],
   providers: [SyncService, SyncProcessor],
-  exports: [SyncService],
+  /** BullModule re-exportado para que RepositoriesService pueda inyectar la cola `sync` y limpiar Redis al borrar jobs. */
+  exports: [SyncService, BullModule],
 })
 /** Módulo de sincronización con BullMQ (queue sync). */
 export class SyncModule {}

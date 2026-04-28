@@ -1,7 +1,9 @@
 /**
  * @fileoverview CRUD de repositorios y jobs de sync en PostgreSQL.
  */
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { InjectQueue } from '@nestjs/bullmq';
+import { Queue } from 'bullmq';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
 import { RepositoryEntity } from './entities/repository.entity';
@@ -13,11 +15,13 @@ import { UpdateRepositoryDto } from './dto/update-repository.dto';
 import { encrypt, decrypt } from '../credentials/crypto.util';
 import { EmbeddingSpaceService } from '../embedding/embedding-space.service';
 import { parseIndexIncludeRulesFromDto } from '../providers/index-include-rules';
+import { SYNC_QUEUE } from '../sync/sync.processor';
 
 /** Servicio de repositorios: create, findAll, findOne, update, remove, jobs. */
 @Injectable()
 export class RepositoriesService {
   constructor(
+    @InjectQueue(SYNC_QUEUE) private readonly syncQueue: Queue,
     @InjectRepository(RepositoryEntity)
     private readonly repo: Repository<RepositoryEntity>,
     @InjectRepository(ProjectRepositoryEntity)
@@ -276,8 +280,52 @@ export class RepositoriesService {
     }));
   }
 
+  /**
+   * Quita de Redis (BullMQ) jobs `full-sync` que apuntan a este syncJobId.
+   * Sin esto, borrar solo la fila en Postgres deja workers reintentando contra un UUID inexistente.
+   */
+  private async removeBullJobsForSyncJob(repositoryId: string, syncJobId: string): Promise<number> {
+    let removed = 0;
+    const states = ['waiting', 'delayed', 'paused', 'waiting-children', 'active'] as const;
+    for (const state of states) {
+      const jobs = await this.syncQueue.getJobs([state], 0, 2000);
+      for (const j of jobs) {
+        const d = j.data as { repositoryId?: string; syncJobId?: string };
+        if (d?.repositoryId === repositoryId && d?.syncJobId === syncJobId) {
+          try {
+            await j.remove();
+            removed++;
+          } catch {
+            /* active job puede estar locked por el worker */
+          }
+        }
+      }
+    }
+    return removed;
+  }
+
+  /**
+   * Cancela un job en cola o en curso: limpia Bull y marca el registro como failed (el worker no sobrescribe a completed).
+   */
+  async cancelJob(repositoryId: string, jobId: string): Promise<{ bullRemoved: number }> {
+    await this.findOne(repositoryId);
+    const job = await this.jobsRepo.findOne({ where: { id: jobId, repositoryId } });
+    if (!job) throw new NotFoundException(`Job ${jobId} not found`);
+    if (job.status !== 'queued' && job.status !== 'running') {
+      throw new BadRequestException('Solo se pueden cancelar jobs en cola o en ejecución');
+    }
+    const bullRemoved = await this.removeBullJobsForSyncJob(repositoryId, jobId);
+    await this.jobsRepo.update(jobId, {
+      status: 'failed',
+      errorMessage: 'Cancelado desde la cola de sincronización',
+      finishedAt: new Date(),
+    });
+    return { bullRemoved };
+  }
+
   async removeJob(repositoryId: string, jobId: string): Promise<void> {
     await this.findOne(repositoryId);
+    await this.removeBullJobsForSyncJob(repositoryId, jobId);
     const r = await this.jobsRepo.delete({
       id: jobId,
       repositoryId,
@@ -287,6 +335,13 @@ export class RepositoriesService {
 
   async removeAllJobs(repositoryId: string): Promise<number> {
     await this.findOne(repositoryId);
+    const rows = await this.jobsRepo.find({
+      where: { repositoryId },
+      select: ['id'],
+    });
+    for (const row of rows) {
+      await this.removeBullJobsForSyncJob(repositoryId, row.id);
+    }
     const r = await this.jobsRepo.delete({ repositoryId });
     return r.affected ?? 0;
   }

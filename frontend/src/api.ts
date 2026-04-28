@@ -216,6 +216,10 @@ export const api = {
     request<import('./types').JobAnalysisResult>(`/projects/${projectId}/jobs/${jobId}/analysis`),
   deleteJob: (repoId: string, jobId: string) =>
     request<void>(`/repositories/${repoId}/jobs/${jobId}`, { method: 'DELETE' }),
+  cancelSyncJob: (repoId: string, jobId: string) =>
+    request<{ bullRemoved: number }>(`/repositories/${repoId}/jobs/${jobId}/cancel`, {
+      method: 'POST',
+    }),
   deleteAllJobs: (repoId: string) =>
     request<{ deleted: number }>(`/repositories/${repoId}/jobs`, { method: 'DELETE' }),
   createRepository: (dto: import('./types').CreateRepositoryDto) =>

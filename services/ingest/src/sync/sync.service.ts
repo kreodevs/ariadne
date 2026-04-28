@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { FalkorDB } from 'falkordb';
@@ -96,6 +96,8 @@ function extractManifestDeps(
 
 @Injectable()
 export class SyncService {
+  private readonly logger = new Logger(SyncService.name);
+
   constructor(
     private readonly repos: RepositoriesService,
     private readonly bitbucket: BitbucketService,
@@ -249,9 +251,16 @@ export class SyncService {
 
     let job: SyncJob;
     if (existingSyncJobId) {
-      job = await this.syncJobRepo.findOneOrFail({
+      const existing = await this.syncJobRepo.findOne({
         where: { id: existingSyncJobId, repositoryId },
       });
+      if (!existing) {
+        this.logger.warn(
+          `SyncJob row missing for id=${existingSyncJobId} repo=${repositoryId} — likely DB deleted while Bull still had the job; draining without error.`,
+        );
+        return { jobId: existingSyncJobId, indexed: 0 };
+      }
+      job = existing;
       job.status = 'running';
       job.payload = job.payload ?? {};
       await this.syncJobRepo.save(job);
@@ -733,6 +742,17 @@ export class SyncService {
             },
           };
         }
+      }
+
+      const latestBeforeComplete = await this.syncJobRepo.findOne({
+        where: { id: job.id },
+      });
+      if (!latestBeforeComplete || latestBeforeComplete.status !== 'running') {
+        this.logger.warn(
+          `Sync ${job.id} skip completion write (row missing or status=${latestBeforeComplete?.status ?? 'n/a'}); likely cancelled from UI.`,
+        );
+        await this.repos.pruneOldJobs(repositoryId, 5);
+        return { jobId: job.id, indexed: indexedPaths.length };
       }
 
       await this.syncJobRepo.update(job.id, {
