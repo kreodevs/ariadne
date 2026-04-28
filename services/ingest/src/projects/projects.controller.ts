@@ -1,11 +1,23 @@
 /**
  * @fileoverview API REST de proyectos (multi-root): listar, detalle, file, crear, actualizar, eliminar.
  */
-import { Body, Controller, Delete, Get, Param, Patch, Post, Query } from '@nestjs/common';
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Param,
+  Patch,
+  Post,
+  Query,
+  StreamableFile,
+} from '@nestjs/common';
 import { ProjectsService } from './projects.service';
 import { FileContentService } from '../repositories/file-content.service';
 import { JobAnalysisService } from '../repositories/job-analysis.service';
 import { C4DslGeneratorService } from '../architecture/c4-dsl-generator.service';
+import { KrokiProxyService } from '../architecture/kroki-proxy.service';
 import { DomainsService } from '../domains/domains.service';
 
 @Controller('projects')
@@ -15,6 +27,7 @@ export class ProjectsController {
     private readonly fileContent: FileContentService,
     private readonly jobAnalysis: JobAnalysisService,
     private readonly c4Dsl: C4DslGeneratorService,
+    private readonly kroki: KrokiProxyService,
     private readonly domains: DomainsService,
   ) {}
 
@@ -32,6 +45,26 @@ export class ProjectsController {
   ) {
     const lv = Math.min(3, Math.max(1, parseInt(level ?? '1', 10) || 1)) as 1 | 2 | 3;
     return this.c4Dsl.generate(id, { level: lv, sessionId: sessionId?.trim() || undefined });
+  }
+
+  /**
+   * Renderiza DSL PlantUML a SVG vía Kroki **desde el servidor** (evita CORS del cliente a kroki.io).
+   * Body: `{ "dsl": "..." }`. Requiere que el proyecto exista (misma política que GET c4).
+   */
+  @Post(':id/architecture/c4/render-svg')
+  async renderArchitectureC4Svg(
+    @Param('id') id: string,
+    @Body() body: { dsl?: string },
+  ): Promise<StreamableFile> {
+    await this.service.findOne(id);
+    const dsl = typeof body?.dsl === 'string' ? body.dsl : '';
+    if (!dsl.trim()) {
+      throw new BadRequestException('Body debe incluir "dsl" (texto PlantUML) no vacío');
+    }
+    const buf = await this.kroki.renderPlantumlSvg(dsl);
+    return new StreamableFile(buf, {
+      type: 'image/svg+xml; charset=utf-8',
+    });
   }
 
   @Get(':id/domain-dependencies')

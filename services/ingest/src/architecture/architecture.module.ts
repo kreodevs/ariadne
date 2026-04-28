@@ -6,6 +6,7 @@ import { RepositoryEntity } from '../repositories/entities/repository.entity';
 import { DomainEntity } from '../domains/entities/domain.entity';
 import { ProjectDomainDependencyEntity } from '../domains/entities/project-domain-dependency.entity';
 import { C4DslGeneratorService } from './c4-dsl-generator.service';
+import { KrokiProxyService } from './kroki-proxy.service';
 
 @Module({
   imports: [
@@ -17,7 +18,7 @@ import { C4DslGeneratorService } from './c4-dsl-generator.service';
       ProjectDomainDependencyEntity,
     ]),
   ],
-  providers: [C4DslGeneratorService],
-  exports: [C4DslGeneratorService],
+  providers: [C4DslGeneratorService, KrokiProxyService],
+  exports: [C4DslGeneratorService, KrokiProxyService],
 })
 export class ArchitectureModule {}

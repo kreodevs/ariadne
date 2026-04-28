@@ -42,7 +42,8 @@ export function C4ViewerPage() {
       <div>
         <h1 className="text-4xl font-semibold tracking-tight">C4 Viewer</h1>
         <p className="mt-2 max-w-3xl text-sm leading-relaxed text-[var(--foreground-muted)]">
-          Mismos endpoints que la pestaña Arquitectura del proyecto: niveles PlantUML vía ingest y render Kroki.
+          Mismos endpoints que la pestaña Arquitectura: PlantUML vía ingest; el SVG se genera con Kroki
+          a través del proxy del API (sin CORS desde el navegador).
           Shadow mode (Visual SDD) requiere <span className="font-mono">sessionId</span> cuando aplica.
         </p>
       </div>

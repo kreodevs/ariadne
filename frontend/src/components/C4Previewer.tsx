@@ -1,5 +1,5 @@
 /**
- * @fileoverview Previsualización C4 vía Kroki (POST plantuml/svg).
+ * @fileoverview Previsualización C4: DSL desde ingest, render SVG vía proxy ingest→Kroki (sin fetch directo al navegador).
  */
 import { useEffect, useRef, useState } from 'react';
 import { api } from '@/api';
@@ -51,15 +51,7 @@ export function C4Previewer({
         const r = await api.getProjectArchitectureC4(projectId, { level, sessionId: sid });
         if (cancelled) return;
         setDsl(r.dsl);
-        const res = await fetch('https://kroki.io/plantuml/svg', {
-          method: 'POST',
-          headers: { 'Content-Type': 'text/plain; charset=utf-8' },
-          body: r.dsl,
-        });
-        if (!res.ok) {
-          throw new Error(`Kroki ${res.status}`);
-        }
-        const blob = await res.blob();
+        const blob = await api.postProjectC4RenderSvg(projectId, r.dsl);
         const url = URL.createObjectURL(blob);
         if (cancelled) {
           URL.revokeObjectURL(url);
@@ -164,7 +156,8 @@ export function C4Previewer({
       <p className="text-sm text-[var(--foreground-muted)]">Generando diagrama…</p>
     ) : krokiError ? (
       <div className="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-sm text-amber-100">
-        Kroki no disponible desde el navegador ({krokiError}). DSL al lado — úsalo en{' '}
+        No se pudo generar el diagrama ({krokiError}). Comprueba que ingest pueda salir a Kroki
+        (KROKI_URL si usas instancia propia). El DSL sigue disponible; puedes pegarlo en{' '}
         <a href="https://kroki.io" className="underline" target="_blank" rel="noreferrer">
           kroki.io
         </a>

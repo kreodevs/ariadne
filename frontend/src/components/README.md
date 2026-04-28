@@ -28,3 +28,4 @@ Componentes basados en el registro Kreo con tema corporate/luxury (negro, carbó
 - **StatusBadge** — Badge de estado para jobs/repos (pending, running, completed, error).
 - **ProtectedRoute** — Layout de ruta que renderiza `<Outlet />` cuando hay JWT válido (e2e: `VITE_E2E_AUTH_BYPASS=true`).
 - **DocViewer** — Visor de documentación markdown.
+- **C4Previewer** — Niveles C4 + shadow opcional; obtiene DSL con `getProjectArchitectureC4` y el SVG con `postProjectC4RenderSvg` (proxy ingest→Kroki, sin `fetch` directo a kroki.io desde el navegador).

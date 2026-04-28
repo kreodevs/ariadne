@@ -57,6 +57,7 @@ Ver [src/chat/README.md](src/chat/README.md) y [docs/comparativa/Plan_Implementa
 - `GET /projects/:id/graph-routing` — Metadatos Falkor para MCP/API: `shardMode` (`project` \| `domain`), `domainSegments` (último sync), `graphNodeSoftLimit`, `extendedGraphShardNames` (grafos de proyectos en dominios whitelist), `cypherShardContexts` (`{ graphName, cypherProjectId }[]` para Cypher multi-proyecto). Usado para abrir el subgrafo correcto (`AriadneSpecs:<uuid>:<segmento>`).
 - `GET /domains`, `POST /domains` — Listado y alta de **dominios** (nombre, descripción, color hex, `metadata` JSONB). CRUD completo vía `DomainsController` (ver `src/domains/README.md`).
 - `GET /projects/:id/architecture/c4?level=1|2|3&sessionId=` — DSL **PlantUML C4** (contexto / contenedores / componentes); `sessionId` opcional activa diff contra el grafo shadow (Visual SDD).
+- `POST /projects/:id/architecture/c4/render-svg` — Body `{ "dsl": "…" }`; devuelve **image/svg+xml** vía Kroki en servidor (el UI no llama a `kroki.io` desde el navegador). URL base: `KROKI_URL`.
 - `GET /projects/:id/resolve-repo-for-path?path=` — Heurística multi-root: devuelve `repoId` candidato desde `projectKey`/`repoSlug` en la ruta.
 - `GET /projects/:id/jobs/:jobId/analysis` — Mismo cuerpo que la ruta por repositorio; valida en `project_repositories` que el `repositoryId` del job esté en el proyecto (útil en multi-root cuando se conoce solo `projectId` + `jobId`)
 - `POST /projects/:id/analyze` — Además de `agents`/`skill`, acepta modos `diagnostico`, `duplicados`, etc. con `idePath` o `repositoryId` opcionales cuando hay varios repos en el proyecto (ver [src/chat/README.md](src/chat/README.md)).
@@ -77,6 +78,7 @@ Tras cada sync (normal o resync), se ejecuta automáticamente `embed-index` si h
 - `FALKOR_AUTO_DOMAIN_OVERFLOW` — Si está activo y el grafo monolítico supera `FALKOR_GRAPH_NODE_SOFT_LIMIT`, se actualiza `falkor_shard_mode` a `domain`; hace falta **resync** para repartir datos.
 - `FALKOR_GRAPH_NODE_SOFT_LIMIT` — Umbral de nodos (default 100000) para el disparador anterior.
 - `FALKORDB_BATCH_SIZE` — Tamaño de batch para Cypher (default 500)
+- `KROKI_URL` — Base HTTP de Kroki para `POST …/c4/render-svg` (default `https://kroki.io`). En redes sin salida a internet, apunta a una instancia Kroki interna alcanzable **desde el contenedor ingest**.
 - `DOMAIN_COMPONENT_PATTERNS`, `DOMAIN_CONST_NAMES` — Fallback global si el proyecto no tiene `domain_config` (por defecto se infiere en primera ingesta)
 - `REDIS_URL` — Redis para cola BullMQ (default `redis://localhost:6380`)
 - `CREDENTIALS_ENCRYPTION_KEY` — Clave para cifrar credenciales en BD (32 bytes base64). Requerida si se usan credenciales en BD.

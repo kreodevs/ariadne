@@ -150,6 +150,35 @@ export const api = {
     );
   },
 
+  /** SVG desde Kroki vía ingest (evita CORS al llamar kroki.io desde el navegador). */
+  postProjectC4RenderSvg: async (projectId: string, dsl: string): Promise<Blob> => {
+    const res = await fetch(
+      `${BASE}/projects/${encodeURIComponent(projectId)}/architecture/c4/render-svg`,
+      {
+        method: 'POST',
+        body: JSON.stringify({ dsl }),
+        headers: getAuthHeaders(),
+      },
+    );
+    if (res.status === 401) {
+      removeToken();
+      window.location.href = '/login';
+      throw new Error('Sesión expirada. Redirigiendo al login.');
+    }
+    if (!res.ok) {
+      const text = await res.text();
+      let msg = text || res.statusText;
+      try {
+        const json = JSON.parse(text) as { message?: string | string[] };
+        if (json?.message) msg = Array.isArray(json.message) ? json.message.join('; ') : json.message;
+      } catch {
+        /* use text as-is */
+      }
+      throw new Error(`${res.status}: ${msg}`);
+    }
+    return res.blob();
+  },
+
   listProjectDomainDependencies: (projectId: string) =>
     request<import('./types').ProjectDomainDependency[]>(
       `/projects/${encodeURIComponent(projectId)}/domain-dependencies`,
