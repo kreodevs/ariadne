@@ -133,7 +133,7 @@ export class ChatRetrieverToolsService {
           toolResult =
             'Búsqueda semántica: todos los candidatos quedaron fuera del alcance (scope). Ajusta repoIds/prefijos/exclusiones o amplía la consulta.';
         } else {
-          const diag = await this.handlers.getSemanticSearchDiagnostics(projectId, embedRepo);
+          const diag = await this.handlers.getSemanticSearchDiagnostics(projectId, embedRepo, restrictRepo);
           toolResult = `Búsqueda semántica: 0 resultados.\n${diag}\nPrueba execute_cypher si el índice vectorial no aplica.`;
         }
       } else if (fn === 'get_graph_summary') {

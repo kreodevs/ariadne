@@ -445,10 +445,12 @@ export class ChatHandlersService {
    * Explica por qué `semantic_search` pudo devolver 0 filas (config, índice vacío o query).
    * @param graphProjectId - `projectId` en Falkor (padre en multi-root).
    * @param repositoryIdForEmbedding - `repositories.id` para el espacio de embeddings (mismo criterio que `semanticSearchFallback`).
+   * @param restrictRepoId - si se define, los conteos coinciden con `semanticSearchFallback` (fan-out The Forge / multi-root).
    */
   async getSemanticSearchDiagnostics(
     graphProjectId: string,
     repositoryIdForEmbedding?: string,
+    restrictRepoId?: string,
   ): Promise<string> {
     const embeddingRepoId = repositoryIdForEmbedding ?? graphProjectId;
     const readBinding = await this.embeddingSpaces.getReadBindingForRepository(embeddingRepoId);
@@ -457,34 +459,46 @@ export class ChatHandlersService {
       return 'Diagnóstico: búsqueda semántica no disponible (configura EMBEDDING_PROVIDER + API key y embed-index, o espacio de lectura en Postgres). Mientras tanto usa execute_cypher.';
     }
     const vProp = readBinding.graphProperty;
+    const repoClause = restrictRepoId ? ' AND n.repoId = $repoId' : '';
+    const countExtra = restrictRepoId ? { repoId: restrictRepoId } : {};
+    const scopeNote = restrictRepoId
+      ? ' en este repositorio (n.repoId acotado)'
+      : ' en el proyecto Falkor';
     try {
       const countFn = await this.cypher.executeCypher(
         graphProjectId,
-        `MATCH (n:Function) WHERE n.projectId = $projectId AND n.${vProp} IS NOT NULL RETURN count(n) as c`,
+        `MATCH (n:Function) WHERE n.projectId = $projectId${repoClause} AND n.${vProp} IS NOT NULL RETURN count(n) as c`,
+        countExtra,
       );
       const countComp = await this.cypher.executeCypher(
         graphProjectId,
-        `MATCH (n:Component) WHERE n.projectId = $projectId AND n.${vProp} IS NOT NULL RETURN count(n) as c`,
+        `MATCH (n:Component) WHERE n.projectId = $projectId${repoClause} AND n.${vProp} IS NOT NULL RETURN count(n) as c`,
+        countExtra,
       );
       const countDoc = await this.cypher.executeCypher(
         graphProjectId,
-        `MATCH (n:Document) WHERE n.projectId = $projectId AND n.${vProp} IS NOT NULL RETURN count(n) as c`,
+        `MATCH (n:Document) WHERE n.projectId = $projectId${repoClause} AND n.${vProp} IS NOT NULL RETURN count(n) as c`,
+        countExtra,
       );
       const countSb = await this.cypher.executeCypher(
         graphProjectId,
-        `MATCH (n:StorybookDoc) WHERE n.projectId = $projectId AND n.${vProp} IS NOT NULL RETURN count(n) as c`,
+        `MATCH (n:StorybookDoc) WHERE n.projectId = $projectId${repoClause} AND n.${vProp} IS NOT NULL RETURN count(n) as c`,
+        countExtra,
       );
       const countMd = await this.cypher.executeCypher(
         graphProjectId,
-        `MATCH (n:MarkdownDoc) WHERE n.projectId = $projectId AND n.${vProp} IS NOT NULL RETURN count(n) as c`,
+        `MATCH (n:MarkdownDoc) WHERE n.projectId = $projectId${repoClause} AND n.${vProp} IS NOT NULL RETURN count(n) as c`,
+        countExtra,
       );
       const countModel = await this.cypher.executeCypher(
         graphProjectId,
-        `MATCH (n:Model) WHERE n.projectId = $projectId AND n.${vProp} IS NOT NULL RETURN count(n) as c`,
+        `MATCH (n:Model) WHERE n.projectId = $projectId${repoClause} AND n.${vProp} IS NOT NULL RETURN count(n) as c`,
+        countExtra,
       );
       const countEnum = await this.cypher.executeCypher(
         graphProjectId,
-        `MATCH (n:Enum) WHERE n.projectId = $projectId AND n.${vProp} IS NOT NULL RETURN count(n) as c`,
+        `MATCH (n:Enum) WHERE n.projectId = $projectId${repoClause} AND n.${vProp} IS NOT NULL RETURN count(n) as c`,
+        countExtra,
       );
       const hasFn = (countFn as Array<{ c?: number }>)?.[0]?.c ?? 0;
       const hasComp = (countComp as Array<{ c?: number }>)?.[0]?.c ?? 0;
@@ -494,9 +508,16 @@ export class ChatHandlersService {
       const hasModel = (countModel as Array<{ c?: number }>)?.[0]?.c ?? 0;
       const hasEnum = (countEnum as Array<{ c?: number }>)?.[0]?.c ?? 0;
       if (hasFn === 0 && hasComp === 0 && hasDoc === 0 && hasSb === 0 && hasMd === 0 && hasModel === 0 && hasEnum === 0) {
+        if (restrictRepoId) {
+          return (
+            'Diagnóstico: bajo este projectId no hay nodos indexables con embedding para este repo (repoId). ' +
+            'Puede que otros roots del mismo proyecto sí tengan vectores (antes el mensaje parecía “hay embeddings” por sumar todo el workspace). ' +
+            `Ejecuta POST /repositories/${restrictRepoId}/embed-index tras sync o revisa que el ingest asigne repoId en Falkor.`
+          );
+        }
         return 'Diagnóstico: ningún nodo indexable (Function/Component/Document/StorybookDoc/MarkdownDoc/Model/Enum) tiene embedding. Ejecuta POST /repositories/:id/embed-index tras sync.';
       }
-      return 'Diagnóstico: hay embeddings pero esta consulta no obtuvo vecinos relevantes; reformula o usa execute_cypher con términos del dominio.';
+      return `Diagnóstico: hay embeddings${scopeNote} pero esta consulta no obtuvo vecinos relevantes; reformula o usa execute_cypher con términos del dominio.`;
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       return `Diagnóstico: error al comprobar embeddings (${msg}).`;
