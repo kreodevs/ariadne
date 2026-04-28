@@ -163,6 +163,17 @@ export class CodebaseChatService {
       }
       return { answer: 'Este proyecto no tiene repositorios indexados. Añade al menos un repo y haz sync.' };
     }
+    // Un único `repoIds` en scope (p. ej. MDD / ask_codebase solo caldav en OralTrack multi-root):
+    // NO usar `repos[0]` + `projectScope: true` — mezcla grafo, openapi y `mdd-evidence` del repo equivocado.
+    const scopeRepoIds = Array.from(
+      new Set((req.scope?.repoIds ?? []).map((x) => String(x).trim()).filter(Boolean)),
+    );
+    if (scopeRepoIds.length === 1) {
+      const only = scopeRepoIds[0];
+      if (repos.some((r) => r.id === only)) {
+        return this.chatRepository(only, req);
+      }
+    }
     const firstRepoId = repos[0].id;
     const historyContent = (req.history ?? [])
       .slice(-8)
