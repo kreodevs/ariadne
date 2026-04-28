@@ -338,6 +338,6 @@ El MCP usa **Streamable HTTP** en todas las configuraciones (puerto 8080, path /
 ## 9. Referencias
 
 - [AGENTS.md](../AGENTS.md) — Protocolo para agentes.
-- [Manual de uso](manual/README.md) — Puesta en marcha general.
+- [Manual de uso](../manual/README.md) — Puesta en marcha general.
 - [Especificación MCP](/mcp_server_specs.md) — Detalle de herramientas (también en repo: `docs/notebooklm/mcp_server_specs.md`).
 - [Esquema DB](db_schema.md) — Nodos y relaciones del grafo.

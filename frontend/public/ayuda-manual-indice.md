@@ -47,14 +47,29 @@
 | **notebooklm/RELIC_PRESENTACION_EJECUTIVA.md**     | Presentación ejecutiva para stakeholders.                                                |
 
 
+## Calidad, límites y observabilidad
+
+| Doc | Descripción |
+| --- | --- |
+| **notebooklm/TESTING.md** | Vitest (ingest, frontend unit), Playwright E2E frontend, workflows CI. |
+| **notebooklm/MONOREPO_Y_LIMITACIONES_INDEXADO.md** | Alcance de índice (`indexIncludeRules`), sync-path-filter, resync. |
+| **notebooklm/OBSERVABILIDAD_FASE0.md** | Telemetría / logs fase 0. |
+| **notebooklm/metricas-alcance-chat.md** | Métricas y alcance del chat. |
+| **notebooklm/diagnostico-layer-dependencies.md** | Dependencias de capas de diagnóstico. |
+| **notebooklm/plan-analyze-layer-cache.md** | Plan de caché capa analyze. |
+
 ## Otros
 
+| Doc | Descripción |
+| --- | --- |
+| **notebooklm/ariadne-common.md** | Paquete compartido `ariadne-common` (Cypher/utilidades). |
+| **notebooklm/parser-ejemplo-circulo-activo.md** | Ejemplo parser / círculo activo. |
+| **notebooklm/PROJECT_BRAIN_DUMP.md** | Volcado técnico monorepo para NotebookLM. |
+| **ariadne-project.example** | Ejemplo de `.ariadne-project` para fijar `projectId` en el repo que se mantiene con Ariadne. |
+| **cursor-rule-relic-project.mdc** | Regla de Cursor: usar `projectId` de `.ariadne-project` en llamadas al MCP. |
+| **notebooklm/constitution.md** | Principios y convenciones del proyecto. |
+| **notebooklm/Mejoras_Ariadne_Marzo.md** | Mejoras / plan (histórico vivo). |
 
-| Doc                               | Descripción                                                                                  |
-| --------------------------------- | -------------------------------------------------------------------------------------------- |
-| **ariadne-project.example**       | Ejemplo de `.ariadne-project` para fijar `projectId` en el repo que se mantiene con Ariadne. |
-| **cursor-rule-relic-project.mdc** | Regla de Cursor: usar `projectId` de `.ariadne-project` en llamadas al MCP.                  |
-| **notebooklm/constitution.md**    | Principios y convenciones del proyecto.                                                      |
-
+**Shell frontend (sidebar):** grupo **Gobierno** — Dashboard, Dominios, Proyectos; **Ingeniería** — Repositorios (`/repos`), Cola de Sync (`/jobs`), Nuevo Repo (`/repos/new`), C4 Viewer (`/c4`); **Plataforma** — Grafo, Credenciales, Ayuda. La raíz `/` redirige a `/dashboard`.
 
 En la raíz del repo: **AGENTS.md** — Protocolo para agentes (list_known_projects al inicio, preferencia projectId, flujos de diagnóstico y SDD).

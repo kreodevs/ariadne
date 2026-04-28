@@ -70,7 +70,7 @@ Reiniciar Cursor. Listo.
 | `validate_before_edit` | **Obligatorio** antes de editar: impacto + contrato en un solo llamado |
 | `semantic_search` | Búsqueda por palabra clave en componentes, funciones, archivos |
 | `get_project_analysis` | Deuda técnica, duplicados, reingeniería, código muerto, **seguridad** (heurística). Multi-root: `currentFilePath` ayuda a resolver el repo vía ingest |
-| `ask_codebase` | Preguntas en NL sobre el código. Opcional **`scope`**, **`twoPhase`**, **`responseMode`** (`default` \| `evidence_first` \| `raw_evidence`), **`deterministicRetriever`** (solo con `raw_evidence`). Ver **§3.1** (paridad con modos The Forge). |
+| `ask_codebase` | Preguntas en NL sobre el código. Opcional **`scope`**, **`twoPhase`**, **`responseMode`** (`default` \| `evidence_first` \| `raw_evidence`), **`deterministicRetriever`** (solo con `raw_evidence`). Ver **§3.1** (paridad con modos del chat en `/repos/:id/chat`). |
 | `get_definitions` | Origen exacto de clase/función (archivo, líneas) |
 | `get_references` | Todos los lugares donde se usa un símbolo |
 | `get_implementation_details` | Firma, tipos, props, endpoints de un símbolo |
@@ -85,14 +85,14 @@ Reiniciar Cursor. Listo.
 
 **Ingest (operación):** `CHAT_TELEMETRY_LOG=1` añade en logs `pathGroundingRatio` y citas vs retrieval. `CHAT_TWO_PHASE=0|false|off` desactiva el bloque JSON estructurado en el sintetizador.
 
-### 3.1 Modos The Forge y `ask_codebase` (MCP)
+### 3.1 Modos del chat por repo (UI) y `ask_codebase` (MCP)
 
-La UI **Pregunta sobre el código** en The Forge (`/repos/:id/chat`) tiene tres modos; en MCP activan el mismo pipeline pasando `responseMode` (y opcionalmente `deterministicRetriever`):
+La UI **Pregunta sobre el código** en **`/repos/:id/chat`** tiene tres modos (misma semántica que en docs técnicas como *The Forge* / legacy coordinator). En MCP activan el mismo pipeline pasando `responseMode` (y opcionalmente `deterministicRetriever`):
 
 | Modo UI | `responseMode` en MCP | Notas |
 |---------|----------------------|--------|
 | **Chat normal** | **`default`** | Prosa + ReAct en retrieve + sintetizador. **En MCP debes enviarlo explícito**: si omites `responseMode`, el servidor MCP usa por defecto `raw_evidence` + `deterministicRetriever: true` (evidencia barata), **no** “chat normal”. |
-| **MDD / SDD** | **`evidence_first`** | Respuesta JSON MDD (7 claves); LegacyCoordinator / The Forge. |
+| **MDD / SDD** | **`evidence_first`** | Respuesta JSON MDD (7 claves); LegacyCoordinator / consumo en cliente. |
 | **Evidencia bruta** | **`raw_evidence`** + **`deterministicRetriever": true`** | Sin LLM en la fase de retrieve (secuencia fija); el cliente o otro LLM sintetiza a partir del JSON en `answer`. Coincide con el default del MCP cuando no pasas `responseMode`. |
 
 Ejemplo **chat normal** desde MCP:

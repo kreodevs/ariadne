@@ -161,6 +161,7 @@ Todas las preguntas pasan por el mismo pipeline. No hay clasificación code vs k
 
 ## 10. Frontend (Chat UI)
 
-- **Ruta:** `/repos/:id/chat`
+- **Ruta:** `/repos/:id/chat` (`RepoChat`, selector `ChatPipelineModeSelect`). La lista en `/repos` puede mostrar el título de vista **The Forge** (copy de página; no es un grupo del menú lateral).
+- **Menú lateral:** accesos planos en **Ingeniería**: **Repositorios** (`/repos`), **Cola de Sync** (`/jobs`), **Nuevo Repo** (`/repos/new`), luego **C4 Viewer** (`/c4`). **Proyectos** está en **Gobierno** encima de esa sección.
 - **Layout:** Dos columnas: izquierda = botones (Diagnóstico, Duplicados, Reingeniería, Ver índice) + resultados; derecha = chat (mensajes + input).
 - **API:** `api.chat()`, `api.analyze()`, `api.getGraphSummary()` en `frontend/src/api.ts`.

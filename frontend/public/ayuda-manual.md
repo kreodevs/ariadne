@@ -14,7 +14,7 @@ Este manual describe cómo poner en marcha, usar y validar el monorepo Ariadne (
 | **API** | REST OpenAPI: `/graph/*` (Falkor); **proxy** a ingest para `/api/projects`, `/api/repositories`, `/api/credentials`, `/api/domains`, … (prefijo `/api` → ingest). NestJS + FalkorDB + Redis (caché). |
 | **Orchestrator** | Flujos LangGraph: refactor por `nodeId`, validación con props propuestas, pipeline completo (shadow + compare). NestJS. |
 | **MCP AriadneSpecs** | Servidor MCP por Streamable HTTP (puerto 8080): herramientas de grafo para la IA (get_component_graph, get_legacy_impact, etc.). |
-| **Frontend** | UI: proyectos, **dominios** (CRUD), detalle de proyecto (**Arquitectura**: dominio, whitelist, C4/Kroki), repos, credenciales, sync, jobs, **Chat**, **resync**. React + Vite. |
+| **Frontend** | UI: dashboard, **dominios** (CRUD), proyectos, detalle de proyecto (**Arquitectura**: dominio, whitelist, C4/Kroki), repos, cola de sync (`/jobs`), credenciales, **Chat**, **resync**, C4 viewer, explorador de grafo, ayuda. React + Vite. |
 | **Cartographer** | Legacy: vigilancia de directorio local y `POST /shadow`; el ingest asume full sync + webhook. |
 
 Diagrama y detalle en [architecture.md](../notebooklm/architecture.md).
@@ -138,7 +138,7 @@ Herramientas expuestas:
 
 En `frontend/`: `npm run dev` (puerto 5173 por defecto). `VITE_API_URL` recomendado: **API** `http://localhost:3000` (rutas `/api/...` proxificadas al ingest) o ingest directo `:3002` según despliegue.
 
-- **Rutas:** `/` listado de **proyectos**; `/domains` administración de dominios; `/projects/:id` detalle (General + **Arquitectura**); `/projects/:id/chat` chat multi-repo; `/repos` repos; `/repos/new` alta; `/repos/:id` detalle, Sync, Resync, jobs; `/repos/:id/chat` chat por repo; `/credentials` credenciales.
+- **Rutas:** `/` redirige a **`/dashboard`**; `/projects` listado de proyectos; `/domains` dominios; `/projects/:id` detalle (General + **Arquitectura**); `/projects/:id/chat` chat multi-repo; `/repos` lista de repos; `/jobs` cola de sync; `/repos/new` alta; `/repos/:id` detalle, Sync, Resync; `/repos/:id/chat` chat por repo; `/c4` C4 viewer; `/graph-explorer` componentes; `/credentials` credenciales; `/ayuda` ayuda MCP/manual.
 - **Build:** `npm run build`; **preview:** `npm run preview` para servir `dist/` localmente.
 
 ## 5. Validación
@@ -148,7 +148,7 @@ En `frontend/`: `npm run dev` (puerto 5173 por defecto). `VITE_API_URL` recomend
 - **API:** En `services/api`: `npm run test` (Vitest). Incluye smoke de rutas graph ([services/api/src/routes/graph.test.ts](../../services/api/src/routes/graph.test.ts)).
 - **Orchestrator:** En `services/orchestrator`: `npm run test` (Vitest). Tests de [WorkflowService](../../services/orchestrator/src/workflow/workflow.service.spec.ts) con mocks de `fetch` (impacto, contratos, approved/not approved).
 
-No hay tests E2E en el repo; la validación completa es manual.
+**E2E (Playwright):** en `frontend/`, tras `pnpm exec playwright install chromium`, `pnpm run test:e2e` (smoke con `VITE_E2E_AUTH_BYPASS=true`; ver [TESTING.md](../notebooklm/TESTING.md)). La validación de flujos largos contra API real sigue siendo manual si no hay escenarios dedicados.
 
 ### Comprobación rápida tras Docker
 
@@ -160,9 +160,10 @@ No hay tests E2E en el repo; la validación completa es manual.
 
 ## 6. Referencias
 
-- [CONFIGURACION_Y_USO.md](CONFIGURACION_Y_USO.md) — Configuración detallada, credenciales, troubleshooting.
+- [CONFIGURACION_Y_USO.md](CONFIGURACION_Y_USO.md) — Configuración detallada, credenciales, troubleshooting (tabla de rutas frontend §2.6).
 - [docs/README.md](../README.md) — Índice de documentación.
 - [architecture.md](../notebooklm/architecture.md) — Stack y flujos del sistema.
+- [TESTING.md](../notebooklm/TESTING.md) — Vitest, Playwright, CI.
 - [bitbucket_webhook.md](../notebooklm/bitbucket_webhook.md) — Configuración del webhook Bitbucket.
 - [db_schema.md](../notebooklm/db_schema.md) — Grafo FalkorDB (nodos, relaciones) y tablas PostgreSQL.
 - [indexing_engine.md](../notebooklm/indexing_engine.md) — Pipeline de indexación y fuentes.

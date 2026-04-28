@@ -192,7 +192,7 @@ export function ProjectDetail() {
   const [associateSuccess, setAssociateSuccess] = useState<string | null>(null);
   const [deletingProject, setDeletingProject] = useState(false);
   const [regeneratingProjectId, setRegeneratingProjectId] = useState(false);
-  const [resyncForProjectRepoId, setResyncForProjectRepoId] = useState<string | null>(null);
+  const [resyncProjectBusy, setResyncProjectBusy] = useState(false);
   const [roleSavingRepoId, setRoleSavingRepoId] = useState<string | null>(null);
   const [detailTab, setDetailTab] = useState<'general' | 'architecture'>('general');
   const [domains, setDomains] = useState<Domain[]>([]);
@@ -237,17 +237,21 @@ export function ProjectDetail() {
     ? allRepos.filter((r) => !project.repositories.some((pr) => pr.id === r.id))
     : [];
 
-  /** Encola resync del repo en el contexto del proyecto y recarga el proyecto. */
-  const resyncForProject = async (repoId: string) => {
-    if (!id) return;
-    setResyncForProjectRepoId(repoId);
+  /**
+   * Encola resync-for-project para **todos** los repos del proyecto (mismo efecto desde cualquier fila).
+   * Cada job borra el slice (projectId, repoId) en Falkor y reindexa solo ese proyecto para ese repo.
+   */
+  const resyncEntireProject = async () => {
+    if (!id || !project?.repositories.length) return;
+    setResyncProjectBusy(true);
+    setError(null);
     try {
-      await api.resyncForProject(repoId, id);
+      await Promise.all(project.repositories.map((r) => api.resyncForProject(r.id, id)));
       fetchProject();
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Error al encolar resync');
+      setError(e instanceof Error ? e.message : 'Error al encolar resync del proyecto');
     } finally {
-      setResyncForProjectRepoId(null);
+      setResyncProjectBusy(false);
     }
   };
 
@@ -673,11 +677,11 @@ export function ProjectDetail() {
                       <Button
                         variant="outline"
                         size="sm"
-                        onClick={() => resyncForProject(r.id)}
-                        disabled={resyncForProjectRepoId !== null}
-                        title="Reindexar este repo solo en este proyecto"
+                        onClick={() => void resyncEntireProject()}
+                        disabled={resyncProjectBusy}
+                        title="Reindexar todos los repositorios de este proyecto en Falkor (desde cualquier fila)"
                       >
-                        {resyncForProjectRepoId === r.id ? 'Encolando…' : 'Resync (proyecto)'}
+                        {resyncProjectBusy ? 'Encolando…' : 'Resync (proyecto)'}
                       </Button>
                       <Button variant="outline" size="sm" asChild>
                         <Link to={`/repos/${r.id}/chat`}>Chat (repo)</Link>

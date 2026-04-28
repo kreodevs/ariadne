@@ -117,14 +117,14 @@ RETURN dependent.name AS name, labels(dependent) AS labels
 ### Tool: `ask_codebase`
 
 - **Descripción:** Pregunta en lenguaje natural sobre el código del proyecto. Flujo **agéntico**: Coordinador (Falkor + lecturas de archivos: Prisma, OpenAPI/Swagger, `package.json`, `.env.example`, tsconfig) y Validador (evidencia anclada a paths reales). En el ingest, el pipeline unificado puede seguir usando **CodeAnalysis / KnowledgeExtraction** según el mensaje cuando no aplica el modo MDD.
-- **Argumentos:** `question: string`, `projectId?: string`, `currentFilePath?: string` (para inferir proyecto), **`scope?`** (objeto opcional: `repoIds[]`, `includePathPrefixes[]`, `excludePathGlobs[]` — acota Cypher, búsqueda semántica y lectura de archivos en el ingest), **`twoPhase?`** (boolean; prioriza JSON de retrieval en el sintetizador; en ingest se alinea con `CHAT_TWO_PHASE`), **`responseMode?`:** `"default"` \| **`"evidence_first"`** \| **`"raw_evidence"`**. Con **`evidence_first`** la respuesta es **JSON MDD** en **7 claves** (SDD compacto / The Forge). Sin orchestrator: lo genera el ingest tras el retrieve (+ inyección de evidencia física si el retriever vino vacío). Con **orchestrator**: tras LangGraph retrieve → `POST /internal/repositories/:repoId/mdd-evidence` (header **`X-Internal-API-Key`**). Con **`raw_evidence`**, `answer` es JSON con `gatheredContext`, `collectedResults`, `cypher`, `deterministicRetriever` — el cliente (The Forge) debe **`JSON.parse`** y sintetizar. Opcional **`deterministicRetriever?`** (boolean): solo con `raw_evidence`; si true, sin LLM en la fase de retrieve (ingest **`raw-evidence-deterministic`** vía orchestrator o pipeline directo en ingest). Con **`default`**, el sintetizador sigue en prosa. Expuesto en el MCP con `enum` en `tools/list`; con **`additionalProperties: false`**, solo se permiten las propiedades del esquema.
+- **Argumentos:** `question: string`, `projectId?: string`, `currentFilePath?: string` (para inferir proyecto), **`scope?`** (objeto opcional: `repoIds[]`, `includePathPrefixes[]`, `excludePathGlobs[]` — acota Cypher, búsqueda semántica y lectura de archivos en el ingest), **`twoPhase?`** (boolean; prioriza JSON de retrieval en el sintetizador; en ingest se alinea con `CHAT_TWO_PHASE`), **`responseMode?`:** `"default"` \| **`"evidence_first"`** \| **`"raw_evidence"`**. Con **`evidence_first`** la respuesta es **JSON MDD** en **7 claves** (SDD compacto; consumo típico en UI de chat por repo / legacy coordinator). Sin orchestrator: lo genera el ingest tras el retrieve (+ inyección de evidencia física si el retriever vino vacío). Con **orchestrator**: tras LangGraph retrieve → `POST /internal/repositories/:repoId/mdd-evidence` (header **`X-Internal-API-Key`**). Con **`raw_evidence`**, `answer` es JSON con `gatheredContext`, `collectedResults`, `cypher`, `deterministicRetriever` — el **cliente web u host MCP** debe **`JSON.parse`** y sintetizar. Opcional **`deterministicRetriever?`** (boolean): solo con `raw_evidence`; si true, sin LLM en la fase de retrieve (ingest **`raw-evidence-deterministic`** vía orchestrator o pipeline directo en ingest). Con **`default`**, el sintetizador sigue en prosa. Expuesto en el MCP con `enum` en `tools/list`; con **`additionalProperties: false`**, solo se permiten las propiedades del esquema.
 - **Propósito:** Preguntas tipo "qué hace este proyecto", "cómo está implementado el login". Requiere **INGEST_URL**; LLM en retrieval salvo `raw_evidence`+`deterministicRetriever` (**`LLM_*`** o claves legacy donde aplique).
 - **Implementación ingest:** Intenta `POST /projects/:projectId/chat` (chat por proyecto, todos los repos); si 404, `POST /repositories/:projectId/chat` (chat por repo). Body admite `message`, `history`, `scope`, `twoPhase`, `responseMode`, `deterministicRetriever`. Respuesta puede incluir **`mddDocument`** (objeto) cuando `responseMode` es `evidence_first` y el backend lo serializa.
 - **Listas exhaustivas:** Usar **`get_modification_plan`** para archivos a modificar y preguntas de afinación (flujo legacy/MaxPrime).
 
-#### Modo The Forge (UI) ↔ `ask_codebase` en MCP
+#### Chat por repo (UI) ↔ `ask_codebase` en MCP
 
-En **The Forge** (`/repos/:id/chat`, `RepoChat` + `ChatPipelineModeSelect`) los tres modos mapean al ingest así:
+En la vista **`/repos/:id/chat`** (`RepoChat` + `ChatPipelineModeSelect`; la lista `/repos` puede titularse *The Forge* en la UI) los tres modos mapean al ingest así:
 
 | Modo en UI | Body hacia `POST …/chat` (ingest) | MCP `ask_codebase` (argumentos) |
 |------------|-----------------------------------|-----------------------------------|
@@ -166,7 +166,7 @@ Ejemplo mínimo (JSON del tool `ask_codebase`):
 1. **`scope`**: `repoIds` (UUID de **`roots[].id`**), `includePathPrefixes`, `excludePathGlobs` — evita barrer monorepos enteros.
 2. **`projectId`**: si el trabajo es en **un solo repo**, usar **`roots[].id`** como `projectId` cuando el ingest lo acepte (resolución automática proyecto ↔ repo según endpoint).
 3. **`currentFilePath`**: con proyecto multi-root y `projectId` del **proyecto** Ariadne, ancla el root correcto.
-4. **`responseMode`**: para JSON estable (SDD / Forge) → **`evidence_first`**. Para minimizar LLM en la fase de retrieve → **`raw_evidence`** + **`deterministicRetriever: true`** (menos selectivo que ReAct; el cliente sintetiza).
+4. **`responseMode`**: para JSON estable (SDD / MDD) → **`evidence_first`**. Para minimizar LLM en la fase de retrieve → **`raw_evidence`** + **`deterministicRetriever: true`** (menos selectivo que ReAct; el cliente sintetiza).
 
 **Anti-patrones:** llamar `ask_codebase` solo para “abrir” un archivo; usar `default` cuando el cliente esperaba JSON MDD; omitir `scope` en preguntas amplias sobre un solo paquete dentro de un monorepo.
 
@@ -194,7 +194,7 @@ Distintas de `get_project_analysis` (pipeline completo en ingest con LLM):
 | **`get_debt_report`** | Consulta Cypher en Falkor: nodos `Function`/`Component` sin aristas `CALLS` entrantes ni salientes (heurística “aislado”). Límite de filas configurable: `MCP_DEBT_REPORT_ISOLATED_LIMIT`.   |
 | **`find_duplicates`** | Cypher: agrupa `File` por `contentHash` con más de un path. Límite de grupos: `MCP_FIND_DUPLICATES_GROUP_LIMIT`. No es el modo `duplicados` de `get_project_analysis` (embed/cross-package). |
 
-### Volúmenes de salida (operadores / The Forge)
+### Volúmenes de salida (operadores / UI chat por repo)
 
 - **MCP:** prefijos **`MCP_*`** — ver `services/mcp-ariadne/README.md` y `src/mcp-tool-limits.ts` (defaults altos; bajar si el contexto del LLM se satura).
 - **MDD (`evidence_first` / `mdd-evidence`):** prefijos **`MDD_*`** — ver `services/ingest/src/chat/README.md` y `mdd-limits.ts`.
