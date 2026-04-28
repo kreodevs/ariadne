@@ -1,6 +1,16 @@
 #!/usr/bin/env node
 /**
- * @fileoverview AriadneSpecs Oracle MCP Server. Transporte Streamable HTTP. Tools: get_component_graph, get_legacy_impact, validate_before_edit, semantic_search, etc. Config: PORT, MCP_AUTH_TOKEN, FALKORDB_HOST, INGEST_URL, ARIADNE_API_URL, ARIADNE_API_BEARER (JWT para GET /api/graph/* en Nest). Observabilidad: MCP_TOOL_LOG, MCP_TOOL_LOG_ARG_MAX, MCP_TOOL_LOG_RESPONSE_BLOCK_MAX, MCP_TOOL_LOG_RESPONSE_TOTAL_MAX.
+ * @fileoverview **AriadneSpecs Oracle** — servidor MCP (Model Context Protocol) con transporte HTTP streamable.
+ *
+ * Expone herramientas para IDEs y agentes: grafo de componentes, impacto legacy, validación pre-edición,
+ * búsqueda semántica, contenido de archivos, análisis de proyecto, planes de modificación, etc.
+ * Variables de entorno clave: `PORT`, `MCP_AUTH_TOKEN`, `FALKORDB_HOST`, `INGEST_URL`, `ARIADNE_API_URL`,
+ * `ARIADNE_API_BEARER` / `ARIADNE_API_JWT` para rutas protegidas del API Nest. Límites de logging:
+ * `MCP_TOOL_LOG`, `MCP_TOOL_LOG_ARG_MAX`, `MCP_TOOL_LOG_RESPONSE_BLOCK_MAX`, `MCP_TOOL_LOG_RESPONSE_TOTAL_MAX`.
+ *
+ * @copyright 2026 Jorge Correa
+ * @license Apache-2.0
+ * @author Jorge Correa <jcorrea@e-personal.net>
  */
 
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
@@ -374,13 +384,24 @@ Formato: \`{ "projectId": "uuid" }\`
 
 Si no hay .ariadne-project: el servidor puede inferir el proyecto vía ingest (heurística \`projectKey\`/\`repoSlug\` en la ruta del IDE) o vía el grafo Falkor. Ejecuta \`list_known_projects\` cuando necesites elegir explícitamente. Nunca inventes ni asumas IDs.`;
 
-/** Crea un MCP Server configurado. Stateless: un Server+Transport por request evita "Server already initialized". */
+/**
+ * Ensambla el servidor MCP con handlers para cada nombre de herramienta.
+ *
+ * @returns Instancia {@link Server} con `ListTools` y `CallTool` registrados.
+ * @see {@link ./mcp-tools.doc.ts} catálogo JSDoc de todas las tools (revisiones y dependencias INGEST/API/Falkor).
+ */
 function createMcpServer(): Server {
   const srv = new Server(
     { name: "AriadneSpecs-Oracle", version: "1.0.0" },
     { capabilities: { tools: {} }, instructions: MCP_INSTRUCTIONS }
   );
 
+  /**
+   * Publica el manifiesto MCP (`tools[]`) con `name`, `description` e `inputSchema` JSON Schema.
+   * Cada entrada tiene paridad 1:1 con el `switch`/`if` del handler {@link CallToolRequestSchema} más abajo.
+   *
+   * @see {@link ./mcp-tools.doc.ts}
+   */
   srv.setRequestHandler(ListToolsRequestSchema, async () => {
     if (isMcpToolInvocationLoggingEnabled()) {
       console.log(
@@ -1320,6 +1341,14 @@ async function fetchFileFromIngest(
   return { content: data.content ?? "" };
 }
 
+  /**
+   * Despacho central de herramientas: `request.params.name` decide la rama (ingest, API Nest, Falkor o mixto).
+   * Los argumentos siguen el `inputSchema` publicado en `ListTools`. Errores HTTP se traducen a texto en `content`.
+   *
+   * @param request - Petición MCP estándar con `params.name` y `params.arguments`.
+   * @returns Resultado MCP (`content[]` con partes `text` o tipos admitidos por el SDK).
+   * @see {@link ./mcp-tools.doc.ts}
+   */
   srv.setRequestHandler(CallToolRequestSchema, async (request) => {
   const { name, arguments: args } = request.params;
   const __mcpCallStarted = Date.now();

@@ -1,5 +1,9 @@
 /**
- * @fileoverview Módulo raíz del API: GraphModule, AuthModule, AppController.
+ * @fileoverview Módulo raíz **AppModule** del API: grafo Falkor (`GraphModule`), autenticación OTP (`AuthModule`)
+ * y controladores raíz (`AppController`).
+ *
+ * @copyright 2026 Jorge Correa
+ * @license Apache-2.0
  */
 import { Module } from '@nestjs/common';
 import { GraphModule } from './graph/graph.module';

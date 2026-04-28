@@ -1,5 +1,9 @@
 /**
- * @fileoverview Módulo raíz del Ingest: TypeORM, Bitbucket, Chat, Credentials, Embedding, Repos, Shadow, Sync, Webhooks.
+ * @fileoverview Módulo raíz **AppModule** del servicio Ingest: Postgres (TypeORM), dominios, repos,
+ * credenciales, sync BullMQ, webhooks Bitbucket/GitHub, chat NL→Cypher, análisis, métricas y shadow SDD.
+ *
+ * @copyright 2026 Jorge Correa
+ * @license Apache-2.0
  */
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';

@@ -2,6 +2,8 @@
   "name": "ariadne-mcp",
   "version": "1.2.0",
   "description": "MCP server AriadneSpecs: get_component_graph, get_legacy_impact, validate_before_edit, semantic_search",
+  "author": "Jorge Correa <jcorrea@e-personal.net>",
+  "license": "Apache-2.0",
   "type": "module",
   "main": "dist/index.js",
   "bin": "./dist/index.js",
@@ -26,6 +28,5 @@
   "engines": {
     "node": ">=20"
   },
-  "keywords": ["mcp", "falkordb", "ariadne", "cursor"],
-  "license": "ISC"
+  "keywords": ["mcp", "falkordb", "ariadne", "cursor"]
 }

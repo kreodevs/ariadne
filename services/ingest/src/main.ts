@@ -1,5 +1,14 @@
 /**
- * @fileoverview Entry point del microservicio Ingest. Puerto 3002.
+ * @fileoverview Punto de entrada del microservicio **Ingest** (NestJS, puerto por defecto 3002).
+ *
+ * Responsabilidades en arranque: ejecutar migraciones TypeORM opcionales (`INGEST_SKIP_MIGRATIONS`),
+ * aplicar `FALKOR_FLUSH_ALL_ONCE` si está configurado, backfill de `repoId` en Falkor cuando no hay
+ * sharding por proyecto, y crear la app Nest con `rawBody` para verificación de webhooks.
+ *
+ * @see Archivo `LICENSE` en la raíz del monorepo (Apache-2.0).
+ * @copyright 2026 Jorge Correa
+ * @license Apache-2.0
+ * @author Jorge Correa <jcorrea@e-personal.net>
  */
 import { DataSource } from 'typeorm';
 import { NestFactory } from '@nestjs/core';

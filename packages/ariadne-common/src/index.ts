@@ -1,5 +1,11 @@
 /**
- * ariadne-common: tipos y utilidades compartidas para FalkorDB/Cypher (ingest, cartographer, MCP).
+ * @fileoverview Paquete **ariadne-common**: tipos y utilidades compartidas para FalkorDB, Cypher y rutas de grafo
+ * usadas por **ingest**, pipelines históricos y **mcp-ariadne**. Punto único de verdad para nombres de grafo,
+ * sharding por proyecto/dominio y helpers de batch Cypher.
+ *
+ * @module ariadne-common
+ * @copyright 2026 Jorge Correa
+ * @license Apache-2.0
  */
 
 export { escapeCypherString, cypherSafe } from './cypher.js';

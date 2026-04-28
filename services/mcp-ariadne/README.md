@@ -8,6 +8,11 @@ Servidor MCP que expone herramientas de contexto sobre el grafo en FalkorDB.
 
 **`ask_codebase` largo:** `mcp_tool_call_end` solo aparece cuando termina el POST a ingest/orchestrator (puede ser minutos). Mientras tanto, con `MCP_TOOL_LOG` activo, cada **`MCP_ASK_CODEBASE_PROGRESS_LOG_MS`** (default **60000**; `0`/`off` desactiva) se escribe **`mcp_tool_call_progress`** con `elapsedIngestFetchMs`, `elapsedSinceToolStartMs`, `responseMode`, `ingestAbortAfterMs` y prefijo de `projectId`.
 
+## JSDoc del catálogo de herramientas
+
+- Fuente TypeDoc/JSDoc: **`src/mcp-tools.doc.ts`** — tabla resumida de cada `name` MCP, revision `MCP_ARIADNE_TOOLS_DOC_REVISION` (incrementar al cambiar el set de tools en `index.ts`).
+- El manifiesto runtime (`description` + `inputSchema`) sigue definido en **`src/index.ts`** dentro de `ListToolsRequestSchema`.
+
 ## Publicar a npm
 
 ```bash

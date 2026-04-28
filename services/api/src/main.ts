@@ -1,5 +1,13 @@
 /**
- * @fileoverview Entry point del API NestJS. Proxy a ingest, OpenAPI, CORS, auth OTP.
+ * @fileoverview Punto de entrada del **API AriadneSpecs** (NestJS, puerto por defecto 3000).
+ *
+ * Expone prefijo global `/api`, middleware OTP (`AuthService`), CORS configurable y un proxy HTTP
+ * hacia **ingest** para rutas de proyectos, dominios, repositorios, credenciales, proveedores y webhooks.
+ * El grafo Falkor y OpenAPI viven aquí; la mutación de metadatos de repos suele delegarse en ingest.
+ *
+ * @copyright 2026 Jorge Correa
+ * @license Apache-2.0
+ * @author Jorge Correa <jcorrea@e-personal.net>
  */
 import { NestFactory } from '@nestjs/core';
 import { createProxyMiddleware } from 'http-proxy-middleware';

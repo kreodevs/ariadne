@@ -33,6 +33,8 @@ Ver [docs/notebooklm/DEPLOYMENT_DOKPLOY.md](docs/notebooklm/DEPLOYMENT_DOKPLOY.m
 
 ## Documentación
 
+- [CONTRIBUTING.md](CONTRIBUTING.md) — licencia, flujo Git, migraciones, seguridad.
+- [docs/JSDOC.md](docs/JSDOC.md) — convenciones JSDoc/TSDoc y mapa de entry points.
 - [ariadne-common](packages/ariadne-common/README.md) — Paquete compartido (FalkorDB/Cypher) entre ingest y MCP; uso y **deployment**. (Notas largas: [docs/notebooklm/ariadne-common.md](docs/notebooklm/ariadne-common.md).)
 - [Arquitectura](docs/notebooklm/architecture.md)
 - [Motor de indexado](docs/notebooklm/indexing_engine.md)
@@ -66,3 +68,9 @@ Infraestructura (una vez): pnpm run dev:infra
   - pnpm run dev:api (en otra terminal)
   - pnpm run dev:orchestrator (en otra terminal)
   - pnpm run dev:front (en otra terminal)
+
+## Licencia y autoría
+
+- **Licencia:** [Apache License 2.0](LICENSE). Aviso de terceros y copyright del proyecto: [NOTICE](NOTICE).
+- **Autores y colaboradores:** [AUTHORS.md](AUTHORS.md) (autor principal: Jorge Correa; sección *Contributors* para quien sume al repo).
+- **Cómo contribuir y JSDoc:** [CONTRIBUTING.md](CONTRIBUTING.md) y [docs/JSDOC.md](docs/JSDOC.md).

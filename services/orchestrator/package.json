@@ -2,6 +2,8 @@
   "name": "ariadnespec-orchestrator",
   "version": "1.2.0",
   "description": "NestJS + LangGraph — orquestación de agentes y flujos de razonamiento cíclicos (constitution §2.C)",
+  "author": "Jorge Correa <jcorrea@e-personal.net>",
+  "license": "Apache-2.0",
   "scripts": {
     "build": "nest build",
     "start": "nest start",

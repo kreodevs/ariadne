@@ -1,5 +1,9 @@
 /**
- * @fileoverview App principal: rutas y layout. Auth OTP, repos, chat, credenciales.
+ * @fileoverview **App** principal del frontend Ariadne: `BrowserRouter`, layout con sidebar, rutas protegidas OTP
+ * y páginas de proyectos, repos, dominios, chat, grafo de componentes, cola de sync y credenciales.
+ *
+ * @copyright 2026 Jorge Correa
+ * @license Apache-2.0
  */
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { Layout } from './components/Layout';
