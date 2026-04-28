@@ -31,21 +31,28 @@ temp
 Thumbs.db
 Desktop.ini
 
-# Hermes Agent CLI (estado local / transcripciones de sesión)
-auth.json
-auth.lock
-.hermes_history
-.skills_prompt_snapshot.json
+# Hermes Agent CLI — estado local (no versionar). auth.json puede contener API keys.
+update_check
 .update_check
-sessions/
-# Sesiones paralelas con `hermes -w` / worktrees aislados (ver upstream hermes-agent)
-.worktrees/
+.skills_prompt_snapshot.json
+skills_prompt_snapshot.json
+.hermes_history
+auth.json
+**/auth.json
+auth.lock
+SOUL.md
 config.yaml
+sessions/
+skills/
+tools/
+tools/registry.py
+cache/
+checkpoints/
+bin/
 models_dev_cache.json
-models_cache.json
 ollama_cloud_models_cache.json
 ollama_cloud_model_mappings.json
-SOUL.md
+models_cache.json
 state.db
 state.db-shm
 state.db-wal
@@ -58,10 +65,10 @@ state.db-lock-lock
 state.db-lock-lock-shm
 state.db-lock-lock-wal
 state.db-lock-lock-journal
-skills/
-sandboxes/
 memories/
-cache/
-bin/
+logs/
+sandboxes/
+# Sesiones paralelas con `hermes -w` / worktrees aislados (ver upstream hermes-agent)
+.worktrees/
 cron/
 examples/
