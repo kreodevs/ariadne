@@ -1,8 +1,0 @@
-{
-  "mcpServers": {
-    "hermes": {
-      "command": "hermes",
-      "args": ["--profile", "ariadne", "mcp", "serve"]
-    }
-  }
-}
