@@ -1,9 +1,10 @@
 /**
  * @fileoverview Módulo de repositorios: CRUD, jobs, file content, graph summary.
- * NO importa SyncModule directamente (usa SyncQueueModule @Global para BullMQ).
+ * BullModule.registerQueue registrado directamente para @InjectQueue(SYNC_QUEUE).
  */
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { BullModule } from '@nestjs/bullmq';
 import { RepositoryEntity } from './entities/repository.entity';
 import { ProjectRepositoryEntity } from './entities/project-repository.entity';
 import { SyncJob } from './entities/sync-job.entity';
@@ -16,12 +17,14 @@ import { JobAnalysisService } from './job-analysis.service';
 import { EmbeddingModule } from '../embedding/embedding.module';
 import { EmbedIndexService } from '../embedding/embed-index.service';
 import { SyncQueueModule } from '../sync/sync-queue.module';
+import { SYNC_QUEUE } from '../sync/sync.processor';
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([RepositoryEntity, ProjectRepositoryEntity, SyncJob, IndexedFile, ProjectEntity]),
     EmbeddingModule,
     SyncQueueModule,
+    BullModule.registerQueue({ name: SYNC_QUEUE }),
   ],
   controllers: [RepositoriesController],
   providers: [RepositoriesService, FileContentService, JobAnalysisService, EmbedIndexService],
