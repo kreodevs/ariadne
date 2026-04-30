@@ -163,8 +163,9 @@ async function bootstrap() {
       logger: ['log', 'error', 'warn', 'debug', 'verbose'],
     });
   } catch (createErr) {
-    console.error('[ingest] NestFactory.create FAILED:', createErr);
-    if (createErr?.cause) console.error('[ingest] CREATE CAUSE:', createErr.cause);
+    const err = createErr as any;
+    console.error('[ingest] NestFactory.create FAILED:', err);
+    if (err?.cause) console.error('[ingest] CREATE CAUSE:', err.cause);
     throw createErr;
   }
   const bodyLimit = process.env.BODY_LIMIT ?? '10mb';
@@ -187,19 +188,20 @@ async function bootstrap() {
 }
 
 bootstrap().catch((err) => {
-  console.error('[ingest] FATAL BOOTSTRAP ERROR:', err);
-  if (err?.cause) {
-    console.error('[ingest] CAUSE:', err.cause);
-    if (err.cause instanceof Error) {
-      console.error('[ingest] CAUSE STACK:', err.cause.stack);
+  const fatalErr = err as any;
+  console.error('[ingest] FATAL BOOTSTRAP ERROR:', fatalErr);
+  if (fatalErr?.cause) {
+    console.error('[ingest] CAUSE:', fatalErr.cause);
+    if (fatalErr.cause instanceof Error) {
+      console.error('[ingest] CAUSE STACK:', fatalErr.cause.stack);
     }
   }
-  if (err?.stack) {
-    console.error('[ingest] FULL STACK:', err.stack);
+  if (fatalErr?.stack) {
+    console.error('[ingest] FULL STACK:', fatalErr.stack);
   }
   // Print ALL properties of the error object
   try {
-    console.error('[ingest] ERROR DETAILS:', JSON.stringify(Object.getOwnPropertyNames(err).reduce((a, k) => ({ ...a, [k]: typeof err[k] === 'object' ? String(err[k]) : err[k] }), {})));
+    console.error('[ingest] ERROR DETAILS:', JSON.stringify(Object.getOwnPropertyNames(fatalErr).reduce((a, k) => ({ ...a, [k]: typeof fatalErr[k] === 'object' ? String(fatalErr[k]) : fatalErr[k] }), {})));
   } catch {}
   process.exit(1);
 });
