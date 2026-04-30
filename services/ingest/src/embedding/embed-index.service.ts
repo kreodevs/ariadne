@@ -19,6 +19,27 @@ import { FileContentService } from '../repositories/file-content.service';
 import { EmbeddingSpaceService } from './embedding-space.service';
 
 /**
+ * Procesa un array con Promise.all limitado por concurrencia.
+ * Cada item se procesa con `fn` y hasta `concurrency` items corren en paralelo.
+ */
+async function pMap<T, R>(
+  items: T[],
+  fn: (item: T) => Promise<R>,
+  { concurrency = 5 }: { concurrency?: number } = {},
+): Promise<R[]> {
+  const results: R[] = [];
+  let i = 0;
+  const next = async (): Promise<void> => {
+    const idx = i++;
+    if (idx >= items.length) return;
+    results[idx] = await fn(items[idx]);
+    await next();
+  };
+  await Promise.all(Array.from({ length: Math.min(concurrency, items.length) }, () => next()));
+  return results;
+}
+
+/**
  * El driver Falkor devuelve filas como array posicional o como objeto con aliases de RETURN.
  * NO asumir tuplas: `const [a,b] = row` rompe con objetos ("row is not iterable").
  */
@@ -174,14 +195,13 @@ export class EmbedIndexService {
       { params: { projectId: falkorProjectId } },
     )) as { data?: unknown[] };
     const funcRows = funcRes.data ?? [];
-    for (const row of funcRows) {
+    const funcResults = await pMap(funcRows, async (row) => {
       const r = rowAsRecord(row, ['path', 'name', 'description', 'startLine', 'endLine']);
       const path = String(r.path ?? '');
       const name = String(r.name ?? '');
       const description = r.description != null ? String(r.description) : null;
       const startLine = typeof r.startLine === 'number' ? r.startLine : null;
       const endLine = typeof r.endLine === 'number' ? r.endLine : null;
-
       let text = [name, path, description].filter(Boolean).join(' ');
       if (startLine != null && endLine != null && endLine >= startLine) {
         const content = await this.fileContent.getFileContentSafe(repositoryIdForFileContent, path);
@@ -197,23 +217,24 @@ export class EmbedIndexService {
           `MATCH (n:Function {path: $path, name: $name, projectId: $projectId}) SET n.${prop} = vecf32($vec)`,
           { params: { path, name, projectId: falkorProjectId, vec } },
         );
-        indexed++;
+        return { indexed: 1, errors: 0, path, name };
       } catch (e) {
-        errors++;
-        if (errors <= 3) {
-          console.warn(
-            `[embed-index] Function ${path}::${name} failed:`,
-            e instanceof Error ? e.message : e,
-          );
-        }
+        return { indexed: 0, errors: 1, path, name, error: e instanceof Error ? e.message : String(e) };
       }
+    });
+    for (const r of funcResults) {
+      if (r.errors === 1 && errors < 3) {
+        console.warn(`[embed-index] Function ${r.path}::${r.name} failed:`, r.error);
+      }
+      indexed += r.indexed;
+      errors += r.errors;
     }
 
     const compRes = (await graph.query(
       `MATCH (n:Component) WHERE n.projectId = $projectId RETURN n.name AS name, n.description AS description`,
       { params: { projectId: falkorProjectId } },
     )) as { data?: unknown[] };
-    for (const row of compRes.data ?? []) {
+    const compResults = await pMap(compRes.data ?? [], async (row) => {
       const r = rowAsRecord(row, ['name', 'description']);
       const name = String(r.name ?? '');
       const description = r.description != null ? String(r.description) : null;
@@ -224,20 +245,24 @@ export class EmbedIndexService {
           `MATCH (n:Component {name: $name, projectId: $projectId}) SET n.${prop} = vecf32($vec)`,
           { params: { name, projectId: falkorProjectId, vec } },
         );
-        indexed++;
+        return { indexed: 1, errors: 0, name };
       } catch (e) {
-        errors++;
-        if (errors <= 3) {
-          console.warn(`[embed-index] Component ${name} failed:`, e instanceof Error ? e.message : e);
-        }
+        return { indexed: 0, errors: 1, name, error: e instanceof Error ? e.message : String(e) };
       }
+    });
+    for (const r of compResults) {
+      if (r.errors === 1 && errors < 3) {
+        console.warn(`[embed-index] Component ${r.name} failed:`, r.error);
+      }
+      indexed += r.indexed;
+      errors += r.errors;
     }
 
     const docRes = (await graph.query(
       `MATCH (d:Document) WHERE d.projectId = $projectId AND d.chunkText IS NOT NULL AND trim(d.chunkText) <> '' RETURN d.path AS path, d.chunkIndex AS chunkIndex, d.heading AS heading, d.chunkText AS chunkText`,
       { params: { projectId: falkorProjectId } },
     )) as { data?: unknown[] };
-    for (const row of docRes.data ?? []) {
+    const docResults = await pMap(docRes.data ?? [], async (row) => {
       const r = rowAsRecord(row, ['path', 'chunkIndex', 'heading', 'chunkText']);
       const path = String(r.path ?? '');
       const chunkIndexRaw = r.chunkIndex;
@@ -246,23 +271,24 @@ export class EmbedIndexService {
       const heading = r.heading != null ? String(r.heading) : '';
       const chunkText = String(r.chunkText ?? '');
       const text = [heading, path, chunkText].filter(Boolean).join('\n').slice(0, 8000);
-      if (text.length < 20) continue;
+      if (text.length < 20) return { indexed: 0, errors: 0, path, chunkIndex };
       try {
         const vec = await embed.embed(text);
         await graph.query(
           `MATCH (d:Document {path: $path, chunkIndex: $chunkIndex, projectId: $projectId}) SET d.${prop} = vecf32($vec)`,
           { params: { path, chunkIndex, projectId: falkorProjectId, vec } },
         );
-        indexed++;
+        return { indexed: 1, errors: 0, path, chunkIndex };
       } catch (e) {
-        errors++;
-        if (errors <= 3) {
-          console.warn(
-            `[embed-index] Document ${path}#${chunkIndex} failed:`,
-            e instanceof Error ? e.message : e,
-          );
-        }
+        return { indexed: 0, errors: 1, path, chunkIndex, error: e instanceof Error ? e.message : String(e) };
       }
+    });
+    for (const r of docResults) {
+      if (r.errors === 1 && errors < 3) {
+        console.warn(`[embed-index] Document ${r.path}#${r.chunkIndex} failed:`, r.error);
+      }
+      indexed += r.indexed;
+      errors += r.errors;
     }
 
     const sbRes = (await graph.query(
@@ -270,65 +296,67 @@ export class EmbedIndexService {
       { params: { projectId: falkorProjectId, repoId: repositoryIdForFileContent } },
     )) as { data?: unknown[] };
     const sbRows = sbRes.data ?? [];
-    for (const row of sbRows) {
+    const sbDocResults = await pMap(sbRows, async (row) => {
       const r = rowAsRecord(row, ['path', 'title', 'documentationText']);
       const path = String(r.path ?? '');
       const title = r.title != null ? String(r.title) : '';
       const docText = String(r.documentationText ?? '');
       const text = [title, path, docText].filter(Boolean).join('\n').slice(0, 12000);
-      if (text.length < 20) continue;
+      if (text.length < 20) return { indexed: 0, errors: 0, path };
       try {
         const vec = await embed.embed(text);
         await graph.query(
           `MATCH (n:StorybookDoc {sourcePath: $path, projectId: $projectId, repoId: $repoId}) SET n.${prop} = vecf32($vec)`,
           { params: { path, projectId: falkorProjectId, repoId: repositoryIdForFileContent, vec } },
         );
-        indexed++;
+        return { indexed: 1, errors: 0, path };
       } catch (e) {
-        errors++;
-        if (errors <= 3) {
-          console.warn(
-            `[embed-index] StorybookDoc ${path} failed:`,
-            e instanceof Error ? e.message : e,
-          );
-        }
+        return { indexed: 0, errors: 1, path, error: e instanceof Error ? e.message : String(e) };
       }
+    });
+    for (const r of sbDocResults) {
+      if (r.errors === 1 && errors < 3) {
+        console.warn(`[embed-index] StorybookDoc ${r.path} failed:`, r.error);
+      }
+      indexed += r.indexed;
+      errors += r.errors;
     }
 
     const mdDocRes = (await graph.query(
       `MATCH (n:MarkdownDoc) WHERE n.projectId = $projectId AND n.repoId = $repoId AND n.documentationText IS NOT NULL AND trim(n.documentationText) <> '' RETURN n.sourcePath AS path, n.title AS title, n.documentationText AS documentationText`,
       { params: { projectId: falkorProjectId, repoId: repositoryIdForFileContent } },
     )) as { data?: unknown[] };
-    for (const row of mdDocRes.data ?? []) {
+    const mdDocResults = await pMap(mdDocRes.data ?? [], async (row) => {
       const r = rowAsRecord(row, ['path', 'title', 'documentationText']);
       const path = String(r.path ?? '');
       const title = r.title != null ? String(r.title) : '';
       const docText = String(r.documentationText ?? '');
       const text = [title, path, docText].filter(Boolean).join('\n').slice(0, 12000);
-      if (text.length < 20) continue;
+      if (text.length < 20) return { indexed: 0, errors: 0, path };
       try {
         const vec = await embed.embed(text);
         await graph.query(
           `MATCH (n:MarkdownDoc {sourcePath: $path, projectId: $projectId, repoId: $repoId}) SET n.${prop} = vecf32($vec)`,
           { params: { path, projectId: falkorProjectId, repoId: repositoryIdForFileContent, vec } },
         );
-        indexed++;
+        return { indexed: 1, errors: 0, path };
       } catch (e) {
-        errors++;
-        if (errors <= 3) {
-          console.warn(
-            `[embed-index] MarkdownDoc ${path} failed:`,
-            e instanceof Error ? e.message : e,
-          );
-        }
+        return { indexed: 0, errors: 1, path, error: e instanceof Error ? e.message : String(e) };
       }
+    });
+    for (const r of mdDocResults) {
+      if (r.errors === 1 && errors < 3) {
+        console.warn(`[embed-index] MarkdownDoc ${r.path} failed:`, r.error);
+      }
+      indexed += r.indexed;
+      errors += r.errors;
     }
 
     const modelRes = (await graph.query(
       `MATCH (m:Model) WHERE m.projectId = $projectId AND m.repoId = $repoId RETURN m.path AS path, m.name AS name, m.description AS description, m.fieldSummary AS fieldSummary, m.source AS source`,
       { params: { projectId: falkorProjectId, repoId: repositoryIdForFileContent } },
     )) as { data?: unknown[] };
-    for (const row of modelRes.data ?? []) {
+    const modelResults = await pMap(modelRes.data ?? [], async (row) => {
       const r = rowAsRecord(row, ['path', 'name', 'description', 'fieldSummary', 'source']);
       const path = String(r.path ?? '');
       const name = String(r.name ?? '');
@@ -339,52 +367,54 @@ export class EmbedIndexService {
         .filter(Boolean)
         .join('\n')
         .slice(0, 12_000);
-      if (text.length < 8) continue;
+      if (text.length < 8) return { indexed: 0, errors: 0, path, name };
       try {
         const vec = await embed.embed(text);
         await graph.query(
           `MATCH (m:Model {path: $path, name: $name, projectId: $projectId, repoId: $repoId}) SET m.${prop} = vecf32($vec)`,
           { params: { path, name, projectId: falkorProjectId, repoId: repositoryIdForFileContent, vec } },
         );
-        indexed++;
+        return { indexed: 1, errors: 0, path, name };
       } catch (e) {
-        errors++;
-        if (errors <= 3) {
-          console.warn(
-            `[embed-index] Model ${path}::${name} failed:`,
-            e instanceof Error ? e.message : e,
-          );
-        }
+        return { indexed: 0, errors: 1, path, name, error: e instanceof Error ? e.message : String(e) };
       }
+    });
+    for (const r of modelResults) {
+      if (r.errors === 1 && errors < 3) {
+        console.warn(`[embed-index] Model ${r.path}::${r.name} failed:`, r.error);
+      }
+      indexed += r.indexed;
+      errors += r.errors;
     }
 
     const enumRes = (await graph.query(
       `MATCH (e:Enum) WHERE e.projectId = $projectId AND e.repoId = $repoId RETURN e.path AS path, e.name AS name, e.description AS description`,
       { params: { projectId: falkorProjectId, repoId: repositoryIdForFileContent } },
     )) as { data?: unknown[] };
-    for (const row of enumRes.data ?? []) {
+    const enumResults = await pMap(enumRes.data ?? [], async (row) => {
       const r = rowAsRecord(row, ['path', 'name', 'description']);
       const path = String(r.path ?? '');
       const name = String(r.name ?? '');
       const description = r.description != null ? String(r.description) : '';
       const text = [name, path, description].filter(Boolean).join('\n').slice(0, 8000);
-      if (text.length < 4) continue;
+      if (text.length < 4) return { indexed: 0, errors: 0, path, name };
       try {
         const vec = await embed.embed(text);
         await graph.query(
           `MATCH (e:Enum {path: $path, name: $name, projectId: $projectId, repoId: $repoId}) SET e.${prop} = vecf32($vec)`,
           { params: { path, name, projectId: falkorProjectId, repoId: repositoryIdForFileContent, vec } },
         );
-        indexed++;
+        return { indexed: 1, errors: 0, path, name };
       } catch (e) {
-        errors++;
-        if (errors <= 3) {
-          console.warn(
-            `[embed-index] Enum ${path}::${name} failed:`,
-            e instanceof Error ? e.message : e,
-          );
-        }
+        return { indexed: 0, errors: 1, path, name, error: e instanceof Error ? e.message : String(e) };
       }
+    });
+    for (const r of enumResults) {
+      if (r.errors === 1 && errors < 3) {
+        console.warn(`[embed-index] Enum ${r.path}::${r.name} failed:`, r.error);
+      }
+      indexed += r.indexed;
+      errors += r.errors;
     }
 
     for (const label of FALKOR_EMBEDDABLE_NODE_LABELS) {
