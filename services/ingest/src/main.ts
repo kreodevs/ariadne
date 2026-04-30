@@ -155,19 +155,9 @@ async function bootstrap() {
   await runMigrations();
   await runFalkorFlushAllOnceIfRequested();
   await runFalkorRepoIdMigration();
-  let app;
-  try {
-    app = await NestFactory.create(AppModule, {
-      bodyParser: false,
-      abortOnError: false,
-      logger: ['log', 'error', 'warn', 'debug', 'verbose'],
-    });
-  } catch (createErr) {
-    const err = createErr as any;
-    console.error('[ingest] NestFactory.create FAILED:', err);
-    if (err?.cause) console.error('[ingest] CREATE CAUSE:', err.cause);
-    throw createErr;
-  }
+  const app = await NestFactory.create(AppModule, {
+    bodyParser: false,
+  });
   const bodyLimit = process.env.BODY_LIMIT ?? '10mb';
   app.use(
     express.json({
@@ -188,20 +178,6 @@ async function bootstrap() {
 }
 
 bootstrap().catch((err) => {
-  const fatalErr = err as any;
-  console.error('[ingest] FATAL BOOTSTRAP ERROR:', fatalErr);
-  if (fatalErr?.cause) {
-    console.error('[ingest] CAUSE:', fatalErr.cause);
-    if (fatalErr.cause instanceof Error) {
-      console.error('[ingest] CAUSE STACK:', fatalErr.cause.stack);
-    }
-  }
-  if (fatalErr?.stack) {
-    console.error('[ingest] FULL STACK:', fatalErr.stack);
-  }
-  // Print ALL properties of the error object
-  try {
-    console.error('[ingest] ERROR DETAILS:', JSON.stringify(Object.getOwnPropertyNames(fatalErr).reduce((a, k) => ({ ...a, [k]: typeof fatalErr[k] === 'object' ? String(fatalErr[k]) : fatalErr[k] }), {})));
-  } catch {}
+  console.error(err);
   process.exit(1);
 });

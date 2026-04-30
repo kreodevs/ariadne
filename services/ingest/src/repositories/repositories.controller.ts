@@ -1,7 +1,7 @@
 /**
  * @fileoverview CRUD repos, branches, file content, embed-index, jobs.
  */
-import { BadRequestException, Body, Controller, Delete, Get, Inject, Param, Patch, Post, Query, forwardRef } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Delete, Get, Param, Patch, Post, Query } from '@nestjs/common';
 import { RepositoriesService } from './repositories.service';
 import { JobAnalysisService } from './job-analysis.service';
 import { CreateRepositoryDto } from './dto/create-repository.dto';
@@ -18,7 +18,6 @@ export class RepositoriesController {
     private readonly fileContent: FileContentService,
     private readonly jobAnalysis: JobAnalysisService,
     private readonly embedIndexSvc: EmbedIndexService,
-    @Inject(forwardRef(() => SyncService))
     private readonly sync: SyncService,
   ) {}
 
