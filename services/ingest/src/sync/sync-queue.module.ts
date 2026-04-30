@@ -1,5 +1,6 @@
 /**
- * @fileoverview Módulo compartido de cola BullMQ para evitar circular dependency entre SyncModule y RepositoriesModule.
+ * @fileoverview Módulo compartido de cola BullMQ para romper circular dependency entre SyncModule y RepositoriesModule.
+ * @Global para que BullModule.forRoot + registerQueue estén disponibles sin imports manuales.
  */
 import { Module, Global } from '@nestjs/common';
 import { BullModule } from '@nestjs/bullmq';

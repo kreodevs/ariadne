@@ -1,7 +1,8 @@
 /**
  * @fileoverview Módulo de repositorios: CRUD, jobs, file content, graph summary.
+ * NO importa SyncModule directamente (usa SyncQueueModule @Global para BullMQ).
  */
-import { Module, forwardRef } from '@nestjs/common';
+import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { RepositoryEntity } from './entities/repository.entity';
 import { ProjectRepositoryEntity } from './entities/project-repository.entity';
@@ -15,18 +16,15 @@ import { JobAnalysisService } from './job-analysis.service';
 import { EmbeddingModule } from '../embedding/embedding.module';
 import { EmbedIndexService } from '../embedding/embed-index.service';
 import { SyncQueueModule } from '../sync/sync-queue.module';
-import { SyncModule } from '../sync/sync.module';
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([RepositoryEntity, ProjectRepositoryEntity, SyncJob, IndexedFile, ProjectEntity]),
     EmbeddingModule,
     SyncQueueModule,
-    forwardRef(() => SyncModule),
   ],
   controllers: [RepositoriesController],
   providers: [RepositoriesService, FileContentService, JobAnalysisService, EmbedIndexService],
   exports: [RepositoriesService, FileContentService, EmbedIndexService, JobAnalysisService],
 })
-/** Módulo de repositorios indexados (Postgres + FalkorDB). */
 export class RepositoriesModule {}

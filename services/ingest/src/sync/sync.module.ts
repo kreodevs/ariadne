@@ -27,5 +27,4 @@ import { SyncProcessor, SYNC_QUEUE } from './sync.processor';
   providers: [SyncService, SyncProcessor],
   exports: [SyncService, SyncQueueModule],
 })
-/** Módulo de sincronización con BullMQ (queue sync). */
 export class SyncModule {}
