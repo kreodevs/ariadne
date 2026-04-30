@@ -5,6 +5,7 @@
  */
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { BullModule } from '@nestjs/bullmq';
 import { SyncJob } from '../repositories/entities/sync-job.entity';
 import { IndexedFile } from '../repositories/entities/indexed-file.entity';
 import { RepositoryEntity } from '../repositories/entities/repository.entity';
@@ -14,8 +15,9 @@ import { ProvidersModule } from '../providers/providers.module';
 import { RepositoriesModule } from '../repositories/repositories.module';
 import { SyncController } from './sync.controller';
 import { SyncService } from './sync.service';
-import { SyncProcessor, SYNC_QUEUE } from './sync.processor';
+import { SyncProcessor } from './sync.processor';
 import { SharedBullModule } from '../shared-bull/shared-bull.module';
+import { SYNC_QUEUE } from '../constants';
 
 @Module({
   imports: [
@@ -24,6 +26,7 @@ import { SharedBullModule } from '../shared-bull/shared-bull.module';
     ProvidersModule,
     RepositoriesModule,
     SharedBullModule,
+    BullModule.registerQueue({ name: SYNC_QUEUE }),
   ],
   controllers: [SyncController],
   providers: [SyncService, SyncProcessor],
