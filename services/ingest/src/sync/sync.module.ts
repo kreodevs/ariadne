@@ -1,7 +1,7 @@
 /**
  * @fileoverview Módulo Sync: SyncService, SyncProcessor (BullMQ queue via SyncQueueModule compartido).
  */
-import { Module, forwardRef } from '@nestjs/common';
+import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { SyncJob } from '../repositories/entities/sync-job.entity';
 import { IndexedFile } from '../repositories/entities/indexed-file.entity';
@@ -18,7 +18,7 @@ import { SyncProcessor, SYNC_QUEUE } from './sync.processor';
 @Module({
   imports: [
     TypeOrmModule.forFeature([RepositoryEntity, SyncJob, IndexedFile, ProjectEntity]),
-    forwardRef(() => RepositoriesModule),
+    RepositoriesModule,
     BitbucketModule,
     ProvidersModule,
     SyncQueueModule,

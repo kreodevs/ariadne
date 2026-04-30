@@ -1,7 +1,7 @@
 /**
  * @fileoverview CRUD de repositorios y jobs de sync en PostgreSQL.
  */
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException, Optional } from '@nestjs/common';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
 import { InjectRepository } from '@nestjs/typeorm';
