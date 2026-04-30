@@ -152,7 +152,6 @@ async function runFalkorRepoIdMigration(): Promise<void> {
 
 /** Arranca NestJS con body parser (rawBody para webhooks) y CORS. */
 async function bootstrap() {
-  console.log('[ingest] Starting bootstrap (1741cde)');
   await runMigrations();
   await runFalkorFlushAllOnceIfRequested();
   await runFalkorRepoIdMigration();

@@ -27,6 +27,8 @@ import { SharedBullModule } from '../shared-bull/shared-bull.module';
   providers: [
     RepositoriesService,
     FileContentService,
+    JobAnalysisService,
+    EmbedIndexService,
   ],
   exports: [RepositoriesService, FileContentService, EmbedIndexService, JobAnalysisService],
 })
