@@ -16,6 +16,8 @@ import { encrypt, decrypt } from '../credentials/crypto.util';
 import { EmbeddingSpaceService } from '../embedding/embedding-space.service';
 import { parseIndexIncludeRulesFromDto } from '../providers/index-include-rules';
 import { SYNC_QUEUE } from '../sync/sync.processor';
+import { FalkorDB } from 'falkordb';
+import { getFalkorConfig, effectiveShardMode, listGraphNamesForProjectRouting } from '../pipeline/falkor';
 
 /** Servicio de repositorios: create, findAll, findOne, update, remove, jobs. */
 @Injectable()
@@ -368,6 +370,62 @@ export class RepositoriesService {
     if (toDelete.length === 0) return 0;
     const r = await this.jobsRepo.delete({ id: In(toDelete) });
     return r.affected ?? 0;
+  }
+
+  /**
+   * Limpia nodos FalkorDB de un repositorio (projectId + repoId en cada proyecto vinculado).
+   */
+  async clearGraphDataForRepository(repositoryId: string): Promise<{ deletedNodes: number }> {
+    const projectIds = await this.getProjectIdsForRepo(repositoryId);
+    let deletedNodes = 0;
+    if (projectIds.length === 0) {
+      const r = await this.clearProjectRepo(repositoryId, repositoryId);
+      deletedNodes += r.deletedNodes;
+    } else {
+      for (const projectId of projectIds) {
+        const r = await this.clearProjectRepo(projectId, repositoryId);
+        deletedNodes += r.deletedNodes;
+      }
+    }
+    return { deletedNodes };
+  }
+
+  /** Borra del grafo Falkor solo los nodos de un (projectId, repoId). */
+  private async clearProjectRepo(projectId: string, repoId: string): Promise<{ deletedNodes: number }> {
+    const config = getFalkorConfig();
+    const client = await FalkorDB.connect({
+      socket: { host: config.host, port: config.port },
+    });
+    try {
+      const proj = await this.projectRepo.findOne({ where: { id: projectId } });
+      const shardMode = effectiveShardMode(proj?.falkorShardMode ?? 'project');
+      const segments = Array.isArray(proj?.falkorDomainSegments) ? proj!.falkorDomainSegments! : [];
+      const graphNames = listGraphNamesForProjectRouting(
+        projectId,
+        shardMode === 'domain' ? 'domain' : 'project',
+        segments,
+      );
+      let countBefore = 0;
+      for (const gName of graphNames) {
+        const graph = client.selectGraph(gName);
+        try {
+          const countRes = (await graph.query(
+            `MATCH (n) WHERE n.projectId = $projectId AND n.repoId = $repoId RETURN count(n) AS c`,
+            { params: { projectId, repoId } },
+          )) as { data?: [{ c: number }] };
+          countBefore += (countRes as { data?: { c: number }[] }).data?.[0]?.c ?? 0;
+          await graph.query(
+            `MATCH (n) WHERE n.projectId = $projectId AND n.repoId = $repoId DETACH DELETE n`,
+            { params: { projectId, repoId } },
+          );
+        } catch {
+          /* grafo ausente */
+        }
+      }
+      return { deletedNodes: countBefore };
+    } finally {
+      await client.close();
+    }
   }
 
   /**

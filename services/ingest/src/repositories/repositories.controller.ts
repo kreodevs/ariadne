@@ -1,14 +1,13 @@
 /**
  * @fileoverview CRUD repos, branches, file content, embed-index, jobs.
  */
-import { BadRequestException, Body, Controller, Delete, Get, Inject, Param, Patch, Post, Query, forwardRef } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Delete, Get, Param, Patch, Post, Query } from '@nestjs/common';
 import { RepositoriesService } from './repositories.service';
 import { JobAnalysisService } from './job-analysis.service';
 import { CreateRepositoryDto } from './dto/create-repository.dto';
 import { UpdateRepositoryDto } from './dto/update-repository.dto';
 import { FileContentService } from './file-content.service';
 import { EmbedIndexService } from '../embedding/embed-index.service';
-import { SyncService } from '../sync/sync.service';
 
 /** Rutas /repositories (CRUD, branches, file, embed-index, jobs). */
 @Controller('repositories')
@@ -18,8 +17,6 @@ export class RepositoriesController {
     private readonly fileContent: FileContentService,
     private readonly jobAnalysis: JobAnalysisService,
     private readonly embedIndexSvc: EmbedIndexService,
-    @Inject(forwardRef(() => SyncService))
-    private readonly sync: SyncService,
   ) {}
 
   @Post()
@@ -34,7 +31,7 @@ export class RepositoriesController {
 
   @Delete(':id')
   async remove(@Param('id') id: string) {
-    await this.sync.clearGraphDataForRepository(id);
+    await this.service.clearGraphDataForRepository(id);
     await this.service.remove(id);
   }
 
@@ -93,7 +90,7 @@ export class RepositoriesController {
     return this.service.removeJob(id, jobId);
   }
 
-  /** Marca el job como fallido, quita entradas en Redis (Bull) y evita que el worker deje el índice en “running” eterno. */
+  /** Marca el job como fallido, quita entradas en Redis (Bull) y evita que el worker deje el índice en "running" eterno. */
   @Post(':id/jobs/:jobId/cancel')
   cancelJob(@Param('id') id: string, @Param('jobId') jobId: string) {
     return this.service.cancelJob(id, jobId);

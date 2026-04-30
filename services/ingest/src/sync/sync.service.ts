@@ -164,7 +164,7 @@ export class SyncService {
    */
   async clearRepositoryForResync(repositoryId: string): Promise<{ deletedNodes: number }> {
     await this.repos.findOne(repositoryId);
-    const { deletedNodes } = await this.clearGraphDataForRepository(repositoryId);
+    const { deletedNodes } = await this.repos.clearGraphDataForRepository(repositoryId);
     await this.indexedFileRepo.delete({ repositoryId });
     return { deletedNodes };
   }
