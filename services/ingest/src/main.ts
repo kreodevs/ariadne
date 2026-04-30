@@ -157,6 +157,8 @@ async function bootstrap() {
   await runFalkorRepoIdMigration();
   const app = await NestFactory.create(AppModule, {
     bodyParser: false,
+    // abortOnError permite que el error llegue al catch sin matar el proceso
+    abortOnError: false,
   });
   const bodyLimit = process.env.BODY_LIMIT ?? '10mb';
   app.use(
@@ -178,6 +180,20 @@ async function bootstrap() {
 }
 
 bootstrap().catch((err) => {
+  console.error('[ingest] FATAL bootstrap error:');
   console.error(err);
+  if (err?.stack) {
+    console.error('[ingest] Stack trace:', err.stack);
+  }
+  if (err?.message?.includes('Nest can\'t resolve dependencies')) {
+    console.error('[ingest] === DI ERROR DETECTED ===');
+    try {
+      const errProps: Record<string, unknown> = {};
+      for (const k of Object.getOwnPropertyNames(err)) { errProps[k] = err[k]; }
+      console.error('[ingest] Full error:', JSON.stringify(errProps, null, 2));
+    } catch (e) {
+      console.error('[ingest] Serialization failed:', e);
+    }
+  }
   process.exit(1);
 });
