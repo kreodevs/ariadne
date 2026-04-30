@@ -1,7 +1,7 @@
 /**
  * @fileoverview Módulo de repositorios: CRUD, jobs, file content, graph summary.
  */
-import { Module, forwardRef } from '@nestjs/common';
+import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { BullModule } from '@nestjs/bullmq';
 import { RepositoryEntity } from './entities/repository.entity';
@@ -15,7 +15,6 @@ import { FileContentService } from './file-content.service';
 import { JobAnalysisService } from './job-analysis.service';
 import { EmbeddingModule } from '../embedding/embedding.module';
 import { EmbedIndexService } from '../embedding/embed-index.service';
-import { SyncModule } from '../sync/sync.module';
 import { SYNC_QUEUE } from '../sync/sync.processor';
 
 @Module({
@@ -23,7 +22,6 @@ import { SYNC_QUEUE } from '../sync/sync.processor';
     TypeOrmModule.forFeature([RepositoryEntity, ProjectRepositoryEntity, SyncJob, IndexedFile, ProjectEntity]),
     EmbeddingModule,
     BullModule.registerQueue({ name: SYNC_QUEUE }),
-    forwardRef(() => SyncModule),
   ],
   controllers: [RepositoriesController],
   providers: [RepositoriesService, FileContentService, JobAnalysisService, EmbedIndexService],
