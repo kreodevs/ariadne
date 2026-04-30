@@ -24,7 +24,10 @@ import { SharedBullModule } from '../shared-bull/shared-bull.module';
     SharedBullModule,
   ],
   controllers: [RepositoriesController],
-  providers: [RepositoriesService, FileContentService, JobAnalysisService, EmbedIndexService],
+  providers: [
+    RepositoriesService,
+    FileContentService,
+  ],
   exports: [RepositoriesService, FileContentService, EmbedIndexService, JobAnalysisService],
 })
 export class RepositoriesModule {}
