@@ -1,7 +1,7 @@
 /**
  * @fileoverview CRUD de repositorios y jobs de sync en PostgreSQL.
  */
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException, Optional } from '@nestjs/common';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -23,7 +23,7 @@ import { getFalkorConfig, effectiveShardMode, listGraphNamesForProjectRouting } 
 @Injectable()
 export class RepositoriesService {
   constructor(
-    @InjectQueue(SYNC_QUEUE) private readonly syncQueue: Queue,
+    @Optional() @InjectQueue(SYNC_QUEUE) private readonly syncQueue: Queue | null,
     @InjectRepository(RepositoryEntity)
     private readonly repo: Repository<RepositoryEntity>,
     @InjectRepository(ProjectRepositoryEntity)
@@ -32,7 +32,7 @@ export class RepositoriesService {
     private readonly jobsRepo: Repository<SyncJob>,
     @InjectRepository(ProjectEntity)
     private readonly projectRepo: Repository<ProjectEntity>,
-    private readonly embeddingSpaces: EmbeddingSpaceService,
+    @Optional() private readonly embeddingSpaces: EmbeddingSpaceService | null,
   ) {}
 
   private encryptWebhookSecret(value: string): string | null {
@@ -171,12 +171,12 @@ export class RepositoriesService {
     }
     if (dto.readEmbeddingSpaceId !== undefined) {
       const v = dto.readEmbeddingSpaceId;
-      if (v) await this.embeddingSpaces.assertExists(v);
+      if (v) await this.embeddingSpaces?.assertExists(v);
       updates.readEmbeddingSpaceId = v ?? null;
     }
     if (dto.writeEmbeddingSpaceId !== undefined) {
       const v = dto.writeEmbeddingSpaceId;
-      if (v) await this.embeddingSpaces.assertExists(v);
+      if (v) await this.embeddingSpaces?.assertExists(v);
       updates.writeEmbeddingSpaceId = v ?? null;
     }
     if (dto.indexIncludeRules !== undefined) {
@@ -288,6 +288,7 @@ export class RepositoriesService {
    */
   private async removeBullJobsForSyncJob(repositoryId: string, syncJobId: string): Promise<number> {
     let removed = 0;
+    if (!this.syncQueue) return 0;
     const states = ['waiting', 'delayed', 'paused', 'waiting-children', 'active'] as const;
     for (const state of states) {
       const jobs = await this.syncQueue.getJobs([state], 0, 2000);
