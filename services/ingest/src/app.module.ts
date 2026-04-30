@@ -28,6 +28,7 @@ import { ShadowModule } from './shadow/shadow.module';
 import { SyncModule } from './sync/sync.module';
 import { WebhooksModule } from './webhooks/webhooks.module';
 import { MetricsModule } from './metrics/metrics.module';
+import { SharedBullModule } from './shared-bull/shared-bull.module';
 
 @Module({
   imports: [
@@ -61,6 +62,7 @@ import { MetricsModule } from './metrics/metrics.module';
     ProjectsModule,
     ProvidersModule,
     RepositoriesModule,
+    SharedBullModule,
     ShadowModule,
     SyncModule,
     WebhooksModule,
