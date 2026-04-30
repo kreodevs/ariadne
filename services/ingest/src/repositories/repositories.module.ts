@@ -17,7 +17,7 @@ import { FileContentService } from './file-content.service';
 import { JobAnalysisService } from './job-analysis.service';
 import { EmbeddingModule } from '../embedding/embedding.module';
 import { EmbedIndexService } from '../embedding/embed-index.service';
-import { SYNC_QUEUE } from '../sync/sync.processor';
+import { SYNC_QUEUE } from '../constants';
 
 @Module({
   imports: [

@@ -5,7 +5,7 @@
  */
 import { Module, Global } from '@nestjs/common';
 import { BullModule } from '@nestjs/bullmq';
-import { SYNC_QUEUE } from '../sync/sync.processor';
+import { SYNC_QUEUE } from '../constants';
 
 /** Obtiene host/port/password de Redis desde REDIS_URL. */
 function getRedisConnection() {

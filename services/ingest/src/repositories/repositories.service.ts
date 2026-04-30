@@ -15,7 +15,7 @@ import { UpdateRepositoryDto } from './dto/update-repository.dto';
 import { encrypt, decrypt } from '../credentials/crypto.util';
 import { EmbeddingSpaceService } from '../embedding/embedding-space.service';
 import { parseIndexIncludeRulesFromDto } from '../providers/index-include-rules';
-import { SYNC_QUEUE } from '../sync/sync.processor';
+import { SYNC_QUEUE } from '../constants';
 import { FalkorDB } from 'falkordb';
 import { getFalkorConfig, effectiveShardMode, listGraphNamesForProjectRouting } from '../pipeline/falkor';
 
