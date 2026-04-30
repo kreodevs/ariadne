@@ -11,6 +11,7 @@ import { RepositoryEntity } from '../repositories/entities/repository.entity';
 import { ProjectEntity } from '../projects/entities/project.entity';
 import { BitbucketModule } from '../bitbucket/bitbucket.module';
 import { ProvidersModule } from '../providers/providers.module';
+import { RepositoriesModule } from '../repositories/repositories.module';
 import { SyncController } from './sync.controller';
 import { SyncService } from './sync.service';
 import { SyncProcessor, SYNC_QUEUE } from './sync.processor';
@@ -21,6 +22,7 @@ import { SharedBullModule } from '../shared-bull/shared-bull.module';
     TypeOrmModule.forFeature([RepositoryEntity, SyncJob, IndexedFile, ProjectEntity]),
     BitbucketModule,
     ProvidersModule,
+    RepositoriesModule,
     SharedBullModule,
   ],
   controllers: [SyncController],
