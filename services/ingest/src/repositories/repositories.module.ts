@@ -1,9 +1,11 @@
 /**
  * @fileoverview Módulo de repositorios: CRUD, jobs, file content, graph summary.
- * Sin dependencia circular: usa SharedBullModule directamente (no SyncModule).
+ * BullModule.registerQueue directamente aquí para que @InjectQueue funcione.
+ * NO importa SyncModule ni SharedBullModule.
  */
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { BullModule } from '@nestjs/bullmq';
 import { RepositoryEntity } from './entities/repository.entity';
 import { ProjectRepositoryEntity } from './entities/project-repository.entity';
 import { SyncJob } from './entities/sync-job.entity';
@@ -15,21 +17,16 @@ import { FileContentService } from './file-content.service';
 import { JobAnalysisService } from './job-analysis.service';
 import { EmbeddingModule } from '../embedding/embedding.module';
 import { EmbedIndexService } from '../embedding/embed-index.service';
-import { SharedBullModule } from '../shared-bull/shared-bull.module';
+import { SYNC_QUEUE } from '../sync/sync.processor';
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([RepositoryEntity, ProjectRepositoryEntity, SyncJob, IndexedFile, ProjectEntity]),
     EmbeddingModule,
-    SharedBullModule,
+    BullModule.registerQueue({ name: SYNC_QUEUE }),
   ],
   controllers: [RepositoriesController],
-  providers: [
-    RepositoriesService,
-    FileContentService,
-    JobAnalysisService,
-    EmbedIndexService,
-  ],
+  providers: [RepositoriesService, FileContentService, JobAnalysisService, EmbedIndexService],
   exports: [RepositoriesService, FileContentService, EmbedIndexService, JobAnalysisService],
 })
 export class RepositoriesModule {}
