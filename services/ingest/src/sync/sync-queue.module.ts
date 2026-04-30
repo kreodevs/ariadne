@@ -1,8 +1,7 @@
 /**
- * @fileoverview Módulo compartido de cola BullMQ para romper circular dependency entre SyncModule y RepositoriesModule.
- * @Global para que BullModule.forRoot + registerQueue estén disponibles sin imports manuales.
+ * @fileoverview Módulo compartido de cola BullMQ. Ambos SyncModule y RepositoriesModule lo importan para @InjectQueue(SYNC_QUEUE) sin circularidad.
  */
-import { Module, Global } from '@nestjs/common';
+import { Module } from '@nestjs/common';
 import { BullModule } from '@nestjs/bullmq';
 import { SYNC_QUEUE } from './sync.processor';
 
@@ -21,7 +20,6 @@ function getRedisConnection() {
   }
 }
 
-@Global()
 @Module({
   imports: [
     BullModule.forRoot({
