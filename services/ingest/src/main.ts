@@ -157,6 +157,8 @@ async function bootstrap() {
   await runFalkorRepoIdMigration();
   const app = await NestFactory.create(AppModule, {
     bodyParser: false,
+    abortOnError: false,
+    logger: ['log', 'error', 'warn', 'debug', 'verbose'],
   });
   const bodyLimit = process.env.BODY_LIMIT ?? '10mb';
   app.use(
