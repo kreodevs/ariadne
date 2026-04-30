@@ -1,6 +1,6 @@
 /**
  * @fileoverview Módulo de repositorios: CRUD, jobs, file content, graph summary.
- * BullModule.registerQueue registrado directamente para @InjectQueue(SYNC_QUEUE).
+ * BullModule.forRoot + registerQueue aquí mismo para eliminar dependencias externas.
  */
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
@@ -16,15 +16,27 @@ import { FileContentService } from './file-content.service';
 import { JobAnalysisService } from './job-analysis.service';
 import { EmbeddingModule } from '../embedding/embedding.module';
 import { EmbedIndexService } from '../embedding/embed-index.service';
-import { SyncQueueModule } from '../sync/sync-queue.module';
 import { SYNC_QUEUE } from '../sync/sync.processor';
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([RepositoryEntity, ProjectRepositoryEntity, SyncJob, IndexedFile, ProjectEntity]),
     EmbeddingModule,
-    SyncQueueModule,
-    BullModule.registerQueue({ name: SYNC_QUEUE }),
+    BullModule.forRoot({
+      connection: {
+        host: process.env.REDIS_URL ? new URL(process.env.REDIS_URL).hostname : 'localhost',
+        port: parseInt(process.env.REDIS_URL ? new URL(process.env.REDIS_URL).port : '6380', 10),
+        password: process.env.REDIS_URL ? new URL(process.env.REDIS_URL).password || undefined : undefined,
+      },
+    }),
+    BullModule.registerQueue({
+      name: SYNC_QUEUE,
+      defaultJobOptions: {
+        attempts: 2,
+        backoff: { type: 'exponential', delay: 5000 },
+        removeOnComplete: { count: 100 },
+      },
+    }),
   ],
   controllers: [RepositoriesController],
   providers: [RepositoriesService, FileContentService, JobAnalysisService, EmbedIndexService],

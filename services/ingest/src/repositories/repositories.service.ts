@@ -2,7 +2,6 @@
  * @fileoverview CRUD de repositorios y jobs de sync en PostgreSQL.
  */
 import { BadRequestException, Inject, Injectable, NotFoundException, Optional } from '@nestjs/common';
-import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
@@ -21,7 +20,7 @@ import { SYNC_QUEUE } from '../sync/sync.processor';
 @Injectable()
 export class RepositoriesService {
   constructor(
-    @InjectQueue(SYNC_QUEUE) private readonly syncQueue: Queue,
+    @Inject('BullQueue_sync') private readonly syncQueue: Queue,
     @InjectRepository(RepositoryEntity)
     private readonly repo: Repository<RepositoryEntity>,
     @InjectRepository(ProjectRepositoryEntity)
