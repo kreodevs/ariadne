@@ -1,7 +1,7 @@
 /**
  * @fileoverview CRUD de repositorios y jobs de sync en PostgreSQL.
  */
-import { BadRequestException, Injectable, NotFoundException, Optional } from '@nestjs/common';
+import { BadRequestException, Inject, Injectable, NotFoundException, Optional } from '@nestjs/common';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -32,7 +32,7 @@ export class RepositoriesService {
     private readonly jobsRepo: Repository<SyncJob>,
     @InjectRepository(ProjectEntity)
     private readonly projectRepo: Repository<ProjectEntity>,
-    @Optional() private readonly embeddingSpaces: EmbeddingSpaceService | null,
+    @Optional() @Inject(EmbeddingSpaceService) private readonly embeddingSpaces: EmbeddingSpaceService | null,
   ) {}
 
   private encryptWebhookSecret(value: string): string | null {
