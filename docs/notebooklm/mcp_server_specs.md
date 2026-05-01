@@ -132,7 +132,7 @@ En la vista **`/repos/:id/chat`** (`RepoChat` + `ChatPipelineModeSelect`; la lis
 | **MDD / SDD (recomendado)** | `"responseMode": "evidence_first"` | **`"responseMode": "evidence_first"`** |
 | **Evidencia bruta (barato)** | `"responseMode": "raw_evidence"` y `"deterministicRetriever": true` | **`"responseMode": "raw_evidence"`** y **`"deterministicRetriever": true`** (opcional: ver abajo) |
 
-**Importante — default del servidor MCP:** si en **`ask_codebase` omites** `responseMode`, el MCP **no** replica “Chat normal”: rellena **`raw_evidence`** y **`deterministicRetriever: true`** (retrieve fijo sin LLM en esa fase; mismo espíritu que “Evidencia bruta” en la UI). Para **prosa + ReAct** como en la UI “Chat normal”, pasa explícitamente **`responseMode: "default"`**. Con `raw_evidence`, si omites `deterministicRetriever`, el MCP asume **`true`**; pon **`deterministicRetriever": false`** si quieres ReAct+LLM en retrieve con salida JSON de evidencia (más costoso).
+**Importante — default del servidor MCP:** si en **`ask_codebase` omites** `responseMode`, el MCP usa ahora **`"default"`** — prosa + ReAct en retrieve + sintetizador LLM (equivalente a "Chat normal" en la UI). Para **evidencia bruta** sin LLM en retrieve, pasa explícitamente **`responseMode: "raw_evidence"`** + **`deterministicRetriever: true`**. Con `raw_evidence`, si omites `deterministicRetriever`, el MCP asume **`true`**; pon **`deterministicRetriever: false`** si quieres ReAct+LLM en retrieve con salida JSON de evidencia (más costoso).
 
 Ejemplo mínimo (JSON del tool `ask_codebase`):
 

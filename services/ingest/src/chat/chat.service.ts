@@ -3258,6 +3258,8 @@ PROHIBIDO: instrucciones genéricas tipo "revisa los controladores", "asegúrate
       const r = await this.retrieverTools.executeTool(repositoryId, projectId, { ...req, ...evidenceNoiseOpts });
       if (r.lastCypher) lastCypher = r.lastCypher;
       collectedResults.push(...r.collectedRows);
+      // Skip empty semantic_search blocks — no point showing "0 resultados" in evidence output
+      if (label.startsWith('semantic_search') && r.collectedRows.length === 0) return;
       collectedToolOutputs.push(`[deterministic:${label}]\n${r.toolResult}`);
     };
 

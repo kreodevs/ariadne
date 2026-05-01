@@ -604,7 +604,7 @@ function createMcpServer(): Server {
     {
       name: "ask_codebase",
       description:
-        "Pregunta en lenguaje natural sobre el código. **Default MCP (sin `responseMode`):** `raw_evidence` + `deterministicRetriever: true` — mismo retrieve barato que The Forge «evidencia bruta» (JSON para sintetizar fuera; sin LLM en retrieve). responseMode=default: prosa + sintetizador + ReAct en retrieve. responseMode=evidence_first: answer = JSON MDD (7 claves). responseMode=raw_evidence: JSON parseable; con `deterministicRetriever: false` fuerza ReAct+LLM en retrieve. Requiere INGEST_URL. Para filesToModify usa get_modification_plan. Routing (menos tokens/latencia): si ya conoces path o símbolo, usa get_file_content / get_definitions / get_references / get_component_graph en lugar de esta tool; en monorepo pasa scope (repoIds=roots[].id, prefijos) o projectId=roots[].id del repo objetivo. Ver docs mcp_server_specs — ask_codebase — Política de routing.",
+        "Pregunta en lenguaje natural sobre el código. **Default MCP (sin `responseMode`):** `default` — prosa + sintetizador + ReAct en retrieve (mismo que «Chat normal» en la UI). responseMode=evidence_first: answer = JSON MDD (7 claves). responseMode=raw_evidence: JSON parseable (ver docs). Requiere INGEST_URL. Para filesToModify usa get_modification_plan. Routing (menos tokens/latencia): si ya conoces path o símbolo, usa get_file_content / get_definitions / get_references / get_component_graph en lugar de esta tool; en monorepo pasa scope (repoIds=roots[].id, prefijos) o projectId=roots[].id del repo objetivo. Ver docs mcp_server_specs — ask_codebase — Política de routing.",
       inputSchema: {
         type: "object" as const,
         properties: {
@@ -2388,7 +2388,7 @@ async function fetchFileFromIngest(
           : rm === "default"
             ? "default"
             : !rm
-              ? "raw_evidence"
+              ? "default"
               : "default";
     const deterministicRetriever =
       responseMode === "raw_evidence" ? args?.deterministicRetriever !== false : undefined;
