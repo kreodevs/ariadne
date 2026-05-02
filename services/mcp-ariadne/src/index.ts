@@ -893,6 +893,19 @@ function createMcpServer(): Server {
         additionalProperties: false,
       },
     },
+    {
+      name: "extract_design_tokens",
+      description:
+        "Busca en el codebase del proyecto archivos de tokens de diseño (Tailwind config, CSS custom properties, theme/token files), extrae y parsea sus valores, y retorna JSON estructurado con los tokens encontrados. No usa LLM — parse directo vía regex + Falkor.",
+      inputSchema: {
+        type: "object" as const,
+        properties: {
+          projectId: { type: "string", description: "ID del proyecto (list_known_projects) — requerido" },
+        },
+        required: ["projectId"],
+        additionalProperties: false,
+      },
+    },
   ],
 };
   });
@@ -3331,6 +3344,241 @@ async function fetchFileFromIngest(
       "```",
     ];
     return { content: [{ type: "text", text: lines.join("\n") }] };
+  }
+
+  // --- extract_design_tokens ---
+  if (name === "extract_design_tokens") {
+    const projectId = (args?.projectId as string) ?? "";
+    if (!projectId) {
+      return {
+        content: [{ type: "text", text: JSON.stringify({ error: "Se requiere projectId" }) }],
+        isError: true,
+      };
+    }
+    const ingestUrl = process.env.INGEST_URL ?? process.env.ARIADNESPEC_INGEST_URL ?? "http://localhost:3002";
+
+    const parseTailwindTokens = (raw: string): Record<string, string> => {
+      const tokens: Record<string, string> = {};
+      const colorBlock = raw.match(/colors\s*:\s*\{([^}]+)\}/);
+      if (colorBlock) {
+        const inner = colorBlock[1];
+        const simplePairs = inner.match(/['"]?(\w[\w-]*)['"]?\s*:\s*['"](#[0-9a-fA-F]{3,8}|rgba?\([^)]+\)|hsla?\([^)]+\))['"]/g);
+        if (simplePairs) {
+          for (const pair of simplePairs) {
+            const m = pair.match(/['"]?(\w[\w-]*)['"]?\s*:\s*['"](#[0-9a-fA-F]{3,8}|rgba?\([^)]+\)|hsla?\([^)]+\))['"]/);
+            if (m) tokens[`color_${m[1]}`] = m[2];
+          }
+        }
+        const nestedBlock = inner.match(/(\w[\w-]*)\s*:\s*\{([^}]+)\}/g);
+        if (nestedBlock) {
+          for (const block of nestedBlock) {
+            const nm = block.match(/(\w[\w-]*)\s*:\s*\{/);
+            const prefix = nm ? nm[1] : "unknown";
+            const innerPairs = block.match(/['"]?(\d+|\w[\w-]*)['"]?\s*:\s*['"](#[0-9a-fA-F]{3,8}|rgba?\([^)]+\)|hsla?\([^)]+\))['"]/g);
+            if (innerPairs) {
+              for (const pair of innerPairs) {
+                const m = pair.match(/['"]?(\d+|\w[\w-]*)['"]?\s*:\s*['"](#[0-9a-fA-F]{3,8}|rgba?\([^)]+\)|hsla?\([^)]+\))['"]/);
+                if (m) tokens[`color_${prefix}_${m[1]}`] = m[2];
+              }
+            }
+          }
+        }
+      }
+      const fontMatch = raw.match(/fontFamily\s*:\s*\{([^}]+)\}/);
+      if (fontMatch) {
+        const families = fontMatch[1].match(/['"]?(\w[\w-]*)['"]?\s*:/g);
+        if (families) {
+          for (const f of families) {
+            const name = f.replace(/['":]/g, "").trim();
+            if (name) tokens[`font_${name}`] = name;
+          }
+        }
+      }
+      const spacingMatch = raw.match(/spacing\s*:\s*\{([^}]+)\}/);
+      if (spacingMatch) {
+        const pairs = spacingMatch[1].match(/['"]?(\w[\w-]*)['"]?\s*:\s*['"]([^'"]+)['"]/g);
+        if (pairs) {
+          for (const pair of pairs) {
+            const m = pair.match(/['"]?(\w[\w-]*)['"]?\s*:\s*['"]([^'"]+)['"]/);
+            if (m) tokens[`spacing_${m[1]}`] = m[2];
+          }
+        }
+      }
+      const radiusMatch = raw.match(/borderRadius\s*:\s*\{([^}]+)\}/);
+      if (radiusMatch) {
+        const pairs = radiusMatch[1].match(/['"]?(\w[\w-]*)['"]?\s*:\s*['"]([^'"]+)['"]/g);
+        if (pairs) {
+          for (const pair of pairs) {
+            const m = pair.match(/['"]?(\w[\w-]*)['"]?\s*:\s*['"]([^'"]+)['"]/);
+            if (m) tokens[`radius_${m[1]}`] = m[2];
+          }
+        }
+      }
+      return tokens;
+    };
+
+    const parseCssCustomProps = (raw: string): Record<string, string> => {
+      const tokens: Record<string, string> = {};
+      const scopeRe = /(?::root|\[data-theme[^\]]*\])\s*\{([^}]+)\}/g;
+      let scopeMatch: RegExpExecArray | null;
+      while ((scopeMatch = scopeRe.exec(raw)) !== null) {
+        const body = scopeMatch[1];
+        const propRe = /--([\w-]+)\s*:\s*([^;]+)/g;
+        let propMatch: RegExpExecArray | null;
+        while ((propMatch = propRe.exec(body)) !== null) {
+          const key = propMatch[1].trim();
+          const val = propMatch[2].trim();
+          if (val.startsWith("#") || val.startsWith("rgb") || val.startsWith("hsl") || /^[\d.]+/.test(val)) {
+            if (/^color-|^font-|^spacing-|^radius-|^shadow-/.test(key)) {
+              tokens[`css_${key}`] = val;
+            }
+          }
+        }
+      }
+      return tokens;
+    };
+
+    const parseTokenJson = (raw: string): Record<string, string> => {
+      const tokens: Record<string, string> = {};
+      try {
+        const parsed = JSON.parse(raw);
+        const walk = (obj: Record<string, unknown>, prefix: string): void => {
+          for (const [k, v] of Object.entries(obj)) {
+            const path = prefix ? `${prefix}_${k}` : k;
+            if (typeof v === "string" && (v.startsWith("#") || v.startsWith("rgb") || v.startsWith("hsl") || /^[\d.]+(px|rem|em|%)?$/.test(v))) {
+              tokens[path] = v;
+            } else if (typeof v === "object" && v !== null && !Array.isArray(v)) {
+              walk(v as Record<string, unknown>, path);
+            }
+          }
+        };
+        if (typeof parsed === "object" && parsed !== null) {
+          walk(parsed as Record<string, unknown>, "");
+        }
+      } catch {
+        // Not valid JSON, skip
+      }
+      return tokens;
+    };
+
+    // --- Step 1: Find files via Falkor ---
+    graph = await getGraph(projectId);
+    const filesQ = `MATCH (f:File {projectId: $projectId}) RETURN f.path AS path`;
+    let allFilePaths: string[] = [];
+    if (isProjectShardingEnabled()) {
+      const merged = await queryFileRowsAllShards(projectId, filesQ);
+      allFilePaths = merged.map((r) => String(_rv(r, "path") ?? "")).filter(Boolean);
+    } else {
+      const filesRes = (await graph.query(filesQ, { params: { projectId } })) as {
+        data?: Array<Record<string, unknown>>;
+      };
+      allFilePaths = (filesRes.data ?? []).map((r) => String(_rv(r, "path") ?? "")).filter(Boolean);
+    }
+
+    const tailwindFiles = allFilePaths.filter((p) => /tailwind\.config\./.test(p));
+    const cssFiles = allFilePaths.filter((p) => p.endsWith(".css") && !p.includes("node_modules"));
+    const tokenFiles = allFilePaths.filter(
+      (p) =>
+        /\/tokens\.(json|js|ts)$/.test(p) ||
+        /\/theme\.(json|js|ts)$/.test(p) ||
+        /\/design-tokens\./.test(p) ||
+        p.endsWith("tokens.json") ||
+        p.endsWith("theme.json")
+    );
+
+    // --- Step 2: Read file contents ---
+    const readFileSafe = async (filePath: string): Promise<string> => {
+      const result = await fetchFileFromIngest(ingestUrl, projectId, filePath);
+      if ("content" in result && result.content) return result.content;
+      return "";
+    };
+
+    let tailwindRaw = "";
+    let cssRaw = "";
+    let tokenRaw = "";
+
+    for (const f of tailwindFiles) {
+      const c = await readFileSafe(f);
+      if (c) tailwindRaw += `\n--- ${f} ---\n${c}\n`;
+    }
+
+    for (const f of cssFiles) {
+      const c = await readFileSafe(f);
+      if (c && /:root\s*\{|--color-|--font-|--spacing-|--radius-/.test(c)) {
+        cssRaw += `\n--- ${f} ---\n${c}\n`;
+      }
+    }
+
+    for (const f of tokenFiles) {
+      const c = await readFileSafe(f);
+      if (c) tokenRaw += `\n--- ${f} ---\n${c}\n`;
+    }
+
+    // --- Step 3: Parse tokens ---
+    const foundTailwind = tailwindRaw.length > 20;
+    const foundCssCustomProps = cssRaw.length > 20;
+    const foundThemeFile = tokenRaw.length > 20;
+
+    const tailwindTokens = foundTailwind ? parseTailwindTokens(tailwindRaw) : {};
+    const cssTokens = foundCssCustomProps ? parseCssCustomProps(cssRaw) : {};
+    const themeTokens = foundThemeFile ? parseTokenJson(tokenRaw) : {};
+
+    const mergedCssTokens = { ...themeTokens, ...cssTokens };
+
+    // --- Step 4: Build summary ---
+    const summaryParts: string[] = [];
+    if (foundTailwind) {
+      const counts: string[] = [];
+      const colors = Object.keys(tailwindTokens).filter((k) => k.startsWith("color_")).length;
+      const fonts = Object.keys(tailwindTokens).filter((k) => k.startsWith("font_")).length;
+      const spacing = Object.keys(tailwindTokens).filter((k) => k.startsWith("spacing_")).length;
+      const radii = Object.keys(tailwindTokens).filter((k) => k.startsWith("radius_")).length;
+      if (colors) counts.push(`${colors} colors`);
+      if (fonts) counts.push(`${fonts} font families`);
+      if (spacing) counts.push(`${spacing} spacing`);
+      if (radii) counts.push(`${radii} border radii`);
+      summaryParts.push(
+        `**Tailwind Config:** found — ${counts.length ? counts.join(", ") : "config present"}` +
+          ` (files: ${tailwindFiles.length})`
+      );
+    } else {
+      summaryParts.push("**Tailwind Config:** not found");
+    }
+    if (foundCssCustomProps || foundThemeFile) {
+      const totalTokens = Object.keys(mergedCssTokens).length;
+      const colors = Object.keys(mergedCssTokens).filter((k) => /css_color|^color_/.test(k)).length;
+      const fonts = Object.keys(mergedCssTokens).filter((k) => k.includes("font")).length;
+      summaryParts.push(
+        `**CSS Custom Properties / Theme:** ${totalTokens} tokens extracted` +
+          (colors ? ` (${colors} colors` : "") +
+          (colors && fonts ? ", " : "") +
+          (fonts ? `${fonts} fonts` : "") +
+          (colors || fonts ? ")" : "") +
+          (foundCssCustomProps ? ` from ${cssFiles.filter((f) => !f.includes("node_modules")).length} CSS files` : "") +
+          (foundThemeFile ? ` + ${tokenFiles.length} token files` : "")
+      );
+    } else {
+      summaryParts.push("**CSS Custom Properties / Theme:** not found");
+    }
+    if (!foundTailwind && !foundCssCustomProps && !foundThemeFile) {
+      summaryParts.push("No design tokens detected in the codebase.");
+    }
+
+    const result = {
+      foundTailwind,
+      foundCssCustomProps,
+      foundThemeFile,
+      tailwindTokens,
+      cssTokens: mergedCssTokens,
+      tailwindFiles: tailwindFiles.length,
+      cssFileCount: cssFiles.filter((f) => !f.includes("node_modules")).length,
+      tokenFiles: tokenFiles.length,
+      summary: summaryParts.join("\n"),
+    };
+
+    return {
+      content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
+    };
   }
 
   if (name === "analyze_local_changes") {
