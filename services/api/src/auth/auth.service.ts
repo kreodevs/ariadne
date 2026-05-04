@@ -265,4 +265,44 @@ export class AuthService {
       return { valid: false };
     }
   }
+
+  /** GET /auth/has-users — consulta a Ingest si hay usuarios registrados. */
+  async hasUsers(): Promise<{ hasUsers: boolean }> {
+    try {
+      const res = await fetch(`${INGEST_URL}/internal/users/count`, {
+        method: 'GET',
+        headers: { 'Content-Type': 'application/json' },
+      });
+      if (res.ok) {
+        const data = await res.json() as { count: number };
+        return { hasUsers: data.count > 0 };
+      }
+    } catch {
+      // Si Ingest no está disponible, asumir que hay usuarios para no bloquear login
+    }
+    return { hasUsers: true };
+  }
+
+  /** POST /auth/register-first-admin — crea el primer admin en Ingest. */
+  async registerFirstAdmin(
+    email: string,
+    name?: string,
+  ): Promise<{ created: boolean; message: string; user?: { id: string; email: string; role: string; name: string | null } }> {
+    const normalized = email.trim().toLowerCase();
+    try {
+      const res = await fetch(`${INGEST_URL}/internal/users/register-first-admin`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: normalized, name: name?.trim() || null }),
+      });
+      if (res.ok) {
+        const user = await res.json() as { id: string; email: string; role: string; name: string | null };
+        return { created: true, message: 'Administrador creado exitosamente', user };
+      }
+      const err = await res.json().catch(() => ({})) as { message?: string };
+      return { created: false, message: err.message ?? 'Error al crear administrador' };
+    } catch {
+      return { created: false, message: 'No se pudo conectar con el servicio de usuarios' };
+    }
+  }
 }

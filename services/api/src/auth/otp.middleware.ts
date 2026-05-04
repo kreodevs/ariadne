@@ -11,6 +11,8 @@ const SKIP_PATHS = [
   '/api/auth/otp/request',
   '/api/auth/otp/verify',
   '/api/auth/sso/login',
+  '/api/auth/has-users',
+  '/api/auth/register-first-admin',
 ];
 
 /** Interfaz del usuario autenticado extraído del JWT. */

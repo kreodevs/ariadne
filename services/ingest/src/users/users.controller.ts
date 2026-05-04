@@ -67,6 +67,23 @@ export class UsersController {
     return this.service.updateRole(body.id, body.role as 'admin' | 'developer');
   }
 
+  /** GET /internal/users/count — número de usuarios registrados. */
+  @Get('internal/users/count')
+  async count() {
+    const count = await this.service.count();
+    return { count };
+  }
+
+  /** POST /internal/users/register-first-admin — crea el primer admin si no hay usuarios. */
+  @Post('internal/users/register-first-admin')
+  async registerFirstAdmin(@Body() body: { email?: string; name?: string }) {
+    if (!body?.email) {
+      return { error: 'email requerido' };
+    }
+    const result = await this.service.registerFirstAdmin(body.email, body.name);
+    return result;
+  }
+
   // ─── Públicos (protegidos por JWT + roles desde API) ───
 
   /** GET /users — Listar usuarios (admin-only, validado en API proxy) */

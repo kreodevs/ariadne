@@ -162,4 +162,30 @@ export class UsersService {
     const r = await this.repo.delete(id);
     if (r.affected === 0) throw new NotFoundException(`Usuario ${id} no encontrado`);
   }
+
+  /** Contar usuarios registrados. */
+  async count(): Promise<number> {
+    return this.repo.count();
+  }
+
+  /** Crear el primer administrador (solo si no hay usuarios). */
+  async registerFirstAdmin(email: string, name?: string): Promise<{
+    id: string;
+    email: string;
+    role: UserRole;
+    name: string | null;
+  }> {
+    const existing = await this.repo.count();
+    if (existing > 0) {
+      throw new BadRequestException('Ya existen usuarios registrados');
+    }
+    const normalized = email.trim().toLowerCase();
+    const user = this.repo.create({
+      email: normalized,
+      name: (name?.trim() || normalized.split('@')[0]) ?? null,
+      role: 'admin',
+    });
+    const saved = await this.repo.save(user);
+    return { id: saved.id, email: saved.email, role: saved.role, name: saved.name };
+  }
 }

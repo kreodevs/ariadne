@@ -3,6 +3,7 @@
  */
 import {
   Controller,
+  Get,
   Post,
   Body,
   HttpCode,
@@ -65,5 +66,33 @@ export class AuthController {
       return { valid: false };
     }
     return this.authService.ssoLogin(body.token, ssoUrl);
+  }
+
+  /**
+   * GET /auth/has-users
+   * Verifica si existen usuarios registrados en el sistema.
+   * Sin autenticación — usado para decidir si mostrar login o formulario de registro inicial.
+   */
+  @Get('has-users')
+  @HttpCode(HttpStatus.OK)
+  async hasUsers() {
+    return this.authService.hasUsers();
+  }
+
+  /**
+   * POST /auth/register-first-admin
+   * Crea el primer usuario administrador del sistema.
+   * Sin autenticación — solo funciona si no hay usuarios registrados.
+   */
+  @Post('register-first-admin')
+  @HttpCode(HttpStatus.CREATED)
+  async registerFirstAdmin(
+    @Body() body: { email?: string; name?: string },
+  ) {
+    const email = body?.email;
+    if (!email || typeof email !== 'string') {
+      throw new BadRequestException('email es requerido');
+    }
+    return this.authService.registerFirstAdmin(email, body?.name);
   }
 }

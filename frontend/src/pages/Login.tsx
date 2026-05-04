@@ -21,7 +21,7 @@ const API_BASE =
     '',
   ) + '/api';
 
-type Step = 'email' | 'code' | 'sso';
+type Step = 'email' | 'code' | 'sso' | 'register';
 
 export function Login() {
   const navigate = useNavigate();
@@ -33,8 +33,10 @@ export function Login() {
   const [error, setError] = useState<string | null>(null);
   const [devCode, setDevCode] = useState<string | null>(null);
   const [ssoEnabled, setSsoEnabled] = useState(false);
+  const [needsSetup, setNeedsSetup] = useState<boolean | null>(null);
+  const [setupName, setSetupName] = useState('');
 
-  // Check for SSO config and SSO redirect token
+  // Check for SSO config, SSO redirect token, and if setup is needed
   useEffect(() => {
     // Check SSO via import.meta.env
     const ssoUrl = import.meta.env.VITE_SSO_URL as string;
@@ -47,7 +49,54 @@ export function Login() {
     if (ssoToken) {
       handleSsoLogin(ssoToken);
     }
+
+    // Check if users exist
+    checkHasUsers();
   }, [searchParams]);
+
+  const checkHasUsers = async () => {
+    try {
+      const res = await fetch(`${API_BASE}/auth/has-users`);
+      const data = await res.json() as { hasUsers?: boolean };
+      if (data.hasUsers === false) {
+        setNeedsSetup(true);
+        setStep('register');
+      } else {
+        setNeedsSetup(false);
+      }
+    } catch {
+      setNeedsSetup(false);
+    }
+  };
+
+  const handleRegisterFirstAdmin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!email.trim()) {
+      setError('Email requerido');
+      return;
+    }
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch(`${API_BASE}/auth/register-first-admin`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: email.trim(), name: setupName.trim() || undefined }),
+      });
+      const data = await res.json();
+      if (data?.created && data?.user) {
+        setStep('email');
+        setNeedsSetup(false);
+        setError(null);
+      } else {
+        setError(data?.message || 'Error al crear administrador');
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Error de conexión');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleSsoLogin = async (token: string) => {
     setLoading(true);
@@ -154,7 +203,46 @@ export function Login() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          {step === 'email' ? (
+          {needsSetup === null ? (
+            <p className="text-muted-foreground text-sm">Cargando...</p>
+          ) : step === 'register' ? (
+            <form onSubmit={handleRegisterFirstAdmin} className="space-y-4">
+              <p className="text-sm text-amber-600 dark:text-amber-400 font-medium">
+                ⚙️ No hay usuarios registrados. Crea el primer administrador.
+              </p>
+              <div>
+                <Label htmlFor="setup-email">Email</Label>
+                <Input
+                  id="setup-email"
+                  type="email"
+                  placeholder="admin@email.com"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  disabled={loading}
+                  autoFocus
+                  className="mt-2"
+                />
+              </div>
+              <div>
+                <Label htmlFor="setup-name">Nombre (opcional)</Label>
+                <Input
+                  id="setup-name"
+                  type="text"
+                  placeholder="Tu nombre"
+                  value={setupName}
+                  onChange={(e) => setSetupName(e.target.value)}
+                  disabled={loading}
+                  className="mt-2"
+                />
+              </div>
+              {error && (
+                <p className="text-destructive text-sm">{error}</p>
+              )}
+              <Button type="submit" className="w-full" disabled={loading}>
+                {loading ? 'Creando...' : 'Crear administrador'}
+              </Button>
+            </form>
+          ) : step === 'email' ? (
             <>
             <form onSubmit={handleRequestOtp} className="space-y-4">
               <div>
