@@ -58,6 +58,7 @@ services:
       dockerfile: frontend/Dockerfile
       args:
         VITE_API_URL: "${VITE_API_URL:-https://ariadne.kreoint.mx}"
+        VITE_SSO_URL: "${VITE_SSO_URL-}"
     networks:
       - falkor-net
       - dokploy-network

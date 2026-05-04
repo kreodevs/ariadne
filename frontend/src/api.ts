@@ -396,4 +396,24 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(body),
     }),
+
+  // ─── Users ───
+  getUsers: () => request<unknown[]>('/users'),
+  getUserProfile: (id: string) => request<Record<string, unknown>>(`/users/${id}`),
+  updateUserRole: (id: string, role: string) =>
+    request<Record<string, unknown>>(`/users/${id}/role`, {
+      method: 'PATCH',
+      body: JSON.stringify({ role }),
+    }),
+  regenerateMcpToken: (id: string) =>
+    request<{ token: string; prefix: string }>(`/users/${id}/regenerate-mcp-token`, {
+      method: 'POST',
+    }),
+  createUser: (email: string, role: string) =>
+    request<Record<string, unknown>>('/users', {
+      method: 'POST',
+      body: JSON.stringify({ email, role }),
+    }),
+  deleteUser: (id: string) =>
+    request<void>(`/users/${id}`, { method: 'DELETE' }),
 };

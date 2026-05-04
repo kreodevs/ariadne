@@ -162,15 +162,48 @@ function getTokenFromRequest(req: IncomingMessage): string | null {
   return auth?.startsWith("Bearer ") ? auth.slice(7).trim() : null;
 }
 
-/** Valida auth con MCP_AUTH_TOKEN estático. Retorna null si ok. */
-function validateAuth(req: IncomingMessage): string | null {
+/** Valida auth con MCP_AUTH_TOKEN estático o token MCP por usuario contra Ingest. Retorna null si ok. */
+async function validateAuth(req: IncomingMessage): Promise<string | null> {
   const staticToken = process.env.MCP_AUTH_TOKEN?.trim();
-  if (!staticToken) return null;
-
   const clientToken = getTokenFromRequest(req);
-  if (!clientToken) return "Token no proporcionado (X-M2M-Token o Authorization: Bearer)";
-  if (clientToken !== staticToken) return "Token inválido";
-  return null;
+
+  if (!clientToken) {
+    if (staticToken) return "Token no proporcionado (X-M2M-Token o Authorization: Bearer)";
+    // Sin token y sin auth configurada → permitir
+    return null;
+  }
+
+  // 1. Validar contra MCP_AUTH_TOKEN estático (backward compat)
+  if (staticToken) {
+    if (clientToken === staticToken) return null;
+    // Si hay static token y no coincide, intentar validación por usuario como fallback
+  }
+
+  // 2. Validar contra token MCP de usuario vía API → ingest
+  try {
+    const apiUrl = ariadneApiBase();
+    const res = await fetch(`${apiUrl}/api/internal/users/validate-mcp-token`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token: clientToken }),
+    });
+    if (res.ok) {
+      const data = await res.json() as { valid: boolean; user?: { id: string; email: string; role: string; name: string | null } };
+      if (data.valid) {
+        // Adjuntar usuario autenticado para logging/audit
+        if (data.user) {
+          (req as IncomingMessage & { authUser?: unknown }).authUser = data.user;
+        }
+        return null;
+      }
+    }
+  } catch {
+    // Si la API no está disponible y hay static token, intentar coincidencia exacta
+    if (staticToken && clientToken === staticToken) return null;
+  }
+
+  if (staticToken) return "Token inválido";
+  return "Token MCP inválido";
 }
 
 const MCP_TOOL_LOG_ARG_MAX = (() => {
@@ -3870,7 +3903,7 @@ async function requestHandler(req: IncomingMessage, res: ServerResponse): Promis
     return;
   }
 
-  const authError = validateAuth(req);
+  const authError = await validateAuth(req);
   if (authError) {
     console.warn(`[MCP] 401 Unauthorized: ${authError} (${req.headers["x-forwarded-for"] ?? req.socket.remoteAddress})`);
     res.writeHead(401, { "Content-Type": "application/json", "WWW-Authenticate": "Bearer" });

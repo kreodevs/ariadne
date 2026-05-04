@@ -1,7 +1,7 @@
 /**
  * @fileoverview Punto de entrada del **API AriadneSpecs** (NestJS, puerto por defecto 3000).
  *
- * Expone prefijo global `/api`, middleware OTP (`AuthService`), CORS configurable y un proxy HTTP
+ * Expone prefijo global `/api`, middleware OTP (`AuthService`), RBAC y un proxy HTTP
  * hacia **ingest** para rutas de proyectos, dominios, repositorios, credenciales, proveedores y webhooks.
  * El grafo Falkor y OpenAPI viven aquí; la mutación de metadatos de repos suele delegarse en ingest.
  *
@@ -14,8 +14,9 @@ import { createProxyMiddleware } from 'http-proxy-middleware';
 import { AppModule } from './app.module';
 import { AuthService } from './auth/auth.service';
 import { createOtpAuthMiddleware } from './auth/otp.middleware';
+import { createRbacMiddleware } from './auth/rbac.middleware';
 
-/** Inicia el servidor, configura CORS, prefijo /api, auth OTP y proxy a ingest. */
+/** Inicia el servidor, configura CORS, prefijo /api, auth OTP, RBAC y proxy a ingest. */
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
@@ -23,6 +24,8 @@ async function bootstrap() {
 
   const authService = app.get(AuthService);
   app.use(createOtpAuthMiddleware(authService));
+  // RBAC después de auth: bloquea operaciones no permitidas según rol
+  app.use(createRbacMiddleware());
 
   const corsOrigin = process.env.CORS_ORIGIN;
   app.enableCors({
@@ -39,7 +42,9 @@ async function bootstrap() {
       pathname.startsWith('/api/repositories') ||
       pathname.startsWith('/api/credentials') ||
       pathname.startsWith('/api/providers') ||
-      pathname.startsWith('/api/webhooks'),
+      pathname.startsWith('/api/webhooks') ||
+      pathname.startsWith('/api/users') ||
+      pathname.startsWith('/api/internal'),
     target: ingestUrl,
     changeOrigin: true,
     pathRewrite: { '^/api': '' },

@@ -1,5 +1,6 @@
 /**
  * @fileoverview Middleware OTP: valida JWT emitido por verify. Protege /api/* excepto health, openapi y auth.
+ * Adjunta req.user con { sub, email, userId, role } para uso en controladores y proxy.
  */
 import { Request, Response, NextFunction } from 'express';
 import { AuthService } from './auth.service';
@@ -9,7 +10,17 @@ const SKIP_PATHS = [
   '/api/openapi.json',
   '/api/auth/otp/request',
   '/api/auth/otp/verify',
+  '/api/auth/sso/login',
 ];
+
+/** Interfaz del usuario autenticado extraído del JWT. */
+export interface AuthenticatedUser {
+  sub: string;
+  email?: string;
+  userId?: string;
+  role?: string;
+  name?: string;
+}
 
 function getToken(req: Request): string | null {
   const auth = req.headers.authorization;
@@ -34,7 +45,20 @@ export function createOtpAuthMiddleware(authService: AuthService) {
       return;
     }
 
-    (req as Request & { user?: { sub: string; email?: string } }).user = user;
+    (req as Request & { user?: AuthenticatedUser }).user = user;
     next();
   };
+}
+
+/**
+ * Middleware que verifica que el usuario autenticado tenga rol 'admin'.
+ * Usar en rutas que requieran administración.
+ */
+export function requireAdmin(req: Request, res: Response, next: NextFunction) {
+  const user = (req as Request & { user?: AuthenticatedUser }).user;
+  if (!user || user.role !== 'admin') {
+    res.status(403).json({ statusCode: 403, message: 'Acceso denegado: se requiere rol admin' });
+    return;
+  }
+  next();
 }

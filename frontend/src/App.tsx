@@ -1,6 +1,6 @@
 /**
  * @fileoverview **App** principal del frontend Ariadne: `BrowserRouter`, layout con sidebar, rutas protegidas OTP
- * y páginas de proyectos, repos, dominios, chat, grafo de componentes, cola de sync y credenciales.
+ * y páginas de proyectos, repos, dominios, chat, grafo de componentes, cola de sync, credenciales, usuarios y perfil.
  *
  * @copyright 2026 Jorge Correa
  * @license Apache-2.0
@@ -29,6 +29,8 @@ import { DomainsList } from './pages/DomainsList';
 import { ActiveJobsQueue } from './pages/ActiveJobsQueue';
 import { Dashboard } from './pages/Dashboard';
 import { C4ViewerPage } from './pages/C4ViewerPage';
+import { UsersManagement } from './pages/UsersManagement';
+import { ProfilePage } from './pages/ProfilePage';
 
 /** Componente raíz con enrutamiento. */
 function App() {
@@ -59,6 +61,8 @@ function App() {
             <Route path="credentials/:id/edit" element={<EditCredential />} />
             <Route path="graph-explorer" element={<ComponentGraphExplorer />} />
             <Route path="domains" element={<DomainsList />} />
+            <Route path="users" element={<UsersManagement />} />
+            <Route path="profile" element={<ProfilePage />} />
             <Route path="ayuda/*" element={<Ayuda />} />
           </Route>
         </Route>

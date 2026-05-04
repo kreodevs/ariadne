@@ -17,6 +17,7 @@ import { DomainEntity } from './domains/entities/domain.entity';
 import { ProjectDomainDependencyEntity } from './domains/entities/project-domain-dependency.entity';
 import { DomainDomainVisibilityEntity } from './domains/entities/domain-domain-visibility.entity';
 import { EmbeddingSpaceEntity } from './embedding/entities/embedding-space.entity';
+import { UserEntity } from './users/entities/user.entity';
 import { BitbucketModule } from './bitbucket/bitbucket.module';
 import { ChatModule } from './chat/chat.module';
 import { CredentialsModule } from './credentials/credentials.module';
@@ -26,6 +27,7 @@ import { ProjectsModule } from './projects/projects.module';
 import { RepositoriesModule } from './repositories/repositories.module';
 import { ShadowModule } from './shadow/shadow.module';
 import { SyncModule } from './sync/sync.module';
+import { UsersModule } from './users/users.module';
 import { WebhooksModule } from './webhooks/webhooks.module';
 import { MetricsModule } from './metrics/metrics.module';
 import { SharedBullModule } from './shared-bull/shared-bull.module';
@@ -52,6 +54,7 @@ import { SharedBullModule } from './shared-bull/shared-bull.module';
         DomainEntity,
         ProjectDomainDependencyEntity,
         DomainDomainVisibilityEntity,
+        UserEntity,
       ],
       synchronize: process.env.NODE_ENV !== 'production',
       logging: process.env.NODE_ENV === 'development',
@@ -65,6 +68,7 @@ import { SharedBullModule } from './shared-bull/shared-bull.module';
     SharedBullModule,
     ShadowModule,
     SyncModule,
+    UsersModule,
     WebhooksModule,
   ],
 })

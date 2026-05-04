@@ -1,5 +1,6 @@
 /**
  * Shell SaaS: sidenav colapsable, header con breadcrumbs / búsqueda / workspace, contenido principal.
+ * Muestra/oculta elementos del sidebar según el rol del usuario.
  */
 import { useEffect, useState } from 'react';
 import { useLocation, Outlet } from 'react-router-dom';
@@ -15,51 +16,68 @@ import {
   Share2,
   Key,
   HelpCircle,
+  User,
+  Shield,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { SidebarModern, type SidebarGroup } from './layout/SidebarModern';
 import { Button } from '@/components/ui/button';
 import { AppShellHeader } from '@/components/AppShellHeader';
 import { getActiveNavHref } from '@/lib/nav';
+import { getUser } from '@/utils/auth';
+import type { UserInfo } from '@/utils/auth';
 
-const navigationGroups: SidebarGroup[] = [
-  {
-    title: 'Gobierno',
-    items: [
-      { label: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
-      { label: 'Dominios', href: '/domains', icon: Layers },
-      { label: 'Proyectos', href: '/projects', icon: FolderKanban },
-    ],
-  },
-  {
-    title: 'Ingeniería',
-    items: [
-      { label: 'Repositorios', href: '/repos', icon: FolderGit2 },
-      { label: 'Cola de Sync', href: '/jobs', icon: ListOrdered },
-      { label: 'Nuevo Repo', href: '/repos/new', icon: FolderPlus },
-      { label: 'Credenciales', href: '/credentials', icon: Key },
-      { label: 'C4 Viewer', href: '/c4', icon: Boxes },
-    ],
-  },
-  {
-    title: 'Plataforma',
-    items: [
-      { label: 'Grafo', href: '/graph-explorer', icon: Share2 },
-      { label: 'Credenciales', href: '/credentials', icon: Key },
-      { label: 'Ayuda', href: '/ayuda', icon: HelpCircle },
-    ],
-  },
-];
+/** Construye los grupos del sidebar según el rol. */
+function buildNavigationGroups(user: UserInfo | null): SidebarGroup[] {
+  const isAdmin = user?.role === 'admin';
+
+  return [
+    {
+      title: 'Gobierno',
+      items: [
+        { label: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
+        { label: 'Dominios', href: '/domains', icon: Layers },
+        { label: 'Proyectos', href: '/projects', icon: FolderKanban },
+        ...(isAdmin ? [{ label: 'Usuarios', href: '/users', icon: Shield }] : []),
+      ],
+    },
+    {
+      title: 'Ingeniería',
+      items: [
+        { label: 'Repositorios', href: '/repos', icon: FolderGit2 },
+        { label: 'Cola de Sync', href: '/jobs', icon: ListOrdered },
+        ...(isAdmin ? [{ label: 'Nuevo Repo', href: '/repos/new', icon: FolderPlus }] : []),
+        ...(isAdmin ? [{ label: 'Credenciales', href: '/credentials', icon: Key }] : []),
+        { label: 'C4 Viewer', href: '/c4', icon: Boxes },
+      ],
+    },
+    {
+      title: 'Plataforma',
+      items: [
+        { label: 'Grafo', href: '/graph-explorer', icon: Share2 },
+        ...(isAdmin ? [{ label: 'Credenciales', href: '/credentials', icon: Key }] : []),
+        { label: 'Perfil', href: '/profile', icon: User },
+        { label: 'Ayuda', href: '/ayuda', icon: HelpCircle },
+      ],
+    },
+  ];
+}
 
 export function Layout() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [user, setUser] = useState<UserInfo | null>(null);
   const location = useLocation();
 
   useEffect(() => {
     setMobileMenuOpen(false);
   }, [location.pathname]);
 
+  useEffect(() => {
+    setUser(getUser());
+  }, [location.pathname]);
+
   const activeHref = getActiveNavHref(location.pathname);
+  const navigationGroups = buildNavigationGroups(user);
 
   return (
     <div className="flex h-[100dvh] min-h-0 overflow-hidden bg-[var(--background)]">
@@ -68,6 +86,7 @@ export function Layout() {
         activeHref={activeHref}
         brand={<span className="text-xl font-black tracking-tighter text-[var(--foreground)]">ARIADNE</span>}
         brandHref="/dashboard"
+        user={user ? { name: user.email, email: `Rol: ${user.role}` } : undefined}
         className="hidden lg:flex shrink-0"
       />
 
