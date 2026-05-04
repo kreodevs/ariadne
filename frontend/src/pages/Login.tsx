@@ -13,7 +13,6 @@ import {
   setToken,
   getToken,
   isTokenExpired,
-  type UserInfo,
 } from '../utils/auth';
 
 const API_BASE =
