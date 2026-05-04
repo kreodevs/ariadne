@@ -56,7 +56,7 @@ import { SharedBullModule } from './shared-bull/shared-bull.module';
         DomainDomainVisibilityEntity,
         UserEntity,
       ],
-      synchronize: process.env.NODE_ENV !== 'production',
+      synchronize: true,
       logging: process.env.NODE_ENV === 'development',
     }),
     BitbucketModule,
