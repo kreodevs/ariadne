@@ -409,6 +409,8 @@ export const api = {
     request<{ token: string; prefix: string }>(`/users/${id}/regenerate-mcp-token`, {
       method: 'POST',
     }),
+  getMcpSecret: (id: string) =>
+    request<{ mcpSecret: string; email: string; prefix: string }>(`/users/${id}/mcp-secret`),
   createUser: (email: string, role: string) =>
     request<Record<string, unknown>>('/users', {
       method: 'POST',

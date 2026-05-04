@@ -118,6 +118,12 @@ export class UsersController {
     return this.service.updateRole(id, body.role);
   }
 
+  /** GET /users/:id/mcp-secret — Obtener el secret MCP en texto plano (para UI con toggle). */
+  @Get('users/:id/mcp-secret')
+  getMcpSecret(@Param('id') id: string) {
+    return this.service.getMcpSecret(id);
+  }
+
   /** POST /users/:id/regenerate-mcp-token — Regenerar token MCP (admin o propio) */
   @Post('users/:id/regenerate-mcp-token')
   regenerateMcpToken(@Param('id') id: string) {

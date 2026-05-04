@@ -33,6 +33,10 @@ export class UserEntity {
   @Column({ name: 'mcp_token_prefix', type: 'varchar', length: 16, nullable: true })
   mcpTokenPrefix!: string | null;
 
+  /** Token MCP en texto plano para poder mostrarlo en UI con toggle visibilidad. */
+  @Column({ name: 'mcp_secret', type: 'text', nullable: true })
+  mcpSecret!: string | null;
+
   @CreateDateColumn({ name: 'created_at' })
   createdAt!: Date;
 

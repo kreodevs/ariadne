@@ -80,6 +80,7 @@ export class UsersService {
     role: UserRole;
     mcpTokenPrefix: string | null;
     hasMcpToken: boolean;
+    hasMcpSecret: boolean;
     createdAt: Date;
     updatedAt: Date;
   }> {
@@ -92,9 +93,44 @@ export class UsersService {
       role: user.role,
       mcpTokenPrefix: user.mcpTokenPrefix,
       hasMcpToken: !!user.mcpTokenHash,
+      hasMcpSecret: !!user.mcpSecret,
       createdAt: user.createdAt,
       updatedAt: user.updatedAt,
     };
+  }
+
+  /**
+   * GET /users/:id/mcp-secret
+   * Retorna el mcpSecret en texto plano (para mostrar en UI con toggle).
+   * Si no existe pero hay hash (migración), genera el mcpSecret automáticamente.
+   */
+  async getMcpSecret(userId: string): Promise<{ mcpSecret: string; email: string; prefix: string }> {
+    const user = await this.repo.findOne({ where: { id: userId } });
+    if (!user) throw new NotFoundException(`Usuario ${userId} no encontrado`);
+
+    // Si no tiene mcpSecret pero tiene hash (migración de datos), generar automático
+    if (!user.mcpSecret && user.mcpTokenHash) {
+      const secret = `ari_${crypto.randomBytes(32).toString('hex')}`;
+      const prefix = secret.slice(0, 8);
+      user.mcpSecret = secret;
+      if (!user.mcpTokenPrefix) user.mcpTokenPrefix = prefix;
+      await this.repo.save(user);
+      return { mcpSecret: secret, email: user.email, prefix };
+    }
+
+    // Si no tiene nada, generar por primera vez
+    if (!user.mcpSecret) {
+      const secret = `ari_${crypto.randomBytes(32).toString('hex')}`;
+      const prefix = secret.slice(0, 8);
+      const hash = await bcrypt.hash(secret, 10);
+      user.mcpSecret = secret;
+      user.mcpTokenPrefix = prefix;
+      user.mcpTokenHash = hash;
+      await this.repo.save(user);
+      return { mcpSecret: secret, email: user.email, prefix };
+    }
+
+    return { mcpSecret: user.mcpSecret, email: user.email, prefix: user.mcpTokenPrefix ?? user.mcpSecret.slice(0, 8) };
   }
 
   /** Cambiar rol de un usuario. Solo admin puede hacerlo. */
@@ -109,15 +145,16 @@ export class UsersService {
     return { id: user.id, email: user.email, role: user.role };
   }
 
-  /** Genera un nuevo token MCP para el usuario. Retorna el token en texto plano (única vez). */
+  /** Genera un nuevo token MCP para el usuario. Retorna el token en texto plano. */
   async regenerateMcpToken(userId: string): Promise<{ token: string; prefix: string }> {
     const user = await this.repo.findOne({ where: { id: userId } });
     if (!user) throw new NotFoundException(`Usuario ${userId} no encontrado`);
 
-    const token = `ari_${crypto.randomBytes(TOKEN_BYTE_LENGTH).toString('hex')}`;
-    const prefix = token.slice(0, TOKEN_PREFIX_LENGTH);
+    const token = `ari_${crypto.randomBytes(32).toString('hex')}`;
+    const prefix = token.slice(0, 8);
     const hash = await bcrypt.hash(token, 10);
 
+    user.mcpSecret = token;
     user.mcpTokenHash = hash;
     user.mcpTokenPrefix = prefix;
     await this.repo.save(user);
@@ -125,18 +162,24 @@ export class UsersService {
     return { token, prefix };
   }
 
-  /** Valida un token MCP contra el hash almacenado. Devuelve el usuario o null. */
+  /** Valida un token MCP contra el hash o mcpSecret almacenado. Devuelve el usuario o null. */
   async validateMcpToken(
     token: string,
   ): Promise<{ id: string; email: string; role: UserRole; name: string | null } | null> {
     if (!token.trim()) return null;
 
-    const users = await this.repo.find({ select: ['id', 'email', 'role', 'name', 'mcpTokenHash'] });
+    const users = await this.repo.find({ select: ['id', 'email', 'role', 'name', 'mcpTokenHash', 'mcpSecret'] });
     for (const user of users) {
-      if (!user.mcpTokenHash) continue;
-      const valid = await bcrypt.compare(token, user.mcpTokenHash);
-      if (valid) {
+      // Primero compara con mcpSecret (rápido, texto plano)
+      if (user.mcpSecret && user.mcpSecret === token) {
         return { id: user.id, email: user.email, role: user.role, name: user.name };
+      }
+      // Fallback: comparar con bcrypt (tokens viejos)
+      if (user.mcpTokenHash) {
+        const valid = await bcrypt.compare(token, user.mcpTokenHash);
+        if (valid) {
+          return { id: user.id, email: user.email, role: user.role, name: user.name };
+        }
       }
     }
     return null;
