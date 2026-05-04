@@ -150,7 +150,7 @@ export class UsersService {
 
     const user = this.repo.create({
       email: normalized,
-      name: name?.trim() || normalized.split('@')[0] ?? null,
+      name: (name?.trim() || normalized.split('@')[0]) ?? null,
       role: role ?? 'developer',
     });
     const saved = await this.repo.save(user);
