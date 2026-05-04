@@ -156,6 +156,7 @@ export function Login() {
         </CardHeader>
         <CardContent>
           {step === 'email' ? (
+            <>
             <form onSubmit={handleRequestOtp} className="space-y-4">
               <div>
                 <Label htmlFor="email">Email</Label>
@@ -198,6 +199,7 @@ export function Login() {
                 Iniciar sesión con SSO
               </Button>
             )}
+            </>
           ) : (
             <form onSubmit={handleVerifyOtp} className="space-y-4">
               <p className="text-muted-foreground text-sm">
