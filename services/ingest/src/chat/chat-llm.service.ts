@@ -4,9 +4,9 @@
 import { Injectable } from '@nestjs/common';
 import { ingestChatLlmModel } from './chat-llm-config';
 import {
-  openRouterDefaultHeaders,
+  llmDefaultHeaders,
   resolveLlmApiKey,
-  resolveOpenRouterBaseUrl,
+  resolveLlmBaseUrl,
 } from '../llm/llm-config';
 
 /** Límite de salida en fase retriever (tool_calls + argumentos JSON pueden ser largos). */
@@ -18,7 +18,7 @@ export function toolCallMaxTokensFromEnv(): number {
 }
 
 function chatUrl(): string {
-  return `${resolveOpenRouterBaseUrl().replace(/\/$/, '')}/chat/completions`;
+  return `${resolveLlmBaseUrl().replace(/\/$/, '')}/chat/completions`;
 }
 
 function authHeaders(): Record<string, string> {
@@ -26,7 +26,7 @@ function authHeaders(): Record<string, string> {
   if (!key) {
     throw new Error('LLM_API_KEY no configurada. Necesaria para chat.');
   }
-  const extra = openRouterDefaultHeaders();
+  const extra = llmDefaultHeaders();
   return {
     'Content-Type': 'application/json',
     Authorization: `Bearer ${key}`,

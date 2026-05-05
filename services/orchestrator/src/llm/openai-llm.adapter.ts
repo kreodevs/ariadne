@@ -1,8 +1,8 @@
 import { orchestratorLlmModel } from './orchestrator-llm-config';
 import {
-  openRouterDefaultHeaders,
+  llmDefaultHeaders,
   resolveLlmApiKey,
-  resolveOpenRouterBaseUrl,
+  resolveLlmBaseUrl,
 } from './llm-config';
 
 export type OpenAiStyleMessage =
@@ -29,7 +29,7 @@ export function stripReasoningFromMessages(messages: OpenAiStyleMessage[]): Open
 }
 
 function chatCompletionsUrl(): string {
-  return `${resolveOpenRouterBaseUrl().replace(/\/$/, '')}/chat/completions`;
+  return `${resolveLlmBaseUrl().replace(/\/$/, '')}/chat/completions`;
 }
 
 function buildAuthHeaders(): Record<string, string> {
@@ -37,7 +37,7 @@ function buildAuthHeaders(): Record<string, string> {
   if (!key) {
     throw new Error('LLM_API_KEY no configurada.');
   }
-  const extra = openRouterDefaultHeaders();
+  const extra = llmDefaultHeaders();
   return {
     'Content-Type': 'application/json',
     Authorization: `Bearer ${key}`,

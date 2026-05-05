@@ -89,14 +89,14 @@ A continuación se listan todas las variables de entorno organizadas por servici
 | `LLM_MODEL_INGEST` | — | ingest | **Modelo específico para ingest.** Prioridad sobre `LLM_MODEL`. |
 | `ORCHESTRATOR_LLM_MODEL` | — | orchestrator | **Modelo específico para orquestador.** Prioridad sobre `LLM_MODEL`. |
 | `LLM_TEMPERATURE` | `0.1` | ingest, orchestrator | Temperatura del LLM |
-| `OPENROUTER_BASE_URL` | `https://openrouter.ai/api/v1` | ingest, orchestrator | URL base de OpenRouter (válido mientras `LLM_PROVIDER=openrouter`) |
-| `OPENROUTER_CHAT_MODEL` | `nousresearch/hermes-3-llama-3.1-405b` | ingest, orchestrator | Modelo de chat (fallback global) |
-| `OPENROUTER_EMBEDDING_MODEL` | `openai/text-embedding-3-small` | ingest | Modelo de embeddings |
+| `LLM_BASE_URL` | `https://openrouter.ai/api/v1` | ingest, orchestrator | URL base de OpenRouter (válido mientras `LLM_PROVIDER=openrouter`) |
+| `LLM_CHAT_MODEL` | `nousresearch/hermes-3-llama-3.1-405b` | ingest, orchestrator | Modelo de chat (fallback global) |
+| `LLM_EMBEDDING_MODEL` | `openai/text-embedding-3-small` | ingest | Modelo de embeddings |
 | `OPENAI_EMBEDDING_DIM` | `1536` | ingest | Dimensión de vectores de embedding |
-| `OPENROUTER_HTTP_REFERER` | — | ingest, orchestrator | HTTP Referer para OpenRouter |
-| `OPENROUTER_APP_TITLE` | — | ingest, orchestrator | Título de app para OpenRouter |
+| `LLM_HTTP_REFERER` | — | ingest, orchestrator | HTTP Referer para OpenRouter |
+| `LLM_APP_TITLE` | — | ingest, orchestrator | Título de app para OpenRouter |
 | `EMBEDDING_PROVIDER` | `openrouter` | ingest | Proveedor de embeddings (`openrouter` o `openai`) |
-| `CHAT_MODEL` | — | ingest, orchestrator | Compatibilidad; preferir `LLM_MODEL` u `OPENROUTER_CHAT_MODEL` |
+| `CHAT_MODEL` | — | ingest, orchestrator | Compatibilidad; preferir `LLM_MODEL` u `LLM_CHAT_MODEL` |
 | `INTERNAL_API_KEY` | `ariadne-internal-dev` | ingest, orchestrator | Clave M2M para comunicación ingest ↔ orchestrator |
 | `INGEST_URL` | `http://ingest:3002` | api, orchestrator, mcp-ariadne | URL del servicio ingest (para delegar consultas de grafo) |
 
@@ -229,7 +229,7 @@ Las únicas **obligatorias** en Dokploy son:
 | **orchestrator** | `LLM_API_KEY`, `LLM_PROVIDER` |
 | **frontend** | `VITE_API_URL` (build arg) |
 
-> 💡 **Modelos LLM por componente:** `LLM_MODEL_INGEST` para ingest y `ORCHESTRATOR_LLM_MODEL` para el orquestador. Si no se definen, usan `LLM_MODEL` → `OPENROUTER_CHAT_MODEL` → default (`nousresearch/hermes-3-llama-3.1-405b`).
+> 💡 **Modelos LLM por componente:** `LLM_MODEL_INGEST` para ingest y `ORCHESTRATOR_LLM_MODEL` para el orquestador. Si no se definen, usan `LLM_MODEL` → `LLM_CHAT_MODEL` → default (`nousresearch/hermes-3-llama-3.1-405b`).
 > `LLM_PROVIDER` = `openrouter` por defecto. `LLM_API_KEY` es la única clave — no se usan `OPENROUTER_API_KEY`, `AI_API_KEY` ni `OPENAI_API_KEY`. Para migrar a LemonData solo se cambia `LLM_PROVIDER` y se actualiza `LLM_API_KEY`.
 
 Todo lo demás tiene defaults funcionales en `docker-compose.yml`.

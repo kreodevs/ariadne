@@ -4,10 +4,10 @@
 import type { EmbeddingProvider } from '../embedding.interface';
 import {
   defaultEmbeddingDimension,
-  openRouterDefaultHeaders,
+  llmDefaultHeaders,
   resolveLlmApiKey,
-  resolveOpenRouterBaseUrl,
-  resolveOpenRouterEmbeddingModel,
+  resolveLlmBaseUrl,
+  resolveLlmEmbeddingModel,
 } from '../../llm/llm-config';
 
 export type OpenRouterEmbeddingProviderOptions = {
@@ -30,7 +30,7 @@ export class OpenRouterEmbeddingProvider implements EmbeddingProvider {
 
   constructor(opts?: OpenRouterEmbeddingProviderOptions) {
     this.apiKey = resolveLlmApiKey();
-    this.model = (opts?.model?.trim() || resolveOpenRouterEmbeddingModel()).trim();
+    this.model = (opts?.model?.trim() || resolveLlmEmbeddingModel()).trim();
     this.dimension = opts?.dimensions ?? defaultEmbeddingDimension();
   }
 
@@ -46,7 +46,7 @@ export class OpenRouterEmbeddingProvider implements EmbeddingProvider {
     if (!this.apiKey) {
       throw new Error('LLM_API_KEY required for OpenRouter embeddings');
     }
-    const base = resolveOpenRouterBaseUrl().replace(/\/$/, '');
+    const base = resolveLlmBaseUrl().replace(/\/$/, '');
     const body: Record<string, unknown> = {
       model: this.model,
       input: text.slice(0, 8191),
@@ -54,7 +54,7 @@ export class OpenRouterEmbeddingProvider implements EmbeddingProvider {
     if (this.model.includes('text-embedding-3')) {
       body.dimensions = this.dimension;
     }
-    const extra = openRouterDefaultHeaders();
+    const extra = llmDefaultHeaders();
     const res = await fetch(`${base}/embeddings`, {
       method: 'POST',
       headers: {
