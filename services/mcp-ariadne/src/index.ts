@@ -196,10 +196,15 @@ async function validateAuth(req: IncomingMessage): Promise<string | null> {
         }
         return null;
       }
+      console.warn(`[MCP] validateAuth: per-user validation returned valid=false (email=${data.user?.email ?? '?'})`);
+    } else {
+      const body = await res.text().catch(() => '<no body>');
+      console.warn(`[MCP] validateAuth: per-user fetch returned ${res.status} ${res.statusText}: ${body.slice(0, 500)}`);
     }
-  } catch {
+  } catch (err) {
     // Si la API no está disponible y hay static token, intentar coincidencia exacta
     if (staticToken && clientToken === staticToken) return null;
+    console.error(`[MCP] validateAuth: per-user fetch failed: ${err instanceof Error ? err.message : String(err)}`);
   }
 
   if (staticToken) return "Token inválido";
