@@ -3,7 +3,7 @@
  */
 
 export const LLM_DEFAULT_BASE = 'https://openrouter.ai/api/v1';
-export const LLM_DEFAULT_CHAT_MODEL = 'nousresearch/hermes-3-llama-3.1-405b';
+export const LLM_DEFAULT_CHAT_MODEL = 'google/gemini-2.0-flash-001';
 
 /**
  * Clave LLM. Lee solo LLM_API_KEY.
