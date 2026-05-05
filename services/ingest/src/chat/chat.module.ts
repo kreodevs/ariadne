@@ -16,7 +16,6 @@ import { ChatHandlersService } from './chat-handlers.service';
 import { ChatRetrieverToolsService } from './chat-retriever-tools.service';
 import { InternalChatToolsController } from './internal-chat-tools.controller';
 import { InternalProjectToolsController } from './internal-project-tools.controller';
-import { InternalApiGuard } from './internal-api.guard';
 import { RepositoriesModule } from '../repositories/repositories.module';
 import { EmbeddingModule } from '../embedding/embedding.module';
 import { ProjectsModule } from '../projects/projects.module';
@@ -30,7 +29,6 @@ import { ProjectsModule } from '../projects/projects.module';
     InternalProjectToolsController,
   ],
   providers: [
-    InternalApiGuard,
     ChatCypherService,
     ChatLlmService,
     ChatAntipatternsService,

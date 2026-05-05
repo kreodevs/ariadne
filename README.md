@@ -96,7 +96,6 @@ A continuación se listan todas las variables de entorno organizadas por servici
 | `LLM_HTTP_REFERER` | — | ingest, orchestrator | HTTP Referer para OpenRouter |
 | `LLM_APP_TITLE` | — | ingest, orchestrator | Título de app para OpenRouter |
 | `EMBEDDING_PROVIDER` | `openrouter` | ingest | Proveedor de embeddings (`openrouter` o `openai`) |
-| `INTERNAL_API_KEY` | `ariadne-internal-dev` | ingest, orchestrator | Clave M2M para comunicación ingest ↔ orchestrator |
 | `INGEST_URL` | `http://ingest:3002` | api, orchestrator, mcp-ariadne | URL del servicio ingest (para delegar consultas de grafo) |
 
 ---

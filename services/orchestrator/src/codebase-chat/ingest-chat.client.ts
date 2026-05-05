@@ -18,14 +18,6 @@ export class IngestChatClient {
     return (process.env.INGEST_URL ?? 'http://localhost:3002').replace(/\/$/, '');
   }
 
-  private internalKey(): string {
-    const k = process.env.INTERNAL_API_KEY?.trim();
-    if (!k) {
-      throw new Error('INTERNAL_API_KEY no configurada (orchestrator → ingest interno)');
-    }
-    return k;
-  }
-
   async listRepositories(projectId: string): Promise<Array<{ id: string }>> {
     const url = `${this.ingestBase()}/repositories?projectId=${encodeURIComponent(projectId)}`;
     const res = await fetch(url);
@@ -51,10 +43,7 @@ export class IngestChatClient {
     const url = `${this.ingestBase()}/internal/repositories/${encodeURIComponent(repositoryId)}/raw-evidence-deterministic`;
     const res = await fetch(url, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Internal-API-Key': this.internalKey(),
-      },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
     });
     if (!res.ok) {
@@ -78,10 +67,7 @@ export class IngestChatClient {
     const url = `${this.ingestBase()}/internal/repositories/${encodeURIComponent(repositoryId)}/retriever-tool`;
     const res = await fetch(url, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Internal-API-Key': this.internalKey(),
-      },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
     });
     if (!res.ok) {
@@ -95,10 +81,7 @@ export class IngestChatClient {
     const url = `${this.ingestBase()}/internal/repositories/${encodeURIComponent(repositoryId)}/analyze-prep`;
     const res = await fetch(url, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Internal-API-Key': this.internalKey(),
-      },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ mode }),
     });
     if (!res.ok) {
@@ -112,10 +95,7 @@ export class IngestChatClient {
     const url = `${this.ingestBase()}/internal/projects/${encodeURIComponent(projectId)}/analyze-prep`;
     const res = await fetch(url, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Internal-API-Key': this.internalKey(),
-      },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ mode }),
     });
     if (!res.ok) {
@@ -133,10 +113,7 @@ export class IngestChatClient {
     const url = `${this.ingestBase()}/internal/repositories/${encodeURIComponent(repositoryId)}/modification-plan-files`;
     const res = await fetch(url, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Internal-API-Key': this.internalKey(),
-      },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ userDescription, scope }),
     });
     if (!res.ok) {
@@ -160,10 +137,7 @@ export class IngestChatClient {
     const url = `${this.ingestBase()}/internal/repositories/${encodeURIComponent(repositoryId)}/mdd-evidence`;
     const res = await fetch(url, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Internal-API-Key': this.internalKey(),
-      },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
     });
     if (!res.ok) {
@@ -181,10 +155,7 @@ export class IngestChatClient {
     const url = `${this.ingestBase()}/internal/projects/${encodeURIComponent(projectId)}/modification-plan-files`;
     const res = await fetch(url, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Internal-API-Key': this.internalKey(),
-      },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ userDescription, scope }),
     });
     if (!res.ok) {

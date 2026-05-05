@@ -1,9 +1,8 @@
 /**
  * API interna (solo red Docker / orchestrator): ejecución de herramientas del retriever sin LLM.
  */
-import { Body, Controller, Param, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Param, Post } from '@nestjs/common';
 import { RepositoriesService } from '../repositories/repositories.service';
-import { InternalApiGuard } from './internal-api.guard';
 import {
   ChatRetrieverToolsService,
   type RetrieverToolRequest,
@@ -19,7 +18,6 @@ import {
 import type { MddEvidenceDocument } from './mdd-document.types';
 
 @Controller('internal/repositories')
-@UseGuards(InternalApiGuard)
 export class InternalChatToolsController {
   constructor(
     private readonly repos: RepositoriesService,

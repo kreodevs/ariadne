@@ -431,7 +431,7 @@ ${SCHEMA}${EXAMPLES}
             {
               error: 'mdd_evidence_failed',
               message: msg,
-              summary: 'Fallo al construir MDD en ingest; verifica INTERNAL_API_KEY e INGEST_URL.',
+              summary: 'Fallo al construir MDD en ingest; verifica INGEST_URL.',
             },
             null,
             2,

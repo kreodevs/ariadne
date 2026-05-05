@@ -22,7 +22,7 @@ import type { Request } from 'express';
 export class UsersController {
   constructor(private readonly service: UsersService) {}
 
-  // ─── Internos (protegidos por INTERNAL_API_KEY) ───
+  // ─── Internos (red Docker / orchestrator) ───
 
   /**
    * POST /internal/users/resolve

@@ -1,8 +1,7 @@
 /**
  * API interna por projectId: prep analyze agents/skill y listado de archivos del modification-plan.
  */
-import { Body, Controller, Param, Post, UseGuards } from '@nestjs/common';
-import { InternalApiGuard } from './internal-api.guard';
+import { Body, Controller, Param, Post } from '@nestjs/common';
 import {
   ChatService,
   type AnalyzeOrchestratorPrepDto,
@@ -10,7 +9,6 @@ import {
 } from './chat.service';
 
 @Controller('internal/projects')
-@UseGuards(InternalApiGuard)
 export class InternalProjectToolsController {
   constructor(private readonly chat: ChatService) {}
 

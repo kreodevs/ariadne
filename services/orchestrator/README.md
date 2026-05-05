@@ -13,7 +13,7 @@ Orquestación de agentes: flujos SDD (refactor) y **ask_codebase** (chat NL sobr
 ## Flujo LangGraph — ask_codebase (`codebase-chat`)
 
 - **Nodo `retrieve`:** ReAct con tools (LLM vía **OpenRouter**) ejecutando **solo datos** vía ingest: `POST /internal/repositories/:id/retriever-tool` (Cypher, semantic, graph summary, file content). Prompt de **Coordinador/Validador**: priorizar Prisma, OpenAPI (`OpenApiOperation`), Nest, `package.json`, `.env.example`, tsconfig.
-- **Nodo `synthesize`:** Si **`responseMode === 'evidence_first'`**, **no** se llama al LLM de prosa: se invoca **`POST /internal/repositories/:id/mdd-evidence`** (misma **`INTERNAL_API_KEY`**) y la respuesta es **JSON MDD** (7 secciones). Si es **`default`**, el LLM genera la respuesta final como antes.
+- **Nodo `synthesize`:** Si **`responseMode === 'evidence_first'`**, **no** se llama al LLM de prosa: se invoca **`POST /internal/repositories/:id/mdd-evidence`** y la respuesta es **JSON MDD** (7 secciones). Si es **`default`**, el LLM genera la respuesta final como antes.
 - **Redis (opcional):** si el body incluye `threadId`, se guarda un snapshot post-retrieve en `codebase:chat:{threadId}` (TTL 3600s).
 - **Legacy (The Forge):** módulo **`LegacyModule`** — `LegacyCoordinatorService` + `SemaphoreService` procesan el JSON MDD (Workshop, semáforo, gate `assertLegacyIndexSddGate`). Ver [src/legacy/README.md](src/legacy/README.md).
 
@@ -44,7 +44,6 @@ Detalle: [src/llm/README.md](src/llm/README.md).
 **Rate limits:** por defecto el throttle usa **`LLM_MAX_CONCURRENT=1`** y **`LLM_MIN_REQUEST_INTERVAL_MS=2000`**. Tras 429 del proveedor, `POST /codebase/chat/*` puede responder **HTTP 429**; el ingest con `ORCHESTRATOR_URL` repropaga el mismo código al cliente.
 
 - `INGEST_URL` — URL del microservicio ingest (default `http://ingest:3002` en Docker).
-- `INTERNAL_API_KEY` — Debe coincidir con la del ingest; protege `POST /internal/repositories/:id/retriever-tool` y **`POST /internal/repositories/:id/mdd-evidence`**.
 - `REDIS_URL` — Estado de sesión y snapshots `codebase:chat:*` (default `redis://redis:6379` en compose).
 - `CHAT_TWO_PHASE`, `CHAT_EVIDENCE_FIRST_MAX_CHARS`, `CHAT_TELEMETRY_LOG` — Mismo comportamiento que en ingest.
 
