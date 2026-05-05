@@ -39,7 +39,7 @@ export function resolveLlmEmbeddingModel(): string {
 }
 
 export function defaultEmbeddingDimension(): number {
-  const raw = process.env.OPENAI_EMBEDDING_DIM?.trim();
+  const raw = process.env.LLM_EMBEDDING_DIM?.trim();
   const n = raw ? parseInt(raw, 10) : NaN;
   if (Number.isFinite(n) && n >= 1) return n;
   return 1536;

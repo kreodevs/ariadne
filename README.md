@@ -92,7 +92,7 @@ A continuación se listan todas las variables de entorno organizadas por servici
 | `LLM_BASE_URL` | `https://openrouter.ai/api/v1` | ingest, orchestrator | URL base de OpenRouter (válido mientras `LLM_PROVIDER=openrouter`) |
 | `LLM_CHAT_MODEL` | `nousresearch/hermes-3-llama-3.1-405b` | ingest, orchestrator | Modelo de chat (fallback global) |
 | `LLM_EMBEDDING_MODEL` | `openai/text-embedding-3-small` | ingest | Modelo de embeddings |
-| `OPENAI_EMBEDDING_DIM` | `1536` | ingest | Dimensión de vectores de embedding |
+| `LLM_EMBEDDING_DIM` | `1536` | ingest | Dimensión de vectores de embedding |
 | `LLM_HTTP_REFERER` | — | ingest, orchestrator | HTTP Referer para OpenRouter |
 | `LLM_APP_TITLE` | — | ingest, orchestrator | Título de app para OpenRouter |
 | `EMBEDDING_PROVIDER` | `openrouter` | ingest | Proveedor de embeddings (`openrouter` o `openai`) |

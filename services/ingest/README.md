@@ -88,7 +88,7 @@ Tras cada sync (normal o resync), se ejecuta automáticamente `embed-index` si h
 - **`LLM_MODEL`**, **`LLM_API_KEY`**, **`LLM_TEMPERATURE`** — Config homologada de chat (ingest + orchestrator); ver `src/llm/llm-config.ts`, `src/chat/llm-unified.ts` y orchestrator `src/llm/`.
 - `OPENROUTER_API_KEY` — Clave principal; alias: `AI_API_KEY`, `OPENAI_API_KEY`.
 - `OPENROUTER_CHAT_MODEL` — Default en código: `nousresearch/hermes-3-llama-3.1-405b` (alineado con The Forge).
-- `OPENROUTER_EMBEDDING_MODEL` — Default `openai/text-embedding-3-small`; `OPENAI_EMBEDDING_DIM` default 1536.
+- `OPENROUTER_EMBEDDING_MODEL` — Default `openai/text-embedding-3-small`; `LLM_EMBEDDING_DIM` default 1536.
 - `CHAT_MODEL` — Compatibilidad; preferir `LLM_MODEL` u `OPENROUTER_CHAT_MODEL`. Diagnóstico/reingeniería truncan datos automáticamente para evitar context_length_exceeded (128k tokens).
 - `CHAT_TELEMETRY_LOG` — `1` o `true`: log JSON por request del pipeline unificado (tamaños, citas de paths, `pathGroundingRatio` vs retrieval).
 - `METRICS_ENABLED` — `0` o `false`: desactiva Prometheus (`GET /metrics` responde 503). Por defecto las métricas están activas (Fase 0 — ver [docs/notebooklm/OBSERVABILIDAD_FASE0.md](../../docs/notebooklm/OBSERVABILIDAD_FASE0.md)).
@@ -102,7 +102,7 @@ Tras cada sync (normal o resync), se ejecuta automáticamente `embed-index` si h
 - **Alcance por repositorio (sin env):** columna **`index_include_rules`** en `repositories` — JSON `{ entries: [...] }` o `null`. Lógica en **`index-include-rules.ts`**; sync y webhook incremental la aplican tras el listado global.
 - `TRUNCATE_PARSE_MAX_BYTES` — Límite de bytes para truncar archivos grandes antes de parsear (default 25000). Tree-sitter falla con muchos nodos hermanos; aumentar con cuidado.
 
-**Embeddings:** Si cambias de modelo o dimensión (`OPENROUTER_EMBEDDING_MODEL` / `OPENAI_EMBEDDING_DIM`), reejecuta `POST /repositories/:id/embed-index`; FalkorDB no admite mezclar vectores de distinta dimensión en la misma propiedad.
+**Embeddings:** Si cambias de modelo o dimensión (`OPENROUTER_EMBEDDING_MODEL` / `LLM_EMBEDDING_DIM`), reejecuta `POST /repositories/:id/embed-index`; FalkorDB no admite mezclar vectores de distinta dimensión en la misma propiedad.
 
 ## Desarrollo
 
