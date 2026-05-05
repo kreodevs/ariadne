@@ -2461,13 +2461,13 @@ async function fetchFileFromIngest(
               ? "default"
               : "default";
     const deterministicRetriever =
-      responseMode === "raw_evidence" ? args?.deterministicRetriever !== false : undefined;
+      responseMode === "raw_evidence" || responseMode === "evidence_first" ? args?.deterministicRetriever !== false : undefined;
     const body = JSON.stringify({
       message: question,
       ...(scope && Object.keys(scope).length > 0 ? { scope } : {}),
       ...(typeof args?.twoPhase === "boolean" ? { twoPhase: args.twoPhase } : {}),
       responseMode,
-      ...(responseMode === "raw_evidence" ? { deterministicRetriever } : {}),
+      ...(responseMode === "raw_evidence" || responseMode === "evidence_first" ? { deterministicRetriever } : {}),
     });
     const askTimeoutMs = (() => {
       const raw = process.env.MCP_ASK_CODEBASE_TIMEOUT_MS?.trim();

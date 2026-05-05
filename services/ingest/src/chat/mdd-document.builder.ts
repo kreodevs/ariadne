@@ -131,140 +131,194 @@ export async function buildMddEvidenceDocument(params: {
     params;
   const L = getMddBuilderLimits();
 
-  let manifestDepKeys: string[] = [];
-  try {
-    const rows = (await executeCypher(
-      projectId,
-      `MATCH (p:Project {projectId: $projectId}) RETURN p.manifestDeps AS m LIMIT 1`,
-      { projectId },
-    )) as Array<{ m?: string | null }>;
-    const raw = rows[0]?.m;
-    if (typeof raw === 'string' && raw.trim()) {
-      const j = JSON.parse(raw) as string[] | { depKeys?: string[]; scripts?: Record<string, string> };
-      manifestDepKeys = Array.isArray(j) ? j : j.depKeys ?? [];
-    }
-  } catch {
-    /* ignore */
-  }
-
-  let openapiPath: string | null = null;
-  try {
-    const oa = (await executeCypher(
-      projectId,
-      `MATCH (f:File {projectId: $projectId}) WHERE f.openApiTruth = true RETURN f.path AS path LIMIT ${L.openApiFileCandidates}`,
-      { projectId },
-    )) as Array<{ path?: string }>;
-    openapiPath = oa[0]?.path ?? null;
-  } catch {
-    /* ignore */
-  }
-
-  let swaggerRelatedPaths: string[] = [];
-  try {
-    const sw = (await executeCypher(
-      projectId,
-      `MATCH (f:File {projectId: $projectId})
-       WHERE toLower(f.path) CONTAINS 'swagger'
-          OR toLower(f.path) CONTAINS 'openapi'
-       RETURN f.path AS path LIMIT ${L.swaggerRelatedFiles}`,
-      { projectId },
-    )) as Array<{ path?: string }>;
-    swaggerRelatedPaths = uniq(
-      sw.map((r) => r.path).filter((p): p is string => typeof p === 'string' && p.length > 0),
-    );
-  } catch {
-    /* ignore */
-  }
-
-  const apiFromSwagger: Array<{ route: string; methods: string[]; doc_source: 'swagger' | 'ast' }> =
-    [];
-  try {
-    const ops = (await executeCypher(
-      projectId,
-      `MATCH (op:OpenApiOperation {projectId: $projectId})
-       RETURN op.pathTemplate AS route, op.method AS method LIMIT ${L.openApiOperations}`,
-      { projectId },
-    )) as Array<{ route?: string; method?: string }>;
-    const byRoute = new Map<string, Set<string>>();
-    for (const row of ops) {
-      if (!row.route || !row.method) continue;
-      if (!byRoute.has(row.route)) byRoute.set(row.route, new Set());
-      byRoute.get(row.route)!.add(String(row.method).toUpperCase());
-    }
-    for (const [route, methods] of byRoute) {
-      apiFromSwagger.push({ route, methods: [...methods], doc_source: 'swagger' });
-    }
-  } catch {
-    /* grafo sin OpenApiOperation */
-  }
-
-  let apiFromAst: Array<{ route: string; methods: string[]; doc_source: 'swagger' | 'ast' }> = [];
-  if (apiFromSwagger.length === 0) {
-    try {
-      const ctr = (await executeCypher(
-        projectId,
-        `MATCH (c:NestController {projectId: $projectId})
-         RETURN coalesce(c.route,'') AS prefix, c.name AS name LIMIT ${L.nestControllers}`,
-        { projectId },
-      )) as Array<{ prefix?: string | null; name?: string }>;
-      for (const row of ctr) {
-        const base = (row.prefix ?? '').replace(/^\/|\/$/g, '');
-        const route = base ? `/${base}` : '/';
-        apiFromAst.push({ route, methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'], doc_source: 'ast' });
-      }
-    } catch {
-      /* ignore */
-    }
-  }
-
-  const entities: MddEvidenceDocument['entities'] = [];
-  try {
-    const models = (await executeCypher(
-      projectId,
-      `MATCH (m:Model {projectId: $projectId})
-       RETURN m.name AS name, m.source AS source, m.fieldSummary AS fs LIMIT ${L.models}`,
-      { projectId },
-    )) as Array<{ name?: string; source?: string; fs?: string | null }>;
-    for (const row of models) {
-      if (!row.name) continue;
-      if (row.source !== 'prisma' && row.source !== 'typeorm' && !row.fs) continue;
-      const source = row.source === 'typeorm' ? 'typeorm' : 'prisma';
-      let fields: string[] = [];
-      if (row.fs) {
-        try {
-          fields = JSON.parse(row.fs) as string[];
-        } catch {
-          fields = [];
+  // ── Phase 1: All independent Cypher queries + file reads in parallel ──────────
+  const [
+    manifestDepKeys,
+    openapiPath,
+    swaggerRelatedPaths,
+    apiFromSwagger,
+    apiFromAst,
+    entities,
+    business,
+    envContent,
+  ] = await Promise.all([
+    // 1. manifestDepKeys
+    (async (): Promise<string[]> => {
+      try {
+        const rows = (await executeCypher(
+          projectId,
+          `MATCH (p:Project {projectId: $projectId}) RETURN p.manifestDeps AS m LIMIT 1`,
+          { projectId },
+        )) as Array<{ m?: string | null }>;
+        const raw = rows[0]?.m;
+        if (typeof raw === 'string' && raw.trim()) {
+          const j = JSON.parse(raw) as string[] | { depKeys?: string[]; scripts?: Record<string, string> };
+          return Array.isArray(j) ? j : j.depKeys ?? [];
         }
+      } catch {
+        /* ignore */
       }
-      entities.push({ name: row.name, source, fields });
-    }
-  } catch {
-    /* ignore */
-  }
+      return [];
+    })(),
 
-  const business: MddEvidenceDocument['business_logic'] = [];
-  try {
-    const svcs = (await executeCypher(
-      projectId,
-      `MATCH (f:File)-[:CONTAINS]->(s:NestService {projectId: $projectId})
-       RETURN s.name AS service, f.path AS path LIMIT ${L.nestServices}`,
-      { projectId },
-    )) as Array<{ service?: string; path?: string }>;
-    for (const row of svcs) {
-      if (row.service)
-        business.push({ service: row.service, dependencies: row.path ? [row.path] : [] });
-    }
-  } catch {
-    /* ignore */
-  }
+    // 2. openapiPath
+    (async (): Promise<string | null> => {
+      try {
+        const oa = (await executeCypher(
+          projectId,
+          `MATCH (f:File {projectId: $projectId}) WHERE f.openApiTruth = true RETURN f.path AS path LIMIT ${L.openApiFileCandidates}`,
+          { projectId },
+        )) as Array<{ path?: string }>;
+        return oa[0]?.path ?? null;
+      } catch {
+        /* ignore */
+      }
+      return null;
+    })(),
 
-  let envVars: string[] = [];
-  const envContent = await getFileSnippet('.env.example');
-  if (envContent) envVars = parseEnvExampleKeys(envContent);
+    // 3. swaggerRelatedPaths
+    (async (): Promise<string[]> => {
+      try {
+        const sw = (await executeCypher(
+          projectId,
+          `MATCH (f:File {projectId: $projectId})
+           WHERE toLower(f.path) CONTAINS 'swagger'
+              OR toLower(f.path) CONTAINS 'openapi'
+           RETURN f.path AS path LIMIT ${L.swaggerRelatedFiles}`,
+          { projectId },
+        )) as Array<{ path?: string }>;
+        return uniq(
+          sw.map((r) => r.path).filter((p): p is string => typeof p === 'string' && p.length > 0),
+        );
+      } catch {
+        /* ignore */
+      }
+      return [];
+    })(),
 
+    // 4. apiFromSwagger (OpenApiOperation nodes)
+    (async (): Promise<
+      Array<{ route: string; methods: string[]; doc_source: 'swagger' | 'ast' }>
+    > => {
+      try {
+        const ops = (await executeCypher(
+          projectId,
+          `MATCH (op:OpenApiOperation {projectId: $projectId})
+           RETURN op.pathTemplate AS route, op.method AS method LIMIT ${L.openApiOperations}`,
+          { projectId },
+        )) as Array<{ route?: string; method?: string }>;
+        const byRoute = new Map<string, Set<string>>();
+        for (const row of ops) {
+          if (!row.route || !row.method) continue;
+          if (!byRoute.has(row.route)) byRoute.set(row.route, new Set());
+          byRoute.get(row.route)!.add(String(row.method).toUpperCase());
+        }
+        const result: Array<{ route: string; methods: string[]; doc_source: 'swagger' | 'ast' }> = [];
+        for (const [route, methods] of byRoute) {
+          result.push({ route, methods: [...methods], doc_source: 'swagger' });
+        }
+        return result;
+      } catch {
+        /* grafo sin OpenApiOperation */
+      }
+      return [];
+    })(),
+
+    // 5. apiFromAst (NestController nodes) — run unconditionally in parallel
+    (async (): Promise<
+      Array<{ route: string; methods: string[]; doc_source: 'swagger' | 'ast' }>
+    > => {
+      try {
+        const ctr = (await executeCypher(
+          projectId,
+          `MATCH (c:NestController {projectId: $projectId})
+           RETURN coalesce(c.route,'') AS prefix, c.name AS name LIMIT ${L.nestControllers}`,
+          { projectId },
+        )) as Array<{ prefix?: string | null; name?: string }>;
+        const result: Array<{ route: string; methods: string[]; doc_source: 'swagger' | 'ast' }> = [];
+        for (const row of ctr) {
+          const base = (row.prefix ?? '').replace(/^\/|\/$/g, '');
+          const route = base ? `/${base}` : '/';
+          result.push({ route, methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'], doc_source: 'ast' });
+        }
+        return result;
+      } catch {
+        /* ignore */
+      }
+      return [];
+    })(),
+
+    // 6. entities (Model nodes)
+    (async (): Promise<MddEvidenceDocument['entities']> => {
+      try {
+        const models = (await executeCypher(
+          projectId,
+          `MATCH (m:Model {projectId: $projectId})
+           RETURN m.name AS name, m.source AS source, m.fieldSummary AS fs LIMIT ${L.models}`,
+          { projectId },
+        )) as Array<{ name?: string; source?: string; fs?: string | null }>;
+        const result: MddEvidenceDocument['entities'] = [];
+        for (const row of models) {
+          if (!row.name) continue;
+          if (row.source !== 'prisma' && row.source !== 'typeorm' && !row.fs) continue;
+          const source = row.source === 'typeorm' ? 'typeorm' : 'prisma';
+          let fields: string[] = [];
+          if (row.fs) {
+            try {
+              fields = JSON.parse(row.fs) as string[];
+            } catch {
+              fields = [];
+            }
+          }
+          result.push({ name: row.name, source, fields });
+        }
+        return result;
+      } catch {
+        /* ignore */
+      }
+      return [];
+    })(),
+
+    // 7. business (NestService nodes)
+    (async (): Promise<MddEvidenceDocument['business_logic']> => {
+      try {
+        const svcs = (await executeCypher(
+          projectId,
+          `MATCH (f:File)-[:CONTAINS]->(s:NestService {projectId: $projectId})
+           RETURN s.name AS service, f.path AS path LIMIT ${L.nestServices}`,
+          { projectId },
+        )) as Array<{ service?: string; path?: string }>;
+        const result: MddEvidenceDocument['business_logic'] = [];
+        for (const row of svcs) {
+          if (row.service)
+            result.push({ service: row.service, dependencies: row.path ? [row.path] : [] });
+        }
+        return result;
+      } catch {
+        /* ignore */
+      }
+      return [];
+    })(),
+
+    // 8. envContent — read once, shared between envVars extraction and physicalPriority
+    (async (): Promise<string | null> => {
+      try {
+        return await getFileSnippet('.env.example');
+      } catch {
+        return null;
+      }
+    })(),
+  ]);
+
+  // ── Phase 2: Build the MDD object from parallel results ──────────────────────
+
+  // envVars from cached envContent
+  const envVars: string[] = envContent ? parseEnvExampleKeys(envContent) : [];
+
+  // evidence paths from gathered context + collected results
   const evidence_paths = pathsFromGathering(gatheredContext, collectedResults);
 
+  // physicalPriority files — reuse cached .env.example to avoid a second read
   const physicalPriority = [
     'package.json',
     'schema.prisma',
@@ -276,13 +330,17 @@ export async function buildMddEvidenceDocument(params: {
     '.env.example',
   ];
   for (const p of physicalPriority) {
-    const c = await getFileSnippet(p);
+    // Reuse the already-fetched .env.example content
+    const c = p === '.env.example' ? envContent : await getFileSnippet(p);
     if (c && c.length > 0 && !evidence_paths.includes(p)) evidence_paths.push(p);
   }
 
   const mergedEvidencePaths = uniq(evidence_paths);
   const supplementaryDocPaths = pickSupplementaryApiDocPaths(mergedEvidencePaths);
   const swaggerDeps = inferSwaggerDependencies(manifestDepKeys);
+
+  // Decide which API contracts to use: prefer swagger-derived, fall back to AST
+  const api_contracts = apiFromSwagger.length ? apiFromSwagger : apiFromAst;
 
   const trust: MddEvidenceDocument['openapi_spec']['trust_level'] =
     openapiPath && apiFromSwagger.length ? 'high' : openapiPath ? 'medium' : 'low';
@@ -340,7 +398,7 @@ export async function buildMddEvidenceDocument(params: {
       ...(openApiNotes ? { notes: openApiNotes } : {}),
     },
     entities,
-    api_contracts: apiFromSwagger.length ? apiFromSwagger : apiFromAst,
+    api_contracts,
     business_logic: business,
     infrastructure: {
       orm: inferOrmFromDeps(manifestDepKeys),
