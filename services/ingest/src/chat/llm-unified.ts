@@ -1,13 +1,13 @@
 /**
- * Ingest: solo OpenRouter (mismas env que orchestrator / The Forge).
+ * Ingest: LLM vía LLM_PROVIDER env (openrouter por defecto).
  * @see ../llm/llm-config.ts
  */
 import { resolveOpenRouterApiKey, resolveOpenRouterChatModel, OPENROUTER_DEFAULT_CHAT_MODEL } from '../llm/llm-config';
 
-export type IngestLlmId = 'openrouter';
+export type IngestLlmId = string;
 
 export function resolveIngestLlmProvider(): IngestLlmId {
-  return 'openrouter';
+  return process.env.LLM_PROVIDER?.trim() || 'openrouter';
 }
 
 export function resolveIngestLlmModel(_provider: IngestLlmId): string {

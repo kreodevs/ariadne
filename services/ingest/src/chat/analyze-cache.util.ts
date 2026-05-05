@@ -175,3 +175,75 @@ export type DiagnosticoExtrinsicLayerPayload = {
   outCallsOutsideEntries: [string, number][];
   callEdgesTruncated: boolean;
 };
+
+/* ------------------------------------------------------------------ */
+/*  Capa intrínseca (datos base del diagnóstico, sin scope)           */
+/* ------------------------------------------------------------------ */
+
+/** Clave LRU (memoria + Redis opcional) para la capa intrínseca del diagnóstico. */
+export function buildDiagnosticoIntrinsicLayerCacheKey(repositoryId: string, indexFingerprint: string): string {
+  return ['diag-intrinsic', repositoryId, indexFingerprint].join('|');
+}
+
+export function intrinsicLayerCacheDisabledFromEnv(): boolean {
+  const v = process.env.ANALYZE_INTRINSIC_LAYER_CACHE_DISABLED?.trim().toLowerCase();
+  return v === '1' || v === 'true' || v === 'yes';
+}
+
+export function intrinsicLayerCacheTtlMs(): number {
+  const raw = process.env.ANALYZE_INTRINSIC_LAYER_CACHE_TTL_MS?.trim();
+  const n = raw ? parseInt(raw, 10) : NaN;
+  return Number.isFinite(n) && n > 0 ? n : 3 * 60 * 1000;
+}
+
+export function intrinsicLayerCacheMaxEntries(): number {
+  const raw = process.env.ANALYZE_INTRINSIC_LAYER_CACHE_MAX_ENTRIES?.trim();
+  const n = raw ? parseInt(raw, 10) : NaN;
+  return Number.isFinite(n) && n > 0 ? Math.min(n, 200) : 30;
+}
+
+export function intrinsicLayerCacheRedisTtlSec(): number {
+  return Math.max(60, Math.ceil(intrinsicLayerCacheTtlMs() / 1000));
+}
+
+export function intrinsicLayerRedisDisabledFromEnv(): boolean {
+  const v = process.env.ANALYZE_INTRINSIC_LAYER_REDIS_DISABLED?.trim().toLowerCase();
+  return v === '1' || v === 'true' || v === 'yes';
+}
+
+/* ------------------------------------------------------------------ */
+/*  Caché de respuestas de chat                                       */
+/* ------------------------------------------------------------------ */
+
+export function buildChatCacheKey(params: {
+  repositoryId: string;
+  message: string;
+  scopeKey: string;
+  projectScope: boolean;
+  responseMode?: string;
+}): string {
+  const hash = createHash('sha256')
+    .update(params.message, 'utf8')
+    .digest('hex')
+    .slice(0, 16);
+  return [
+    'chat',
+    params.repositoryId,
+    params.projectScope ? 'p1' : 'p0',
+    params.responseMode ?? 'default',
+    params.scopeKey,
+    hash,
+  ].join('|');
+}
+
+export function chatCacheTtlMs(): number {
+  const raw = process.env.CHAT_CACHE_TTL_MS?.trim();
+  const n = raw ? parseInt(raw, 10) : NaN;
+  return Number.isFinite(n) && n > 0 ? Math.min(n, 60_000) : 30_000;
+}
+
+export function chatCacheMaxEntries(): number {
+  const raw = process.env.CHAT_CACHE_MAX_ENTRIES?.trim();
+  const n = raw ? parseInt(raw, 10) : NaN;
+  return Number.isFinite(n) && n > 0 ? Math.min(n, 200) : 50;
+}

@@ -135,6 +135,8 @@ services:
       - REDIS_URL=redis://redis:6379
       - NODE_ENV=production
       - LLM_MODEL=${LLM_MODEL:-}
+      - LLM_MODEL_INGEST=${LLM_MODEL_INGEST:-}
+      - LLM_PROVIDER=${LLM_PROVIDER:-openrouter}
       - LLM_API_KEY=${LLM_API_KEY:-}
       - LLM_TEMPERATURE=${LLM_TEMPERATURE:-}
       - EMBEDDING_PROVIDER=${EMBEDDING_PROVIDER:-openrouter}
@@ -176,6 +178,7 @@ services:
       - PORT=3001
       - ARIADNESPEC_API_URL=http://api:3000/api
       - LLM_MODEL=${LLM_MODEL:-}
+      - LLM_PROVIDER=${LLM_PROVIDER:-openrouter}
       - LLM_API_KEY=${LLM_API_KEY:-}
       - LLM_TEMPERATURE=${LLM_TEMPERATURE:-}
       - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}

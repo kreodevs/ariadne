@@ -55,31 +55,59 @@ export async function fetchDiagnosticoIntrinsicBase(params: {
   const scopeActive = isAnalyzeScopeActive(scope);
   const rp = { repoId: repositoryId };
 
-  const graphSummary = await cypher.getGraphSummary(repositoryId, true, true);
+  const [
+    graphSummary,
+    allFilesRows,
+    riskCandidates,
+    highCoupling,
+    noDescription,
+    componentProps,
+    antipatternsRaw,
+  ] = await Promise.all([
+    cypher.getGraphSummary(repositoryId, true, true),
+    cypher.executeCypher(
+      projectId,
+      `MATCH (f:File) WHERE f.projectId = $projectId AND f.repoId = $repoId RETURN f.path as path ORDER BY f.path`,
+      rp,
+    ) as Promise<Array<{ path: string }>>,
+    cypher.executeCypher(
+      projectId,
+      `MATCH (a:Function) WHERE a.projectId = $projectId AND a.repoId = $repoId
+       OPTIONAL MATCH (a)-[:CALLS]->(b:Function)
+       WITH a, collect(b) as outs
+       WITH a, size([x IN outs WHERE x IS NOT NULL AND x.repoId = $repoId]) as outCalls
+       RETURN a.path as path, a.name as name, outCalls, a.complexity as complexity, a.loc as loc, a.description as description`,
+      rp,
+    ) as Promise<Array<{ path: string; name: string; outCalls: number; complexity?: number; loc?: number; description?: string | null }>>,
+    cypher.executeCypher(
+      projectId,
+      `MATCH (a:Function)-[:CALLS]->(b:Function) WHERE a.projectId = $projectId AND b.projectId = $projectId
+       AND a.repoId = $repoId AND b.repoId = $repoId
+       WITH a, count(b) as outCalls
+       WHERE outCalls > 5
+       RETURN a.path as path, a.name as name, outCalls ORDER BY outCalls DESC`,
+      rp,
+    ) as Promise<Array<{ path: string; name: string; outCalls: number }>>,
+    cypher.executeCypher(
+      projectId,
+      `MATCH (n:Function) WHERE n.projectId = $projectId AND n.repoId = $repoId
+       AND (n.description IS NULL OR n.description = '')
+       RETURN n.path as path, n.name as name`,
+      rp,
+    ) as Promise<Array<{ path: string; name: string }>>,
+    cypher.executeCypher(
+      projectId,
+      `MATCH (f:File)-[:CONTAINS]->(c:Component)-[:HAS_PROP]->(p:Prop)
+       WHERE c.projectId = $projectId AND f.projectId = $projectId AND c.repoId = $repoId AND f.repoId = $repoId AND p.repoId = $repoId
+       WITH f.path as path, c.name as component, count(p) as propCount
+       WHERE propCount > 5
+       RETURN path, component, propCount ORDER BY propCount DESC`,
+      rp,
+    ) as Promise<Array<{ path: string; component: string; propCount: number }>>,
+    detectAntipatterns(repositoryId),
+  ]);
 
-  const allFilesRows = (await cypher.executeCypher(
-    projectId,
-    `MATCH (f:File) WHERE f.projectId = $projectId AND f.repoId = $repoId RETURN f.path as path ORDER BY f.path`,
-    rp,
-  )) as Array<{ path: string }>;
   const allIndexedFilePaths = allFilesRows.map((r) => r.path);
-
-  const riskCandidates = (await cypher.executeCypher(
-    projectId,
-    `MATCH (a:Function) WHERE a.projectId = $projectId AND a.repoId = $repoId
-     OPTIONAL MATCH (a)-[:CALLS]->(b:Function)
-     WITH a, collect(b) as outs
-     WITH a, size([x IN outs WHERE x IS NOT NULL AND x.repoId = $repoId]) as outCalls
-     RETURN a.path as path, a.name as name, outCalls, a.complexity as complexity, a.loc as loc, a.description as description`,
-    rp,
-  )) as Array<{
-    path: string;
-    name: string;
-    outCalls: number;
-    complexity?: number;
-    loc?: number;
-    description?: string | null;
-  }>;
 
   let riskRankedCore = riskCandidates
     .map((r) => ({
@@ -107,38 +135,11 @@ export async function fetchDiagnosticoIntrinsicBase(params: {
     riskRankedCore = riskRankedCore.filter((r) => inF(r.path));
   }
 
-  const highCoupling = (await cypher.executeCypher(
-    projectId,
-    `MATCH (a:Function)-[:CALLS]->(b:Function) WHERE a.projectId = $projectId AND b.projectId = $projectId
-     AND a.repoId = $repoId AND b.repoId = $repoId
-     WITH a, count(b) as outCalls
-     WHERE outCalls > 5
-     RETURN a.path as path, a.name as name, outCalls ORDER BY outCalls DESC`,
-    rp,
-  )) as Array<{ path: string; name: string; outCalls: number }>;
   const highCouplingScoped = scopeActive ? highCoupling.filter((r) => inF(r.path)) : highCoupling;
 
-  const noDescription = (await cypher.executeCypher(
-    projectId,
-    `MATCH (n:Function) WHERE n.projectId = $projectId AND n.repoId = $repoId
-     AND (n.description IS NULL OR n.description = '')
-     RETURN n.path as path, n.name as name`,
-    rp,
-  )) as Array<{ path: string; name: string }>;
   const noDescriptionScoped = scopeActive ? noDescription.filter((r) => inF(r.path)) : noDescription;
 
-  const componentProps = (await cypher.executeCypher(
-    projectId,
-    `MATCH (f:File)-[:CONTAINS]->(c:Component)-[:HAS_PROP]->(p:Prop)
-     WHERE c.projectId = $projectId AND f.projectId = $projectId AND c.repoId = $repoId AND f.repoId = $repoId AND p.repoId = $repoId
-     WITH f.path as path, c.name as component, count(p) as propCount
-     WHERE propCount > 5
-     RETURN path, component, propCount ORDER BY propCount DESC`,
-    rp,
-  )) as Array<{ path: string; component: string; propCount: number }>;
   const componentPropsScoped = scopeActive ? componentProps.filter((r) => inF(r.path)) : componentProps;
-
-  const antipatternsRaw = await detectAntipatterns(repositoryId);
 
   return {
     allIndexedFilePaths,

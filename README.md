@@ -91,6 +91,9 @@ A continuación se listan todas las variables de entorno organizadas por servici
 | `OPENROUTER_HTTP_REFERER` | — | ingest, orchestrator | HTTP Referer para OpenRouter |
 | `OPENROUTER_APP_TITLE` | — | ingest, orchestrator | Título de app para OpenRouter |
 | `LLM_MODEL` | — | ingest, orchestrator | **Homologado:** modelo único de chat (si no usas `OPENROUTER_CHAT_MODEL`). Compatibilidad. |
+| `LLM_PROVIDER` | `openrouter` | ingest, orchestrator | **Proveedor LLM.** Default: `openrouter`. En el futuro: `lemondata`, etc. El código no hardcodea el proveedor. |
+| `LLM_MODEL_INGEST` | — | ingest | **Modelo específico para ingest.** Prioridad sobre `LLM_MODEL` y `OPENROUTER_CHAT_MODEL`. |
+| `ORCHESTRATOR_LLM_MODEL` | — | orchestrator | **Modelo específico para orquestador.** Prioridad sobre `LLM_MODEL` y `OPENROUTER_CHAT_MODEL`. |
 | `LLM_API_KEY` | — | ingest, orchestrator | Alias de clave; preferir `OPENROUTER_API_KEY` |
 | `LLM_TEMPERATURE` | `0.1` | ingest, orchestrator | Temperatura del LLM |
 | `EMBEDDING_PROVIDER` | `openrouter` | ingest | Proveedor de embeddings (`openrouter` o `openai`) |
@@ -172,7 +175,7 @@ Estas variables controlan cómo se particionan los datos entre grafos FalkorDB.
 |---|---|---|
 | `PORT` | `3001` | Puerto HTTP |
 | `ARIADNESPEC_API_URL` | `http://api:3000/api` | URL de la API REST para consultas de grafo |
-| `ORCHESTRATOR_LLM_MODEL` | — | Modelo específico para el orquestador (si difiere del chat general) |
+| `ORCHESTRATOR_LLM_MODEL` | — | Modelo específico para el orquestador. Ver tabla Core arriba. |
 
 ---
 
@@ -221,11 +224,14 @@ Las únicas **obligatorias** en Dokploy son:
 
 | Servicio | Variables requeridas |
 |---|---|
-| **ingest** | `OPENROUTER_API_KEY`, `CREDENTIALS_ENCRYPTION_KEY` |
+| **ingest** | `OPENROUTER_API_KEY`, `LLM_PROVIDER`, `CREDENTIALS_ENCRYPTION_KEY` |
 | **api** | `JWT_SECRET` |
 | **mcp-ariadne** | _Ninguna obligatoria_ (opcional: `MCP_AUTH_TOKEN`) |
-| **orchestrator** | _Ninguna adicional_ (hereda `OPENROUTER_API_KEY` del ingest) |
+| **orchestrator** | `LLM_PROVIDER` |
 | **frontend** | `VITE_API_URL` (build arg) |
+
+> 💡 **Modelos LLM por componente:** `LLM_MODEL_INGEST` para ingest y `ORCHESTRATOR_LLM_MODEL` para el orquestador. Si no se definen, usan `LLM_MODEL` → `OPENROUTER_CHAT_MODEL` → default (`nousresearch/hermes-3-llama-3.1-405b`).
+> `LLM_PROVIDER` = `openrouter` por defecto. Para migrar a LemonData solo se cambia esta variable; el código no hardcodea el proveedor.
 
 Todo lo demás tiene defaults funcionales en `docker-compose.yml`.
 

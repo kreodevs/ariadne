@@ -78,14 +78,23 @@ import {
   analyzeCacheRedisTtlSec,
   analyzeCacheTtlMs,
   buildAnalyzeCacheKey,
+  buildChatCacheKey,
   buildDiagnosticoExtrinsicLayerCacheKey,
+  buildDiagnosticoIntrinsicLayerCacheKey,
   buildPartitionedIndexFingerprint,
+  chatCacheMaxEntries,
+  chatCacheTtlMs,
   extrinsicLayerCacheDisabledFromEnv,
   extrinsicLayerCacheMaxEntries,
   extrinsicLayerCacheRedisTtlSec,
   extrinsicLayerCacheTtlMs,
   extrinsicLayerRedisDisabledFromEnv,
   hashDegradedIndexState,
+  intrinsicLayerCacheDisabledFromEnv,
+  intrinsicLayerCacheMaxEntries,
+  intrinsicLayerCacheRedisTtlSec,
+  intrinsicLayerCacheTtlMs,
+  intrinsicLayerRedisDisabledFromEnv,
   stableScopeKeyForCache,
   type DiagnosticoExtrinsicLayerPayload,
   type IndexRowForFingerprint,
@@ -106,6 +115,7 @@ import {
   attachExtrinsicMetricsToRiskRows,
   buildDiagnosticoAntipatternsScoped,
   fetchDiagnosticoIntrinsicBase,
+  type DiagnosticoIntrinsicBase,
 } from './diagnostico-intrinsic-layer';
 import { appendDiagnosticoPathValidationFooter } from './diagnostico-validate.util';
 import { stripOuterMarkdownFence } from './markdown-fence.util';
@@ -348,9 +358,14 @@ export class ChatService {
   private readonly logger = new Logger(ChatService.name);
 
   private readonly analyzeResultCache = new Map<string, { storedAt: number; result: AnalyzeResult }>();
+  private readonly chatResultCache = new Map<string, { storedAt: number; result: ChatResponse }>();
   private readonly diagnosticoExtrinsicLayerCache = new Map<
     string,
     { storedAt: number; payload: DiagnosticoExtrinsicLayerPayload }
+  >();
+  private readonly diagnosticoIntrinsicLayerCache = new Map<
+    string,
+    { storedAt: number; payload: DiagnosticoIntrinsicBase }
   >();
 
   constructor(
@@ -458,6 +473,46 @@ export class ChatService {
     this.diagnosticoExtrinsicLayerCache.set(key, { storedAt: Date.now(), payload });
   }
 
+  private getDiagnosticoIntrinsicLayerCache(key: string): DiagnosticoIntrinsicBase | undefined {
+    const e = this.diagnosticoIntrinsicLayerCache.get(key);
+    if (!e) return undefined;
+    if (Date.now() - e.storedAt > intrinsicLayerCacheTtlMs()) {
+      this.diagnosticoIntrinsicLayerCache.delete(key);
+      return undefined;
+    }
+    return e.payload;
+  }
+
+  private setDiagnosticoIntrinsicLayerCache(key: string, payload: DiagnosticoIntrinsicBase): void {
+    const max = intrinsicLayerCacheMaxEntries();
+    while (this.diagnosticoIntrinsicLayerCache.size >= max) {
+      const first = this.diagnosticoIntrinsicLayerCache.keys().next().value as string | undefined;
+      if (!first) break;
+      this.diagnosticoIntrinsicLayerCache.delete(first);
+    }
+    this.diagnosticoIntrinsicLayerCache.set(key, { storedAt: Date.now(), payload });
+  }
+
+  private getChatResultCache(key: string): ChatResponse | undefined {
+    const e = this.chatResultCache.get(key);
+    if (!e) return undefined;
+    if (Date.now() - e.storedAt > chatCacheTtlMs()) {
+      this.chatResultCache.delete(key);
+      return undefined;
+    }
+    return e.result;
+  }
+
+  private setChatResultCache(key: string, result: ChatResponse): void {
+    const max = chatCacheMaxEntries();
+    while (this.chatResultCache.size >= max) {
+      const first = this.chatResultCache.keys().next().value as string | undefined;
+      if (!first) break;
+      this.chatResultCache.delete(first);
+    }
+    this.chatResultCache.set(key, { storedAt: Date.now(), result });
+  }
+
   private mergeAnalyzeReportMeta(
     result: AnalyzeResult,
     extras: Partial<
@@ -493,13 +548,62 @@ export class ChatService {
     const projectId = await this.resolveProjectIdForRepo(repo.id);
     const scopeActive = isAnalyzeScopeActive(scope);
 
-    const intrinsic = await fetchDiagnosticoIntrinsicBase({
-      projectId,
+    /* Intrinsic layer: datos base del repo (sin scope) con caché LRU + Redis */
+    let intrinsic!: DiagnosticoIntrinsicBase;
+    let intrinsicLayerCacheHit = false;
+    const lastSha = repo.lastCommitSha ?? null;
+    const { fingerprint: indexFp } = await this.getIndexFingerprintForAnalyzeCache(
       repositoryId,
-      scope,
-      cypher: this.cypher,
-      detectAntipatterns: (rid) => this.antipatterns.detectAntipatterns(rid),
-    });
+      lastSha,
+      undefined, // sin scope = huella no particionada (datos intrínsecos no dependen del foco)
+    );
+    const intrinsicKey = buildDiagnosticoIntrinsicLayerCacheKey(repositoryId, indexFp);
+
+    if (!intrinsicLayerCacheDisabledFromEnv()) {
+      const memHit = this.getDiagnosticoIntrinsicLayerCache(intrinsicKey);
+      if (memHit) {
+        intrinsic = memHit;
+        intrinsicLayerCacheHit = true;
+      } else if (
+        !intrinsicLayerRedisDisabledFromEnv() &&
+        this.analyzeDistributedCache.isEnabled()
+      ) {
+        const rawRedis = await this.analyzeDistributedCache.getJson(intrinsicKey);
+        if (rawRedis) {
+          try {
+            const parsed = JSON.parse(rawRedis) as DiagnosticoIntrinsicBase;
+            if (parsed && Array.isArray(parsed.allIndexedFilePaths)) {
+              intrinsic = parsed;
+              intrinsicLayerCacheHit = true;
+              this.setDiagnosticoIntrinsicLayerCache(intrinsicKey, parsed);
+            }
+          } catch {
+            /* ignore */
+          }
+        }
+      }
+    }
+
+    if (!intrinsicLayerCacheHit) {
+      intrinsic = await fetchDiagnosticoIntrinsicBase({
+        projectId,
+        repositoryId,
+        scope,
+        cypher: this.cypher,
+        detectAntipatterns: (rid) => this.antipatterns.detectAntipatterns(rid),
+      });
+      if (!intrinsicLayerCacheDisabledFromEnv()) {
+        this.setDiagnosticoIntrinsicLayerCache(intrinsicKey, intrinsic);
+        if (!intrinsicLayerRedisDisabledFromEnv() && this.analyzeDistributedCache.isEnabled()) {
+          await this.analyzeDistributedCache.setJson(
+            intrinsicKey,
+            JSON.stringify(intrinsic),
+            intrinsicLayerCacheRedisTtlSec(),
+          );
+        }
+      }
+    }
+
     const {
       allIndexedFilePaths,
       graphSummary,
@@ -2981,8 +3085,21 @@ PROHIBIDO: instrucciones genéricas tipo "revisa los controladores", "asegúrate
       .map((m) => `${m.role}: ${m.content}`)
       .join('\n');
 
+    /* Chat result cache: misma pregunta → misma respuesta (TTL ~30s) */
+    if (!req.history?.length) {
+      const cacheKey = buildChatCacheKey({
+        repositoryId,
+        message: req.message,
+        scopeKey: stableScopeKeyForCache(req.scope),
+        projectScope: false,
+        responseMode: req.responseMode,
+      });
+      const cached = this.getChatResultCache(cacheKey);
+      if (cached) return cached;
+    }
+
     try {
-      return await this.runUnifiedPipeline(
+      const result = await this.runUnifiedPipeline(
         repositoryId,
         projectId,
         req.message,
@@ -2994,6 +3111,18 @@ PROHIBIDO: instrucciones genéricas tipo "revisa los controladores", "asegúrate
           deterministicRetriever: req.deterministicRetriever,
         },
       );
+      /* Cachear solo preguntas sin historial (las respuestas son deterministas para el mismo mensaje) */
+      if (!req.history?.length) {
+        const cacheKey = buildChatCacheKey({
+          repositoryId,
+          message: req.message,
+          scopeKey: stableScopeKeyForCache(req.scope),
+          projectScope: false,
+          responseMode: req.responseMode,
+        });
+        this.setChatResultCache(cacheKey, result);
+      }
+      return result;
     } catch (err) {
       recordChatPipelineError();
       const msg = err instanceof Error ? err.message : String(err);
@@ -3263,51 +3392,57 @@ PROHIBIDO: instrucciones genéricas tipo "revisa los controladores", "asegúrate
       collectedToolOutputs.push(`[deterministic:${label}]\n${r.toolResult}`);
     };
 
-    await pushTool('get_graph_summary', {
-      projectScope: ps,
-      scope,
-      tool: 'get_graph_summary',
-      arguments: {},
-      evidenceVerbosity,
-    });
     const q = message.trim().slice(0, 4000);
-    if (ps) {
-      const maxFanRaw = parseInt(process.env.CHAT_DETERMINISTIC_SEMANTIC_REPO_MAX ?? '24', 10);
-      const maxFan = Math.min(50, Math.max(1, Number.isFinite(maxFanRaw) ? maxFanRaw : 24));
-      const projectRepos = await this.repos.findAll(projectId);
-      let repoIds = projectRepos.map((r) => r.id);
-      if (scope?.repoIds?.length) {
-        const allow = new Set(scope.repoIds);
-        repoIds = repoIds.filter((id) => allow.has(id));
-      }
-      if (repoIds.length === 0) repoIds = [repositoryId];
-      repoIds = repoIds.slice(0, maxFan);
-      await Promise.all(repoIds.map((rid) =>
-        pushTool(`semantic_search:${rid}`, {
-          projectScope: false,
-          scope,
-          tool: 'semantic_search',
-          arguments: { query: q },
-          fallbackMessage: q,
-          evidenceVerbosity,
-          embeddingRepositoryId: rid,
-          semanticRestrictRepoId: rid,
-        }),
-      ));
-    } else {
-      await pushTool('semantic_search', {
-        projectScope: false,
+
+    /* Los 3 bloques (graph_summary, semantic_search, file_path_sample) son independientes → en paralelo */
+    await Promise.all([
+      pushTool('get_graph_summary', {
+        projectScope: ps,
         scope,
-        tool: 'semantic_search',
-        arguments: { query: q },
-        fallbackMessage: q,
+        tool: 'get_graph_summary',
+        arguments: {},
         evidenceVerbosity,
-      });
-    }
-    const limRaw = parseInt(process.env.CHAT_DETERMINISTIC_FILE_SAMPLE_LIMIT ?? '400', 10);
-    const fileLimit = Math.min(2000, Math.max(20, Number.isFinite(limRaw) ? limRaw : 400));
-    const p = 'toLower(f.path)';
-    const dbRelatedWhere = `(
+      }),
+      (async () => {
+        if (ps) {
+          const maxFanRaw = parseInt(process.env.CHAT_DETERMINISTIC_SEMANTIC_REPO_MAX ?? '24', 10);
+          const maxFan = Math.min(50, Math.max(1, Number.isFinite(maxFanRaw) ? maxFanRaw : 24));
+          const projectRepos = await this.repos.findAll(projectId);
+          let repoIds = projectRepos.map((r) => r.id);
+          if (scope?.repoIds?.length) {
+            const allow = new Set(scope.repoIds);
+            repoIds = repoIds.filter((id) => allow.has(id));
+          }
+          if (repoIds.length === 0) repoIds = [repositoryId];
+          repoIds = repoIds.slice(0, maxFan);
+          await Promise.all(repoIds.map((rid) =>
+            pushTool(`semantic_search:${rid}`, {
+              projectScope: false,
+              scope,
+              tool: 'semantic_search',
+              arguments: { query: q },
+              fallbackMessage: q,
+              evidenceVerbosity,
+              embeddingRepositoryId: rid,
+              semanticRestrictRepoId: rid,
+            }),
+          ));
+        } else {
+          await pushTool('semantic_search', {
+            projectScope: false,
+            scope,
+            tool: 'semantic_search',
+            arguments: { query: q },
+            fallbackMessage: q,
+            evidenceVerbosity,
+          });
+        }
+      })(),
+      (async () => {
+        const limRaw = parseInt(process.env.CHAT_DETERMINISTIC_FILE_SAMPLE_LIMIT ?? '400', 10);
+        const fileLimit = Math.min(2000, Math.max(20, Number.isFinite(limRaw) ? limRaw : 400));
+        const p = 'toLower(f.path)';
+        const dbRelatedWhere = `(
   ${p} ENDS WITH '.prisma'
   OR ${p} ENDS WITH '.entity.ts' OR ${p} ENDS WITH '.entity.tsx'
   OR ${p} CONTAINS '/entities/'
@@ -3315,18 +3450,20 @@ PROHIBIDO: instrucciones genéricas tipo "revisa los controladores", "asegúrate
   OR ${p} CONTAINS '/migrations/' OR ${p} CONTAINS '/migration/'
   OR f.path = ${cypherSafe(SCHEMA_RELATIONAL_RAG_SOURCE_PATH)}
 )`;
-    const matchFile = ps
-      ? `MATCH (f:File {projectId: $projectId}) WHERE ${dbRelatedWhere}`
-      : `MATCH (f:File {projectId: $projectId, repoId: ${cypherSafe(repositoryId)}}) WHERE ${dbRelatedWhere}`;
-    const cypher = `${matchFile} RETURN DISTINCT f.path AS path ORDER BY f.path LIMIT ${fileLimit}`;
-    await pushTool('file_path_sample', {
-      projectScope: ps,
-      scope,
-      tool: 'execute_cypher',
-      arguments: { cypher },
-      fallbackMessage: message,
-      evidenceVerbosity,
-    });
+        const matchFile = ps
+          ? `MATCH (f:File {projectId: $projectId}) WHERE ${dbRelatedWhere}`
+          : `MATCH (f:File {projectId: $projectId, repoId: ${cypherSafe(repositoryId)}}) WHERE ${dbRelatedWhere}`;
+        const cypher = `${matchFile} RETURN DISTINCT f.path AS path ORDER BY f.path LIMIT ${fileLimit}`;
+        await pushTool('file_path_sample', {
+          projectScope: ps,
+          scope,
+          tool: 'execute_cypher',
+          arguments: { cypher },
+          fallbackMessage: message,
+          evidenceVerbosity,
+        });
+      })(),
+    ]);
 
     return { collectedToolOutputs, collectedResults, lastCypher };
   }
@@ -3421,7 +3558,7 @@ PROHIBIDO: instrucciones genéricas tipo "revisa los controladores", "asegúrate
     } else {
       const maxRetrieverTurns = rawEvidence
         ? Math.min(20, Math.max(4, parseInt(process.env.CHAT_RAW_EVIDENCE_RETRIEVER_MAX_TURNS ?? '10', 10) || 10))
-        : 4;
+        : Math.max(1, parseInt(process.env.CHAT_RETRIEVER_MAX_TURNS ?? '2', 10) || 2);
       const tools = EXPLORER_TOOLS_ALL;
       const retrieverSystem = `<instrucciones>
 Actúa como **Coordinador** y **Validador** (ask_codebase agéntico).
@@ -3491,29 +3628,45 @@ ${SCHEMA}${EXAMPLES}
           break;
         }
 
+        /* Ejecutar tool_calls del LLM en paralelo (independientes entre sí) */
+        const toolResults = await Promise.all(
+          (resp.tool_calls ?? []).map(async (tc) => {
+            const fn = tc.function;
+            let toolResult: string;
+            let lastCypherLocal: string | undefined;
+            const collectedLocal: unknown[] = [];
+            try {
+              const args = JSON.parse(fn.arguments) as Record<string, unknown>;
+              const r = await this.retrieverTools.executeTool(repositoryId, projectId, {
+                projectScope: options?.projectScope,
+                scope,
+                tool: fn.name as RetrieverToolName,
+                arguments: args,
+                fallbackMessage: message,
+                evidenceVerbosity,
+              });
+              if (r.lastCypher) lastCypherLocal = r.lastCypher;
+              collectedLocal.push(...r.collectedRows);
+              toolResult = r.toolResult;
+            } catch (err) {
+              toolResult = `Error: ${err instanceof Error ? err.message : String(err)}`;
+            }
+            return { id: tc.id, toolResult, lastCypherLocal, collectedLocal };
+          }),
+        );
+
+        /* Fusionar resultados en el orden original de tool_calls */
+        for (const tr of toolResults) {
+          if (tr.lastCypherLocal) lastCypher = tr.lastCypherLocal;
+          collectedResults.push(...tr.collectedLocal);
+          collectedToolOutputs.push(tr.toolResult);
+        }
+        /* Agregar assistant + tool messages en orden */
         for (const tc of resp.tool_calls) {
-          const fn = tc.function;
-          let toolResult: string;
-          try {
-            const args = JSON.parse(fn.arguments) as Record<string, unknown>;
-            const r = await this.retrieverTools.executeTool(repositoryId, projectId, {
-              projectScope: options?.projectScope,
-              scope,
-              tool: fn.name as RetrieverToolName,
-              arguments: args,
-              fallbackMessage: message,
-              evidenceVerbosity,
-            });
-            if (r.lastCypher) lastCypher = r.lastCypher;
-            collectedResults.push(...r.collectedRows);
-            toolResult = r.toolResult;
-          } catch (err) {
-            toolResult = `Error: ${err instanceof Error ? err.message : String(err)}`;
-          }
-          collectedToolOutputs.push(toolResult);
+          const tr = toolResults.find((t) => t.id === tc.id);
           messages.push(
             { role: 'assistant', content: null, tool_calls: [tc] },
-            { role: 'tool', tool_call_id: tc.id, content: toolResult },
+            { role: 'tool', tool_call_id: tc.id, content: tr?.toolResult ?? 'Error: resultado no encontrado' },
           );
         }
       }

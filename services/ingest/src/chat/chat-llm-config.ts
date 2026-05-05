@@ -4,7 +4,7 @@ import {
   resolveIngestLlmProvider,
 } from './llm-unified';
 
-export type IngestChatLlmProvider = 'openrouter';
+export type IngestChatLlmProvider = string;
 
 export function resolveIngestChatLlmProvider(): IngestChatLlmProvider {
   return resolveIngestLlmProvider();

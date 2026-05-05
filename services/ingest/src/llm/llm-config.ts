@@ -31,6 +31,7 @@ export function openRouterDefaultHeaders(): Record<string, string> | undefined {
 
 export function resolveOpenRouterChatModel(): string {
   return (
+    process.env.LLM_MODEL_INGEST?.trim() ||
     process.env.LLM_MODEL?.trim() ||
     process.env.OPENROUTER_CHAT_MODEL?.trim() ||
     process.env.CHAT_MODEL?.trim() ||
