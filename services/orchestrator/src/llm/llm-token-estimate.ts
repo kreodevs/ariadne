@@ -1,4 +1,4 @@
-import type { OpenAiStyleMessage } from './openai-llm.adapter';
+import type { LlmMessage } from './llm.adapter';
 
 /** Heurística barata (chars → tokens); código suele ser más denso que prose. */
 function charsToTokens(chars: number): number {
@@ -11,8 +11,8 @@ function stringLen(s: string | null | undefined): number {
 }
 
 /** Estima tokens enviados en `messages` + `tools` + cupo de salida `maxTokens` (TPM suele contar ambos). */
-export function estimateOpenAiStylePayloadTokens(
-  messages: OpenAiStyleMessage[],
+export function estimateLlmPayloadTokens(
+  messages: LlmMessage[],
   tools: unknown[] | undefined,
   maxTokens: number,
 ): number {

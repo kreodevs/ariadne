@@ -5,7 +5,7 @@ import {
   resolveLlmBaseUrl,
 } from './llm-config';
 
-export type OpenAiStyleMessage =
+export type LlmMessage =
   | { role: 'user' | 'assistant' | 'system'; content: string }
   | {
       role: 'assistant';
@@ -15,7 +15,7 @@ export type OpenAiStyleMessage =
     }
   | { role: 'tool'; tool_call_id: string; content: string };
 
-export function stripReasoningFromMessages(messages: OpenAiStyleMessage[]): OpenAiStyleMessage[] {
+export function stripReasoningFromMessages(messages: LlmMessage[]): LlmMessage[] {
   return messages.map((m) => {
     if (m.role !== 'assistant' || !('reasoning_content' in m)) return m;
     const { reasoning_content: _r, ...rest } = m as {
@@ -24,7 +24,7 @@ export function stripReasoningFromMessages(messages: OpenAiStyleMessage[]): Open
       content?: string | null;
       tool_calls?: Array<{ id: string; function: { name: string; arguments: string } }>;
     };
-    return rest as OpenAiStyleMessage;
+    return rest as LlmMessage;
   });
 }
 
@@ -45,7 +45,7 @@ function buildAuthHeaders(): Record<string, string> {
   };
 }
 
-export async function openaiCallLlm(
+export async function callLlm(
   messages: Array<{ role: 'user' | 'assistant' | 'system'; content: string }>,
   maxTokens: number,
 ): Promise<string> {
@@ -70,8 +70,8 @@ export async function openaiCallLlm(
   return content ?? '';
 }
 
-export async function openaiCallLlmWithTools(
-  messages: OpenAiStyleMessage[],
+export async function callLlmWithTools(
+  messages: LlmMessage[],
   tools: unknown[],
   maxTokens: number,
 ): Promise<{
@@ -123,7 +123,7 @@ export async function openaiCallLlmWithTools(
 }
 
 /** Chat simple system+user (workflow SDD). */
-export async function openaiChatSimple(system: string, user: string): Promise<string> {
+export async function chatSimple(system: string, user: string): Promise<string> {
   const key = resolveLlmApiKey();
   if (!key) return '';
   const res = await fetch(chatCompletionsUrl(), {
