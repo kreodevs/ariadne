@@ -9,6 +9,7 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { Layout } from './components/Layout';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { Login } from './pages/Login';
+import { SetupPage } from './pages/SetupPage';
 import { ProjectList } from './pages/ProjectList';
 import { ProjectDetail } from './pages/ProjectDetail';
 import { ProjectChat } from './pages/ProjectChat';
@@ -38,6 +39,7 @@ function App() {
     <BrowserRouter>
       <Routes>
         <Route path="/login" element={<Login />} />
+        <Route path="/setup" element={<SetupPage />} />
         <Route path="/error" element={<ErrorPage />} />
         <Route path="/*" element={<Layout />}>
           {/* `/` → `/dashboard` sin pasar por auth; las rutas protegidas exigen JWT al entrar en cada vista */}

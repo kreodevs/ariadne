@@ -1,5 +1,6 @@
 /**
  * Página de login con OTP: email → código.
+ * Si no hay usuarios registrados, redirige a /setup.
  */
 import { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
@@ -21,7 +22,7 @@ const API_BASE =
     '',
   ) + '/api';
 
-type Step = 'email' | 'code' | 'sso' | 'register';
+type Step = 'email' | 'code' | 'sso';
 
 export function Login() {
   const navigate = useNavigate();
@@ -33,68 +34,31 @@ export function Login() {
   const [error, setError] = useState<string | null>(null);
   const [devCode, setDevCode] = useState<string | null>(null);
   const [ssoEnabled, setSsoEnabled] = useState(false);
-  const [needsSetup, setNeedsSetup] = useState<boolean | null>(null);
-  const [setupName, setSetupName] = useState('');
 
   // Check for SSO config, SSO redirect token, and if setup is needed
   useEffect(() => {
-    // Check SSO via import.meta.env
     const ssoUrl = import.meta.env.VITE_SSO_URL as string;
     if (ssoUrl?.trim()) {
       setSsoEnabled(true);
     }
 
-    // Handle SSO redirect back with token
     const ssoToken = searchParams.get('sso_token');
     if (ssoToken) {
       handleSsoLogin(ssoToken);
     }
 
-    // Check if users exist
-    checkHasUsers();
+    checkNeedsSetup();
   }, [searchParams]);
 
-  const checkHasUsers = async () => {
+  const checkNeedsSetup = async () => {
     try {
       const res = await fetch(`${API_BASE}/auth/has-users`);
       const data = await res.json() as { hasUsers?: boolean };
       if (data.hasUsers === false) {
-        setNeedsSetup(true);
-        setStep('register');
-      } else {
-        setNeedsSetup(false);
+        navigate('/setup', { replace: true });
       }
     } catch {
-      setNeedsSetup(false);
-    }
-  };
-
-  const handleRegisterFirstAdmin = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!email.trim()) {
-      setError('Email requerido');
-      return;
-    }
-    setLoading(true);
-    setError(null);
-    try {
-      const res = await fetch(`${API_BASE}/auth/register-first-admin`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: email.trim(), name: setupName.trim() || undefined }),
-      });
-      const data = await res.json();
-      if (data?.created && data?.user) {
-        setStep('email');
-        setNeedsSetup(false);
-        setError(null);
-      } else {
-        setError(data?.message || 'Error al crear administrador');
-      }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Error de conexión');
-    } finally {
-      setLoading(false);
+      // Si falla la consulta, continuar con login normal
     }
   };
 
@@ -158,11 +122,8 @@ export function Login() {
     try {
       const result = await verifyOtp(email.trim(), code.trim());
       if (result.valid && result.token) {
-        // setToken guarda automáticamente el user desde el JWT
         if (result.user) {
-          // Si la API devuelve user, lo usamos directamente
           setToken(result.token);
-          // Forzar actualización guardando user explícitamente
           localStorage.setItem('ariadne_user', JSON.stringify(result.user));
         } else {
           setToken(result.token);
@@ -203,46 +164,7 @@ export function Login() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          {needsSetup === null ? (
-            <p className="text-muted-foreground text-sm">Cargando...</p>
-          ) : step === 'register' ? (
-            <form onSubmit={handleRegisterFirstAdmin} className="space-y-4">
-              <p className="text-sm text-amber-600 dark:text-amber-400 font-medium">
-                ⚙️ No hay usuarios registrados. Crea el primer administrador.
-              </p>
-              <div>
-                <Label htmlFor="setup-email">Email</Label>
-                <Input
-                  id="setup-email"
-                  type="email"
-                  placeholder="admin@email.com"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  disabled={loading}
-                  autoFocus
-                  className="mt-2"
-                />
-              </div>
-              <div>
-                <Label htmlFor="setup-name">Nombre (opcional)</Label>
-                <Input
-                  id="setup-name"
-                  type="text"
-                  placeholder="Tu nombre"
-                  value={setupName}
-                  onChange={(e) => setSetupName(e.target.value)}
-                  disabled={loading}
-                  className="mt-2"
-                />
-              </div>
-              {error && (
-                <p className="text-destructive text-sm">{error}</p>
-              )}
-              <Button type="submit" className="w-full" disabled={loading}>
-                {loading ? 'Creando...' : 'Crear administrador'}
-              </Button>
-            </form>
-          ) : step === 'email' ? (
+          {step === 'email' ? (
             <>
             <form onSubmit={handleRequestOtp} className="space-y-4">
               <div>
