@@ -1,8 +1,8 @@
 /**
- * LLM vía LLM_PROVIDER env (openrouter por defecto). Variables: OPENROUTER_API_KEY, OPENROUTER_CHAT_MODEL, LLM_MODEL, etc.
+ * LLM vía LLM_PROVIDER env (openrouter por defecto). Variables: LLM_API_KEY, OPENROUTER_CHAT_MODEL, LLM_MODEL, etc.
  * @see llm-config.ts
  */
-import { OPENROUTER_DEFAULT_CHAT_MODEL, resolveOpenRouterApiKey } from './llm-config';
+import { OPENROUTER_DEFAULT_CHAT_MODEL, resolveLlmApiKey } from './llm-config';
 
 export type UnifiedLlmProvider = string;
 
@@ -21,11 +21,11 @@ export function resolveLlmModel(_provider: UnifiedLlmProvider): string {
 }
 
 export function hasLlmCredentials(_provider: UnifiedLlmProvider): boolean {
-  return Boolean(resolveOpenRouterApiKey());
+  return Boolean(resolveLlmApiKey());
 }
 
-/** @deprecated Claves directas a proveedores eliminadas; usar resolveOpenRouterApiKey en llm-config. */
+/** @deprecated Claves directas a proveedores eliminadas; usar resolveLlmApiKey en llm-config. */
 export function openAiApiKeyForLlm(): string | null {
-  const k = resolveOpenRouterApiKey();
+  const k = resolveLlmApiKey();
   return k || null;
 }

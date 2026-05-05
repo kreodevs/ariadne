@@ -6,15 +6,10 @@ export const OPENROUTER_DEFAULT_BASE = 'https://openrouter.ai/api/v1';
 export const OPENROUTER_DEFAULT_CHAT_MODEL = 'nousresearch/hermes-3-llama-3.1-405b';
 
 /**
- * Clave OpenRouter. Prioridad: OPENROUTER_API_KEY → AI_API_KEY → OPENAI_API_KEY (legacy).
+ * Clave LLM. Lee solo LLM_API_KEY.
  */
-export function resolveOpenRouterApiKey(): string {
-  return (
-    process.env.OPENROUTER_API_KEY?.trim() ??
-    process.env.AI_API_KEY?.trim() ??
-    process.env.OPENAI_API_KEY?.trim() ??
-    ''
-  );
+export function resolveLlmApiKey(): string {
+  return process.env.LLM_API_KEY?.trim() ?? '';
 }
 
 export function resolveOpenRouterBaseUrl(): string {

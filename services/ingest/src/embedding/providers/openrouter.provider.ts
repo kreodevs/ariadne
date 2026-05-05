@@ -5,7 +5,7 @@ import type { EmbeddingProvider } from '../embedding.interface';
 import {
   defaultEmbeddingDimension,
   openRouterDefaultHeaders,
-  resolveOpenRouterApiKey,
+  resolveLlmApiKey,
   resolveOpenRouterBaseUrl,
   resolveOpenRouterEmbeddingModel,
 } from '../../llm/llm-config';
@@ -29,7 +29,7 @@ export class OpenRouterEmbeddingProvider implements EmbeddingProvider {
   private readonly dimension: number;
 
   constructor(opts?: OpenRouterEmbeddingProviderOptions) {
-    this.apiKey = resolveOpenRouterApiKey();
+    this.apiKey = resolveLlmApiKey();
     this.model = (opts?.model?.trim() || resolveOpenRouterEmbeddingModel()).trim();
     this.dimension = opts?.dimensions ?? defaultEmbeddingDimension();
   }
@@ -44,7 +44,7 @@ export class OpenRouterEmbeddingProvider implements EmbeddingProvider {
 
   async embed(text: string): Promise<number[]> {
     if (!this.apiKey) {
-      throw new Error('OPENROUTER_API_KEY (or AI_API_KEY / OPENAI_API_KEY) required for OpenRouter embeddings');
+      throw new Error('LLM_API_KEY required for OpenRouter embeddings');
     }
     const base = resolveOpenRouterBaseUrl().replace(/\/$/, '');
     const body: Record<string, unknown> = {

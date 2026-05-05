@@ -1,7 +1,7 @@
 import { orchestratorLlmModel } from './orchestrator-llm-config';
 import {
   openRouterDefaultHeaders,
-  resolveOpenRouterApiKey,
+  resolveLlmApiKey,
   resolveOpenRouterBaseUrl,
 } from './llm-config';
 
@@ -33,9 +33,9 @@ function chatCompletionsUrl(): string {
 }
 
 function buildAuthHeaders(): Record<string, string> {
-  const key = resolveOpenRouterApiKey();
+  const key = resolveLlmApiKey();
   if (!key) {
-    throw new Error('OPENROUTER_API_KEY (o AI_API_KEY / OPENAI_API_KEY) no configurada.');
+    throw new Error('LLM_API_KEY no configurada.');
   }
   const extra = openRouterDefaultHeaders();
   return {
@@ -124,7 +124,7 @@ export async function openaiCallLlmWithTools(
 
 /** Chat simple system+user (workflow SDD). */
 export async function openaiChatSimple(system: string, user: string): Promise<string> {
-  const key = resolveOpenRouterApiKey();
+  const key = resolveLlmApiKey();
   if (!key) return '';
   const res = await fetch(chatCompletionsUrl(), {
     method: 'POST',

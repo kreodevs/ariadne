@@ -5,7 +5,7 @@ import { Injectable } from '@nestjs/common';
 import { ingestChatLlmModel } from './chat-llm-config';
 import {
   openRouterDefaultHeaders,
-  resolveOpenRouterApiKey,
+  resolveLlmApiKey,
   resolveOpenRouterBaseUrl,
 } from '../llm/llm-config';
 
@@ -22,9 +22,9 @@ function chatUrl(): string {
 }
 
 function authHeaders(): Record<string, string> {
-  const key = resolveOpenRouterApiKey();
+  const key = resolveLlmApiKey();
   if (!key) {
-    throw new Error('OPENROUTER_API_KEY (o AI_API_KEY / OPENAI_API_KEY) no configurada. Necesaria para chat.');
+    throw new Error('LLM_API_KEY no configurada. Necesaria para chat.');
   }
   const extra = openRouterDefaultHeaders();
   return {

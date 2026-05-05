@@ -83,19 +83,18 @@ A continuación se listan todas las variables de entorno organizadas por servici
 | `FALKORDB_PORT` | `6379` | ingest, api, mcp-ariadne | Puerto de FalkorDB |
 | `REDIS_URL` | `redis://redis:6379` | ingest, api, orchestrator | Redis para cola BullMQ (ingest), caché (api, orchestrator) |
 | `CORS_ORIGIN` | — | ingest, api | Origen permitido para CORS (ej. `https://ariadne.kreoint.mx`) |
-| `OPENROUTER_API_KEY` | — | ingest, orchestrator | **Clave principal** para chat y embeddings. Aliases: `AI_API_KEY`, `OPENAI_API_KEY` |
-| `OPENROUTER_BASE_URL` | `https://openrouter.ai/api/v1` | ingest, orchestrator | URL base de OpenRouter |
-| `OPENROUTER_CHAT_MODEL` | `nousresearch/hermes-3-llama-3.1-405b` | ingest, orchestrator | Modelo de chat |
+| `LLM_API_KEY` | — | ingest, orchestrator | **Clave única para LLM** (OpenRouter, LemonData, etc.). Unifica OPENROUTER_API_KEY, AI_API_KEY, OPENAI_API_KEY. |
+| `LLM_PROVIDER` | `openrouter` | ingest, orchestrator | **Proveedor LLM.** Default: `openrouter`. Para migrar a LemonData: cambiar aquí. |
+| `LLM_MODEL` | — | ingest, orchestrator | Modelo único de chat. Prioridad 2 tras `LLM_MODEL_INGEST` / `ORCHESTRATOR_LLM_MODEL`. |
+| `LLM_MODEL_INGEST` | — | ingest | **Modelo específico para ingest.** Prioridad sobre `LLM_MODEL`. |
+| `ORCHESTRATOR_LLM_MODEL` | — | orchestrator | **Modelo específico para orquestador.** Prioridad sobre `LLM_MODEL`. |
+| `LLM_TEMPERATURE` | `0.1` | ingest, orchestrator | Temperatura del LLM |
+| `OPENROUTER_BASE_URL` | `https://openrouter.ai/api/v1` | ingest, orchestrator | URL base de OpenRouter (válido mientras `LLM_PROVIDER=openrouter`) |
+| `OPENROUTER_CHAT_MODEL` | `nousresearch/hermes-3-llama-3.1-405b` | ingest, orchestrator | Modelo de chat (fallback global) |
 | `OPENROUTER_EMBEDDING_MODEL` | `openai/text-embedding-3-small` | ingest | Modelo de embeddings |
 | `OPENAI_EMBEDDING_DIM` | `1536` | ingest | Dimensión de vectores de embedding |
 | `OPENROUTER_HTTP_REFERER` | — | ingest, orchestrator | HTTP Referer para OpenRouter |
 | `OPENROUTER_APP_TITLE` | — | ingest, orchestrator | Título de app para OpenRouter |
-| `LLM_MODEL` | — | ingest, orchestrator | **Homologado:** modelo único de chat (si no usas `OPENROUTER_CHAT_MODEL`). Compatibilidad. |
-| `LLM_PROVIDER` | `openrouter` | ingest, orchestrator | **Proveedor LLM.** Default: `openrouter`. En el futuro: `lemondata`, etc. El código no hardcodea el proveedor. |
-| `LLM_MODEL_INGEST` | — | ingest | **Modelo específico para ingest.** Prioridad sobre `LLM_MODEL` y `OPENROUTER_CHAT_MODEL`. |
-| `ORCHESTRATOR_LLM_MODEL` | — | orchestrator | **Modelo específico para orquestador.** Prioridad sobre `LLM_MODEL` y `OPENROUTER_CHAT_MODEL`. |
-| `LLM_API_KEY` | — | ingest, orchestrator | Alias de clave; preferir `OPENROUTER_API_KEY` |
-| `LLM_TEMPERATURE` | `0.1` | ingest, orchestrator | Temperatura del LLM |
 | `EMBEDDING_PROVIDER` | `openrouter` | ingest | Proveedor de embeddings (`openrouter` o `openai`) |
 | `CHAT_MODEL` | — | ingest, orchestrator | Compatibilidad; preferir `LLM_MODEL` u `OPENROUTER_CHAT_MODEL` |
 | `INTERNAL_API_KEY` | `ariadne-internal-dev` | ingest, orchestrator | Clave M2M para comunicación ingest ↔ orchestrator |
@@ -224,14 +223,14 @@ Las únicas **obligatorias** en Dokploy son:
 
 | Servicio | Variables requeridas |
 |---|---|
-| **ingest** | `OPENROUTER_API_KEY`, `LLM_PROVIDER`, `CREDENTIALS_ENCRYPTION_KEY` |
+| **ingest** | `LLM_API_KEY`, `LLM_PROVIDER`, `CREDENTIALS_ENCRYPTION_KEY` |
 | **api** | `JWT_SECRET` |
 | **mcp-ariadne** | _Ninguna obligatoria_ (opcional: `MCP_AUTH_TOKEN`) |
-| **orchestrator** | `LLM_PROVIDER` |
+| **orchestrator** | `LLM_API_KEY`, `LLM_PROVIDER` |
 | **frontend** | `VITE_API_URL` (build arg) |
 
 > 💡 **Modelos LLM por componente:** `LLM_MODEL_INGEST` para ingest y `ORCHESTRATOR_LLM_MODEL` para el orquestador. Si no se definen, usan `LLM_MODEL` → `OPENROUTER_CHAT_MODEL` → default (`nousresearch/hermes-3-llama-3.1-405b`).
-> `LLM_PROVIDER` = `openrouter` por defecto. Para migrar a LemonData solo se cambia esta variable; el código no hardcodea el proveedor.
+> `LLM_PROVIDER` = `openrouter` por defecto. `LLM_API_KEY` es la única clave — no se usan `OPENROUTER_API_KEY`, `AI_API_KEY` ni `OPENAI_API_KEY`. Para migrar a LemonData solo se cambia `LLM_PROVIDER` y se actualiza `LLM_API_KEY`.
 
 Todo lo demás tiene defaults funcionales en `docker-compose.yml`.
 

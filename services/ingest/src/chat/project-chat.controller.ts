@@ -71,8 +71,8 @@ export class ProjectChatController {
       if (err instanceof BadRequestException) throw err;
       if (err instanceof HttpException) throw err;
       const msg = err instanceof Error ? err.message : String(err);
-      const hint = msg.includes('OPENROUTER_API_KEY') || msg.includes('OPENAI_API_KEY')
-        ? ' Configura OPENROUTER_API_KEY en el servidor.'
+      const hint = msg.includes('LLM_API_KEY')
+        ? ' Configura LLM_API_KEY en el servidor.'
         : msg.includes('connect') || msg.includes('ECONNREFUSED')
           ? ' Verifica que FalkorDB esté corriendo.'
           : '';

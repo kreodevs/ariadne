@@ -2,7 +2,7 @@
  * Ingest: LLM vía LLM_PROVIDER env (openrouter por defecto).
  * @see ../llm/llm-config.ts
  */
-import { resolveOpenRouterApiKey, resolveOpenRouterChatModel, OPENROUTER_DEFAULT_CHAT_MODEL } from '../llm/llm-config';
+import { resolveLlmApiKey, resolveOpenRouterChatModel, OPENROUTER_DEFAULT_CHAT_MODEL } from '../llm/llm-config';
 
 export type IngestLlmId = string;
 
@@ -15,11 +15,11 @@ export function resolveIngestLlmModel(_provider: IngestLlmId): string {
 }
 
 export function hasIngestLlmCredentials(_provider: IngestLlmId): boolean {
-  return Boolean(resolveOpenRouterApiKey());
+  return Boolean(resolveLlmApiKey());
 }
 
-/** @deprecated Usar resolveOpenRouterApiKey en llm-config. */
+/** @deprecated Usar resolveLlmApiKey en llm-config. */
 export function openAiApiKeyForLlm(): string | null {
-  const k = resolveOpenRouterApiKey();
+  const k = resolveLlmApiKey();
   return k || null;
 }
