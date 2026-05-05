@@ -15,7 +15,6 @@ export function resolveLlmModel(_provider: UnifiedLlmProvider): string {
     process.env.ORCHESTRATOR_LLM_MODEL?.trim() ||
     process.env.LLM_MODEL?.trim() ||
     process.env.LLM_CHAT_MODEL?.trim() ||
-    process.env.CHAT_MODEL?.trim() ||
     LLM_DEFAULT_CHAT_MODEL
   );
 }

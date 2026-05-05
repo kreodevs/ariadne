@@ -37,7 +37,7 @@ Guía completa para configurar y usar el sistema: variables de entorno, credenci
 | `CREDENTIALS_ENCRYPTION_KEY`        | Condicional | —                      | Clave para cifrar credenciales en BD. Base64 32 bytes o hex 64 chars. Ej: `openssl rand -base64 32`.             |
 | `EMBEDDING_PROVIDER`                | Condicional | openai                 | RAG: `openai` o `google`                                                                                         |
 | `OPENAI_API_KEY`                    | Condicional | —                      | API key OpenAI: chat, diagnósticos/analyze y (si provider=openai) embeddings. **Obligatorio** para chat/analyze. |
-| `CHAT_MODEL`                        | Condicional | gpt-4o-mini            | Modelo OpenAI para chat                                                                                          |
+| `LLM_CHAT_MODEL`                        | Condicional | gpt-4o-mini            | Modelo OpenAI para chat                                                                                          |
 | `GOOGLE_API_KEY` / `GEMINI_API_KEY` | Condicional | —                      | API key Google AI (si provider=google). Para `gemini-embedding-001` (768 dims).                                  |
 | `NODE_ENV`                          | No          | development            | Si ≠ production, TypeORM usa synchronize                                                                         |
 

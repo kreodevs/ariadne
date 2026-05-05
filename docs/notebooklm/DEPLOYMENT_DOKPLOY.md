@@ -29,7 +29,7 @@ VITE_API_URL=https://ariadne.kreoint.mx
 EMBEDDING_PROVIDER=openai
 OPENAI_API_KEY=<tu-key>
 # Opcional — modelo para chat/analyze/modification-plan (default en compose: gpt-4o-mini)
-CHAT_MODEL=gpt-4o-mini
+LLM_CHAT_MODEL=gpt-4o-mini
 CREDENTIALS_ENCRYPTION_KEY=<generar con: openssl rand -base64 32>
 
 # MCP — Auth M2M (recomendado en producción)

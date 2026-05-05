@@ -29,7 +29,6 @@ export function resolveLlmChatModel(): string {
     process.env.LLM_MODEL_INGEST?.trim() ||
     process.env.LLM_MODEL?.trim() ||
     process.env.LLM_CHAT_MODEL?.trim() ||
-    process.env.CHAT_MODEL?.trim() ||
     LLM_DEFAULT_CHAT_MODEL
   );
 }

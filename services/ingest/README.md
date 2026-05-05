@@ -89,7 +89,6 @@ Tras cada sync (normal o resync), se ejecuta automáticamente `embed-index` si h
 - `OPENROUTER_API_KEY` — Clave principal; alias: `AI_API_KEY`, `OPENAI_API_KEY`.
 - `OPENROUTER_CHAT_MODEL` — Default en código: `nousresearch/hermes-3-llama-3.1-405b` (alineado con The Forge).
 - `OPENROUTER_EMBEDDING_MODEL` — Default `openai/text-embedding-3-small`; `LLM_EMBEDDING_DIM` default 1536.
-- `CHAT_MODEL` — Compatibilidad; preferir `LLM_MODEL` u `OPENROUTER_CHAT_MODEL`. Diagnóstico/reingeniería truncan datos automáticamente para evitar context_length_exceeded (128k tokens).
 - `CHAT_TELEMETRY_LOG` — `1` o `true`: log JSON por request del pipeline unificado (tamaños, citas de paths, `pathGroundingRatio` vs retrieval).
 - `METRICS_ENABLED` — `0` o `false`: desactiva Prometheus (`GET /metrics` responde 503). Por defecto las métricas están activas (Fase 0 — ver [docs/notebooklm/OBSERVABILIDAD_FASE0.md](../../docs/notebooklm/OBSERVABILIDAD_FASE0.md)).
 - `CHAT_TWO_PHASE` — `0` / `false` / `off`: desactiva el bloque JSON de retrieval antes del contexto bruto en el sintetizador (default: activo).

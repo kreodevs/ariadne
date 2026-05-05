@@ -153,7 +153,7 @@ Todas las preguntas pasan por el mismo pipeline. No hay clasificación code vs k
 | Variable | Uso |
 |----------|-----|
 | `OPENAI_API_KEY` | Chat, diagnósticos, reingeniería (obligatorio) |
-| `CHAT_MODEL` | Modelo OpenAI (default `gpt-4o-mini`) |
+| `LLM_CHAT_MODEL` | Modelo OpenAI (default `gpt-4o-mini`) |
 | `EMBEDDING_PROVIDER` | openai \| google (para duplicados) |
 | `OPENAI_API_KEY` / `GOOGLE_API_KEY` | Embeddings (para duplicados) |
 

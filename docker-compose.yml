@@ -146,7 +146,6 @@ services:
       - LLM_EMBEDDING_DIM=${LLM_EMBEDDING_DIM:-}
       - LLM_HTTP_REFERER=${LLM_HTTP_REFERER:-}
       - LLM_APP_TITLE=${LLM_APP_TITLE:-}
-      - CHAT_MODEL=${CHAT_MODEL:-}
       - CHAT_TELEMETRY_LOG=${CHAT_TELEMETRY_LOG:-0}
       # Fase 0: GET :3002/metrics (Prometheus). METRICS_ENABLED=0 desactiva.
       - METRICS_ENABLED=${METRICS_ENABLED:-true}
@@ -177,15 +176,13 @@ services:
       - PORT=3001
       - ARIADNESPEC_API_URL=http://api:3000/api
       - LLM_API_KEY=${LLM_API_KEY}
-      - LLM_PROVIDER=${LLM_PROVIDER:-openrouter}
-      - LLM_MODEL=${LLM_MODEL:-}
+      - LLM_CHAT_MODEL=${LLM_CHAT_MODEL:-}
       - LLM_TEMPERATURE=${LLM_TEMPERATURE:-}
       - LLM_BASE_URL=${LLM_BASE_URL:-}
       - LLM_CHAT_MODEL=${LLM_CHAT_MODEL:-}
       - LLM_HTTP_REFERER=${LLM_HTTP_REFERER:-}
       - LLM_APP_TITLE=${LLM_APP_TITLE:-}
       - ORCHESTRATOR_LLM_MODEL=${ORCHESTRATOR_LLM_MODEL:-}
-      - CHAT_MODEL=${CHAT_MODEL:-}
       - INGEST_URL=http://ingest:3002
       - INTERNAL_API_KEY=${INTERNAL_API_KEY:-ariadne-internal-dev}
       - REDIS_URL=redis://redis:6379
