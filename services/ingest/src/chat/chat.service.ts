@@ -3282,8 +3282,8 @@ PROHIBIDO: instrucciones genéricas tipo "revisa los controladores", "asegúrate
       }
       if (repoIds.length === 0) repoIds = [repositoryId];
       repoIds = repoIds.slice(0, maxFan);
-      for (const rid of repoIds) {
-        await pushTool(`semantic_search:${rid}`, {
+      await Promise.all(repoIds.map((rid) =>
+        pushTool(`semantic_search:${rid}`, {
           projectScope: false,
           scope,
           tool: 'semantic_search',
@@ -3292,8 +3292,8 @@ PROHIBIDO: instrucciones genéricas tipo "revisa los controladores", "asegúrate
           evidenceVerbosity,
           embeddingRepositoryId: rid,
           semanticRestrictRepoId: rid,
-        });
-      }
+        }),
+      ));
     } else {
       await pushTool('semantic_search', {
         projectScope: false,
@@ -3401,13 +3401,13 @@ PROHIBIDO: instrucciones genéricas tipo "revisa los controladores", "asegúrate
     const evidenceFirst = !rawEvidence && options?.responseMode === 'evidence_first';
     const useTwoPhase = rawEvidence || evidenceFirst ? true : (options?.twoPhase ?? defaultTwoPhaseFromEnv());
     const evidenceVerbosity = rawEvidence ? ('full' as const) : ('default' as const);
-    const deterministicRaw = rawEvidence && Boolean(options?.deterministicRetriever);
+    const useDeterministic = Boolean(options?.deterministicRetriever) && (rawEvidence || evidenceFirst);
 
     let lastCypher = '';
     const collectedToolOutputs: string[] = [];
     const collectedResults: unknown[] = [];
 
-    if (deterministicRaw) {
+    if (useDeterministic) {
       const d = await this.runDeterministicRetrieverForRawEvidence(
         repositoryId,
         projectId,
