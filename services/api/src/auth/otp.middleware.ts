@@ -13,6 +13,7 @@ const SKIP_PATHS = [
   '/api/auth/sso/login',
   '/api/auth/has-users',
   '/api/auth/register-first-admin',
+  '/api/internal/users/validate-mcp-token',
 ];
 
 /** Interfaz del usuario autenticado extraído del JWT. */
