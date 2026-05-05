@@ -7,7 +7,7 @@ import { EXAMPLES, EXPLORER_TOOLS_ALL, SCHEMA } from './chat.constants';
 import type { ChatScope } from './chat-scope.util';
 import { IngestChatClient } from './ingest-chat.client';
 import { OrchestratorLlmService } from './orchestrator-llm.service';
-import type { OpenAiStyleMessage } from '../llm/orchestrator-llm.facade';
+import type { LlmMessage } from '../llm/orchestrator-llm.facade';
 import { isMoonshotRateLimitError } from '../llm/moonshot-rate-limit.error';
 import { RedisStateService } from '../redis-state/redis-state.service';
 import type { RetrieverToolName } from './ingest-types';
@@ -317,7 +317,7 @@ ${SCHEMA}${EXAMPLES}
       ? `${historyContent}\n\n<user>${message}</user>`
       : `<user>${message}</user>`;
 
-    const messages: OpenAiStyleMessage[] = [
+    const messages: LlmMessage[] = [
       { role: 'system', content: retrieverSystem },
       { role: 'user', content: userContent },
     ];

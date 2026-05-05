@@ -5,7 +5,7 @@ import { Injectable } from '@nestjs/common';
 import {
   callOrchestratorLlm,
   callOrchestratorLlmWithTools,
-  type OpenAiStyleMessage,
+  type LlmMessage,
 } from '../llm/orchestrator-llm.facade';
 
 function toolCallMaxTokensFromEnv(): number {
@@ -25,7 +25,7 @@ export class OrchestratorLlmService {
   }
 
   async callLlmWithTools(
-    messages: OpenAiStyleMessage[],
+    messages: LlmMessage[],
     tools: unknown[],
     maxTokens = toolCallMaxTokensFromEnv(),
   ): Promise<{
