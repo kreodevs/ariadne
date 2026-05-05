@@ -26,6 +26,51 @@ Ver [docs/notebooklm/DEPLOYMENT_DOKPLOY.md](docs/notebooklm/DEPLOYMENT_DOKPLOY.m
 
 > 💡 Abre `docs/architecture-diagram.html` en tu navegador para ver el diagrama interactivo con colores, flechas y leyenda. Se actualiza a medida que evoluciona la arquitectura.
 
+```mermaid
+graph TB
+    %% ─── Estilos ────────────────────────────────────────
+    classDef frontend fill:#083344,stroke:#22d3ee,stroke-width:2px,color:#e2e8f0
+    classDef backend fill:#064e3b,stroke:#34d399,stroke-width:2px,color:#e2e8f0
+    classDef db fill:#2e1065,stroke:#a78bfa,stroke-width:2px,color:#e2e8f0
+    classDef external fill:#1e293b,stroke:#94a3b8,stroke-width:2px,color:#e2e8f0
+    classDef auth fill:#881337,stroke:#fb7185,stroke-width:2px,color:#e2e8f0
+
+    %% ─── Externos ───────────────────────────────────────
+    GH["Repos Remotos<br/>Bitbucket / GitHub"]:::external
+    SSO["SSO Auth OTP"]:::auth
+
+    %% ─── Application Layer ──────────────────────────────
+    subgraph Dokploy["🔶 Dokploy — ariadne.kreoint.mx"]
+        FE["Frontend<br/>React + Vite"]:::frontend
+        API["API REST<br/>NestJS / OpenAPI 3.1"]:::backend
+        ING["Ingest<br/>NestJS + TypeORM"]:::backend
+        ORC["Orchestrator<br/>NestJS + LangGraph"]:::backend
+        MCP["MCP Ariadne<br/>Streamable HTTP"]:::backend
+
+        %% ─── Data Layer ─────────────────────────────────
+        FK["FalkorDB<br/>Grafo de código"]:::db
+        PG["PostgreSQL<br/>Metadatos (repos, jobs)"]:::db
+        RD["Redis<br/>BullMQ + Caché LRU"]:::db
+
+        %% ─── Conexiones App ─────────────────────────────
+        FE -->|REST| API
+        API -->|Proxy| ING
+        API -.->|Graph queries| FK
+        API -.->|Caché| RD
+        ING -->|CRUD| PG
+        ING -->|Graph CRUD| FK
+        ING -->|Cola| RD
+        ING <-->|Delegación| ORC
+        ORC -.->|Graph queries| API
+        MCP -.->|Graph read| FK
+        MCP -.->|Delegate| ING
+    end
+
+    %% ─── Conexiones Externas ───────────────────────────
+    GH -->|Sync / webhooks| ING
+    SSO -.->|Auth OTP| API
+```
+
 ## Uso con Docker
 
 1. Coloca el código a analizar en `./src` (o monta otro directorio).
