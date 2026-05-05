@@ -114,7 +114,8 @@ export class EmbedIndexService {
     const dim = embed.getDimension();
 
     const projRow = await this.projectRepo.findOne({ where: { id: falkorProjectId } });
-    const shardMode = effectiveShardMode(projRow?.falkorShardMode ?? 'project');
+    // Sin proyecto: ignorar FALKOR_SHARD_BY_DOMAIN, usar modo 'project'
+    const shardMode = projRow ? effectiveShardMode(projRow.falkorShardMode) : 'project';
     const segments = Array.isArray(projRow?.falkorDomainSegments) ? projRow!.falkorDomainSegments! : [];
     const graphNames = listGraphNamesForProjectRouting(
       falkorProjectId,

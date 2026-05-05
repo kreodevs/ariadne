@@ -479,7 +479,8 @@ export class SyncService {
 
       for (const projectId of projectIds) {
         const projRow = await this.projectEntityRepo.findOne({ where: { id: projectId } });
-        const shardMode = effectiveShardMode(projRow?.falkorShardMode ?? 'project');
+        // Sin proyecto: ignorar FALKOR_SHARD_BY_DOMAIN, usar modo 'project'
+        const shardMode = projRow ? effectiveShardMode(projRow.falkorShardMode) : 'project';
 
         if (shardMode === 'domain' && isProjectShardingEnabled()) {
           await this.purgeMonolithicProjectGraph(client, projectId);
