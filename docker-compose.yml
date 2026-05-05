@@ -136,7 +136,6 @@ services:
       - NODE_ENV=production
       - LLM_API_KEY=${LLM_API_KEY}
       - LLM_PROVIDER=${LLM_PROVIDER:-openrouter}
-      - LLM_MODEL=${LLM_MODEL:-}
       - LLM_MODEL_INGEST=${LLM_MODEL_INGEST:-}
       - LLM_TEMPERATURE=${LLM_TEMPERATURE:-}
       - EMBEDDING_PROVIDER=${EMBEDDING_PROVIDER:-openrouter}

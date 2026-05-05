@@ -27,7 +27,6 @@ export function llmDefaultHeaders(): Record<string, string> | undefined {
 export function resolveLlmChatModel(): string {
   return (
     process.env.LLM_MODEL_INGEST?.trim() ||
-    process.env.LLM_MODEL?.trim() ||
     process.env.LLM_CHAT_MODEL?.trim() ||
     LLM_DEFAULT_CHAT_MODEL
   );

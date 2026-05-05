@@ -11,7 +11,7 @@ Arquitectura de agentes: **Coordinator** (clasificación LLM) → **CodeAnalysis
 - **`resolve-chat-scope-from-message.util.ts`** — Inferencia de `repoId` desde mensaje + `project_repositories.role` (`CHAT_INFER_SCOPE_FROM_ROLES`).
 - **`chat-preflight-scope.util.ts`** — Paths en el mensaje; filtrado de filas/bloques por `repoId` antes del sintetizador (`CHAT_PREFLIGHT_PATH_REPO`).
 - **`chat-cypher.service.ts`** — Ejecución Cypher y formateo: **executeCypher** recorre **`ProjectsService.getCypherShardContexts`** (proyecto + dominios whitelist) y deduplica filas; **executeCypherRaw**(cypher, shardProjectId?), formatResultsHuman, **getGraphSummary** / **getGraphSummaryForProject**. Muestras por label excluyen paths ruidosos (`.antigravity/`, `.cursor/`, `node_modules/`, etc.); además, en **File** (y archivos en joins **Component**/**Context**), **Function** y nodos **Nest** del `else` de muestras, se excluyen documentación (`.md`/`.mdx`, `docs/`, `documents/`, `ariadne-internal/`, …), `scripts/`, `prompts/`, carpetas típicas de tests, lockfiles y configs de tooling (`eslint*`, `playwright`, `openapi.json`, etc.); las muestras **File** ordenan primero `src/`, `apps/`, `packages/`. **OpenApiOperation** devuelve `method`, `pathTemplate`, `specPath` (sin concat en Cypher); **Prop** usa `componentName` como `path`. Con **`evidenceVerbosity: full`** en el retriever, **`CHAT_RAW_EVIDENCE_GRAPH_SAMPLE_CAP`** (default 120, máx. 2000) limita filas por label en muestras (los counts siguen totales). Tras fusionar shards, las muestras se deduplican por fila JSON.
-- **`llm-unified.ts`** — `LLM_MODEL_INGEST` (o `LLM_MODEL` global) + `LLM_API_KEY` (y legacy `OPENROUTER_API_KEY`).
+- **`llm-unified.ts`** — `LLM_MODEL_INGEST` + `LLM_API_KEY`.
 - **`chat-llm-config.ts`** — Reexporta resolución ingest (openai | kimi).
 - **`kimi-chat.adapter.ts`** — Kimi Open Platform (`/v1/chat/completions` compatible OpenAI).
 - **`chat-llm.service.ts`** — callLlm, callLlmWithTools (OpenAI o Kimi según config). **`CHAT_TOOL_CALL_MAX_TOKENS`** (default 8192): tope de salida en la fase con herramientas; valores bajos truncan `tool_calls` y el usuario puede ver solo Cypher a medias sin resultados.
@@ -58,14 +58,14 @@ Sin `ORCHESTRATOR_URL`, el pipeline unificado legacy sigue en este servicio (`ru
 - **`POST /internal/repositories/:repoId/mdd-evidence`** — Body: `{ message, gatheredContext, collectedResults, projectScope?, projectId? }` — JSON **MDD** (7 secciones) para `ask_codebase` / LegacyCoordinator; inyecta lecturas mínimas si el contexto está vacío pero hay archivos en índice.
 - **`GET /repositories/:id/graph-summary`** — Query: `full=1` (muestras completas), `repoScoped=1` (solo nodos con `repoId` = `:id` dentro del proyecto Falkor). Útil en multi-root para listar componentes de un repo sin mezclar el resto. El ingest usa `repoScoped` de forma interna en diagnóstico, overview, herramienta `get_graph_summary` (chat/ReAct y retriever) y el plan de modificación acota por `repositoryId` salvo `scope.repoIds` explícito.
 
-**Requisitos LLM (todo via OpenRouter):** Siempre se requiere `LLM_API_KEY` (o `OPENROUTER_API_KEY`). Opcionalmente `LLM_MODEL` (default: `nousresearch/hermes-3-llama-3.1-405b`). Per-componente: `LLM_MODEL_INGEST` para este servicio, `ORCHESTRATOR_LLM_MODEL` para el orquestador.
+**Requisitos LLM (todo via OpenRouter):** Siempre se requiere `LLM_API_KEY` (o `OPENROUTER_API_KEY`). Modelo global: `LLM_CHAT_MODEL` (default: `google/gemini-2.0-flash-001`). Per-componente: `LLM_MODEL_INGEST` para este servicio, `ORCHESTRATOR_LLM_MODEL` para el orquestador.
 
 | Variable | Requerida | Default | Descripción |
 |---|---|---|---|
 | `LLM_API_KEY` o `OPENROUTER_API_KEY` | **Sí** | — | API key de OpenRouter |
-| `LLM_MODEL` | No | `nousresearch/hermes-3-llama-3.1-405b` | Modelo global (fallback) |
-| `LLM_MODEL_INGEST` | No | `LLM_MODEL` → default | Modelo específico para ingest |
-| `ORCHESTRATOR_LLM_MODEL` | No | `LLM_MODEL` → default | Modelo específico para orchestrator |
+| `LLM_CHAT_MODEL` | No | `google/gemini-2.0-flash-001` | Modelo global (fallback) |
+| `LLM_MODEL_INGEST` | No | `LLM_CHAT_MODEL` → default | Modelo específico para ingest |
+| `ORCHESTRATOR_LLM_MODEL` | No | `LLM_CHAT_MODEL` → default | Modelo específico para orchestrator |
 | `LLM_TEMPERATURE` | No | `0.1` | Temperatura del modelo |
 | `CHAT_TOOL_CALL_MAX_TOKENS` | No | `8192` | Máx tokens en fase tool calling |
 

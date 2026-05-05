@@ -1,5 +1,5 @@
 /**
- * LLM vía LLM_PROVIDER env (openrouter por defecto). Variables: LLM_API_KEY, LLM_CHAT_MODEL, LLM_MODEL, etc.
+ * LLM vía LLM_PROVIDER env (openrouter por defecto). Variables: LLM_API_KEY, LLM_CHAT_MODEL, etc.
  * @see llm-config.ts
  */
 import { LLM_DEFAULT_CHAT_MODEL, resolveLlmApiKey } from './llm-config';
@@ -13,7 +13,6 @@ export function resolveLlmProvider(): UnifiedLlmProvider {
 export function resolveLlmModel(_provider: UnifiedLlmProvider): string {
   return (
     process.env.ORCHESTRATOR_LLM_MODEL?.trim() ||
-    process.env.LLM_MODEL?.trim() ||
     process.env.LLM_CHAT_MODEL?.trim() ||
     LLM_DEFAULT_CHAT_MODEL
   );
