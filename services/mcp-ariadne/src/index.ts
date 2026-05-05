@@ -179,10 +179,10 @@ async function validateAuth(req: IncomingMessage): Promise<string | null> {
     // Si hay static token y no coincide, intentar validación por usuario como fallback
   }
 
-  // 2. Validar contra token MCP de usuario vía API → ingest
+  // 2. Validar contra token MCP de usuario vía Ingest directo (más rápido, sin pasar por API Gateway)
   try {
-    const apiUrl = ariadneApiBase();
-    const res = await fetch(`${apiUrl}/api/internal/users/validate-mcp-token`, {
+    const ingestUrl = process.env.INGEST_URL?.trim() || 'http://ingest:3002';
+    const res = await fetch(`${ingestUrl}/internal/users/validate-mcp-token`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ token: clientToken }),
@@ -202,9 +202,28 @@ async function validateAuth(req: IncomingMessage): Promise<string | null> {
       console.warn(`[MCP] validateAuth: per-user fetch returned ${res.status} ${res.statusText}: ${body.slice(0, 500)}`);
     }
   } catch (err) {
-    // Si la API no está disponible y hay static token, intentar coincidencia exacta
-    if (staticToken && clientToken === staticToken) return null;
-    console.error(`[MCP] validateAuth: per-user fetch failed: ${err instanceof Error ? err.message : String(err)}`);
+    // Si falla, intentar por API Gateway como fallback (mantener backward compat)
+    console.warn(`[MCP] validateAuth: per-user fetch via ingest failed, trying API Gateway: ${err instanceof Error ? err.message : String(err)}`);
+    try {
+      const apiUrl = ariadneApiBase();
+      const res = await fetch(`${apiUrl}/api/internal/users/validate-mcp-token`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token: clientToken }),
+      });
+      if (res.ok) {
+        const data = await res.json() as { valid: boolean; user?: { id: string; email: string; role: string; name: string | null } };
+        if (data.valid) {
+          if (data.user) {
+            (req as IncomingMessage & { authUser?: unknown }).authUser = data.user;
+          }
+          return null;
+        }
+      }
+    } catch (err2) {
+      if (staticToken && clientToken === staticToken) return null;
+      console.error(`[MCP] validateAuth: per-user fetch failed (both ingest and api): ${err2 instanceof Error ? err2.message : String(err2)}`);
+    }
   }
 
   if (staticToken) return "Token inválido";
