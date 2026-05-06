@@ -225,8 +225,14 @@ export function Login() {
                   id="code"
                   type="text"
                   inputMode="numeric"
+                  autoComplete="one-time-code"
+                  autoCapitalize="off"
+                  autoCorrect="off"
+                  spellCheck={false}
+                  enterKeyHint="done"
                   placeholder="000000"
                   maxLength={6}
+                  pattern="\d{6}"
                   value={code}
                   onChange={(e) => setCode(e.target.value.replace(/\D/g, ''))}
                   disabled={loading}
