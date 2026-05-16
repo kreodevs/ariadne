@@ -8,14 +8,13 @@ RUN corepack enable && corepack prepare pnpm@9 --activate
 ARG VITE_API_URL=http://localhost:3000
 ENV VITE_API_URL=$VITE_API_URL
 
-# Build cache bust: incrementar en 1 en cada deploy para forzar rebuild completo
-ARG BUILD_CACHE_BUST=2
-RUN echo "cache bust: ${BUILD_CACHE_BUST}" > /dev/null
-
-# Copiar todo el repo
+# Copiar todo el repo (incluye docs/ para ayuda-mcp.md)
 COPY . .
 
-# 1. Build frontend (usa ../docs para ayuda-mcp.md)
+# Forzar fresh build cada deploy: timestamp nanosegundo siempre único
+RUN echo $(date +%s%N) > /tmp/buildstamp
+
+# 1. Build frontend
 RUN cd frontend && pnpm install --frozen-lockfile && pnpm run build
 
 # 2. ariadne-common debe estar construido para que mcp-ariadne resuelva file:../../packages/ariadne-common

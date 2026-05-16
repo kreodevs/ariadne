@@ -59,7 +59,6 @@ services:
       args:
         VITE_API_URL: "${VITE_API_URL:-https://ariadne.kreoint.mx}"
         VITE_SSO_URL: "${VITE_SSO_URL-}"
-        BUILD_CACHE_BUST: "${BUILD_CACHE_BUST:-2}"
     networks:
       - falkor-net
       - dokploy-network
