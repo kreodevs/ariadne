@@ -34,8 +34,9 @@ COPY --from=builder /app/dist ./dist
 ENV NODE_ENV=production
 ENV PORT=8080
 
-# HEALTHCHECK desactivado: Dokploy no lo soporta correctamente
-# HEALTHCHECK NONE
+# Healthcheck: GET /health (localhost es loopback real del contenedor en Compose y Swarm)
+HEALTHCHECK --interval=15s --timeout=5s --start-period=15s --retries=3 \
+  CMD wget --no-verbose --tries=1 --spider http://localhost:${PORT}/health || exit 1
 
 # Obligatorio para Docker: bind 0.0.0.0 para recibir tráfico externo
 EXPOSE 8080

@@ -5,6 +5,12 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.0.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- **Healthchecks reactivados en frontend y mcp-ariadne:** Se habían desactivado con el comentario "Dokploy no lo soporta correctamente". El problema real era usar `127.0.0.1` o DNS service-name en los healthchecks, no `localhost`. `localhost` es el loopback real del contenedor tanto en Compose como en Swarm, y funciona correctamente con Dokploy.
+  - `frontend/Dockerfile`: `wget --spider http://localhost:80/`
+  - `services/mcp-ariadne/Dockerfile`: `wget --spider http://localhost:8080/health`
+
 ### Added
 
 - **Review Engine — Legacy Change Review via MCP:** Nuevo módulo `review` en ingest con pipeline completo de revisión de cambios legacy. Incluye 5 lentes de detección via LLM, consulta al grafo FalkorDB para impacto legacy, scoring con penalizaciones, validación profunda, cross-cutting review, y render de reporte Markdown con confianza porcentual. MCP tool `review_diff` registrada. Usa la misma infraestructura LLM existente (LLM_API_KEY, LLM_MODEL_INGEST, etc.) — no introduce nuevas APIs. (`docs/review-engine/README.md`)
