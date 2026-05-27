@@ -18,7 +18,4 @@ RUN npm run build && npm prune --omit=dev
 ENV PORT=3000
 ENV NODE_ENV=production
 
-HEALTHCHECK --interval=15s --timeout=5s --start-period=30s --retries=3 \
-  CMD node -e "require('http').get('http://localhost:3000/health',(r)=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"
-
 CMD ["node", "dist/main.js"]

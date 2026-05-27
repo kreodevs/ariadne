@@ -34,11 +34,6 @@ COPY --from=builder /app/dist ./dist
 ENV NODE_ENV=production
 ENV PORT=8080
 
-# Healthcheck: GET /health (localhost es loopback real del contenedor en Compose y Swarm)
-# Node.js nativo (sin wget/curl) — igual que TheForge
-HEALTHCHECK --interval=15s --timeout=5s --start-period=15s --retries=3 \
-  CMD node -e "require('http').get('http://localhost:8080/health',(r)=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"
-
 # Obligatorio para Docker: bind 0.0.0.0 para recibir tráfico externo
 EXPOSE 8080
 
