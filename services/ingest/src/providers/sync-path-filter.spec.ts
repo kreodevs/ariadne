@@ -74,6 +74,16 @@ describe('sync-path-filter (e2e / tests)', () => {
     expect(shouldSyncIndexPath('config/random.json')).toBe(false);
   });
 
+  it('incluye manifiestos de infra (compose, pnpm-workspace)', () => {
+    expect(shouldSyncIndexPath('docker-compose.yml')).toBe(true);
+    expect(shouldSyncIndexPath('docker-compose.yaml')).toBe(true);
+    expect(shouldSyncIndexPath('compose.yaml')).toBe(true);
+    expect(shouldSyncIndexPath('pnpm-workspace.yaml')).toBe(true);
+    expect(shouldSyncIndexPath('infra/docker-compose.yml')).toBe(true);
+    expect(shouldSyncIndexPath('config/docker-compose.yml')).toBe(true);
+    expect(shouldSyncIndexPath('config/stack.yml')).toBe(false);
+  });
+
   it('incluye Strapi extension schemas y documentación OpenAPI', () => {
     expect(
       shouldSyncIndexPath(

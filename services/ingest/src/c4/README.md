@@ -7,7 +7,7 @@ Pipeline: dominios / docker-compose / Falkor → `C4Model` → Archify HTML.
 | Nivel | Fuente | Generador |
 | ----- | ------ | --------- |
 | **context** | `project.domainId`, `project_domain_dependencies`, `domain_domain_visibility`, multi-root | `sync` o `hybrid` (LLM opcional) |
-| **container** | `docker-compose`, workspaces, o `package.json` (repo front/back suelto) | `sync` |
+| **container** | `docker-compose` (probe remoto si no está indexado), `pnpm-workspace.yaml`, `package.json` workspaces, o front/back suelto | `sync` |
 | **component** | Subgrafo Falkor por `pathPrefix` del container (`IMPORTS`, `RENDERS`, rutas web) | `sync` |
 
 ## Configuración
@@ -45,5 +45,12 @@ Antes de invocar Archify CLI, `C4ArchifyRenderer` aplica `c4-archify-ir-fix.ts` 
 - `GET /projects/:id/c4/export` — 6 markdowns + `merged`
 - `POST /internal/projects/:id/architecture-diagram` — respuesta chat
 - Brownfield parity pack incluye `c4ContainerHtmlUrl`, `c4ContextHtmlUrl`, `c4ModelJson`
+
+## Monorepos (pnpm / compose)
+
+- El sync indexa `docker-compose.ya?ml` y `pnpm-workspace.yaml` (manifiestos de infra).
+- **Container:** si hay `docker-compose`, los servicios del compose tienen prioridad; los workspaces pnpm solo se usan cuando no hay compose.
+- Si el compose no está en `indexed_files` (sync previo), el escáner intenta leerlo del remoto vía `getFileContent`.
+- **pathPrefixes** en servicios compose: se infieren desde `build.context`, `dockerfile` y carpetas existentes (`backend/`, `apps/<nombre>/`, etc.).
 
 Ver [PLAN_C4_ARCHIFY.md](../../../docs/notebooklm/PLAN_C4_ARCHIFY.md).

@@ -18,6 +18,8 @@ describe('index-include-rules', () => {
     expect(shouldIndexPathWithRepoRules('package.json', rules)).toBe(true);
     expect(shouldIndexPathWithRepoRules('tsconfig.json', rules)).toBe(true);
     expect(shouldIndexPathWithRepoRules('vite.config.ts', rules)).toBe(true);
+    expect(shouldIndexPathWithRepoRules('docker-compose.yml', rules)).toBe(true);
+    expect(shouldIndexPathWithRepoRules('pnpm-workspace.yaml', rules)).toBe(true);
     expect(shouldIndexPathWithRepoRules('.env.json', rules)).toBe(false);
     expect(shouldIndexPathWithRepoRules('apps/api/package.json', rules)).toBe(false);
   });

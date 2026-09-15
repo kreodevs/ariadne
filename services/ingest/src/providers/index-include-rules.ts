@@ -7,7 +7,11 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
-import { shouldSyncIndexPath, pathHasGlobalSkipSegment } from './sync-path-filter';
+import {
+  isInfrastructureManifestSyncPath,
+  shouldSyncIndexPath,
+  pathHasGlobalSkipSegment,
+} from './sync-path-filter';
 
 export type IndexIncludeEntry =
   | { kind: 'path_prefix'; path: string }
@@ -60,6 +64,7 @@ export function isMandatoryDefaultRootIndexPath(relPath: string): boolean {
   if (norm.startsWith('.')) return false;
   const lower = norm.toLowerCase();
   if (lower === 'package.json') return true;
+  if (isInfrastructureManifestSyncPath(norm)) return true;
   return /\.(json|js|ts|jsx|tsx)$/i.test(norm);
 }
 

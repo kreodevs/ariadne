@@ -1,7 +1,8 @@
 /**
  * Filtro único para listFiles (GitHub/Bitbucket) y walk del shallow clone.
  * Incluye código JS/TS, `.md` del repo (salvo bajo `node_modules`), MDX Storybook, JSON Strapi v4 acotados,
- * y manifiestos/specs: `package.json`, `openapi.json`/`swagger.json`/`openapi.ya?ml` en cualquier carpeta.
+ * y manifiestos/specs: `package.json`, `openapi.json`/`swagger.json`/`openapi.ya?ml`,
+ * `docker-compose.ya?ml`, `pnpm-workspace.ya?ml` en cualquier carpeta.
  *
  * Carpetas típicas de **e2e** / Playwright / Cypress y archivos `*.e2e.*` se omiten por defecto.
  * Override: `INDEX_E2E=true` (mismo espíritu que `INDEX_TESTS` para specs).
@@ -96,6 +97,23 @@ export function pathHasGlobalSkipSegment(path: string): boolean {
   return pathHasSegmentIn(norm, SYNC_ALWAYS_SKIP_SEGMENTS);
 }
 
+/** Manifiestos de infra (compose, pnpm workspaces) indexados para C4 container y dominios. */
+const INFRA_MANIFEST_BASE_NAMES = new Set([
+  'docker-compose.yml',
+  'docker-compose.yaml',
+  'compose.yml',
+  'compose.yaml',
+  'pnpm-workspace.yaml',
+  'pnpm-workspace.yml',
+]);
+
+/** ¿Ruta de manifiesto de infraestructura (raíz o subcarpeta)? */
+export function isInfrastructureManifestSyncPath(path: string): boolean {
+  const norm = path.replace(/\\/g, '/');
+  const base = norm.slice(norm.lastIndexOf('/') + 1).toLowerCase();
+  return INFRA_MANIFEST_BASE_NAMES.has(base);
+}
+
 /**
  * Manifiestos y specs que deben entrar en el mapping (clone + API) aunque el resto de .json se excluya.
  */
@@ -103,6 +121,7 @@ export function isManifestOrOpenApiSyncPath(path: string): boolean {
   const norm = path.replace(/\\/g, '/');
   const base = norm.slice(norm.lastIndexOf('/') + 1).toLowerCase();
   if (base === 'package.json') return true;
+  if (isInfrastructureManifestSyncPath(norm)) return true;
   if (isOpenApiSpecSyncPath(norm)) return true;
   return false;
 }

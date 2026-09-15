@@ -24,6 +24,8 @@ const COMPOSE_NAMES = [
   'compose.yaml',
 ];
 
+const PNPM_WORKSPACE_NAMES = ['pnpm-workspace.yaml', 'pnpm-workspace.yml'];
+
 function slugKey(name: string): string {
   const s = name
     .trim()
@@ -52,6 +54,7 @@ function inferKindFromImage(image: string): C4ContainerKind {
 
 function parseDependsOn(blockLines: string[]): string[] {
   const out: string[] = [];
+  let inDependsOn = false;
   for (const line of blockLines) {
     const inline = /^\s*depends_on:\s*\[([^\]]+)\]/i.exec(line);
     if (inline) {
@@ -61,10 +64,20 @@ function parseDependsOn(blockLines: string[]): string[] {
       }
       continue;
     }
-    const item = /^\s+-\s*([^\s#]+)/.exec(line);
-    if (item && /depends_on/i.test(blockLines.join('\n'))) {
-      const name = item[1]!.replace(/['"]/g, '');
+    if (/^\s*depends_on:\s*$/i.test(line)) {
+      inDependsOn = true;
+      continue;
+    }
+    if (!inDependsOn) continue;
+    const listItem = /^\s+-\s*([^\s#:]+)/.exec(line);
+    if (listItem) {
+      const name = listItem[1]!.replace(/['"]/g, '');
       if (name && name !== 'condition') out.push(name);
+      continue;
+    }
+    const mapKey = /^\s+([a-zA-Z0-9_-]+):\s*$/.exec(line);
+    if (mapKey && mapKey[1] !== 'condition') {
+      out.push(mapKey[1]!);
     }
   }
   return out;
@@ -76,6 +89,7 @@ function parseDependsOn(blockLines: string[]): string[] {
 function parseDockerComposeServices(content: string): Array<{
   name: string;
   buildPrefix?: string;
+  dockerfile?: string;
   image?: string;
   dependsOn: string[];
 }> {
@@ -84,6 +98,7 @@ function parseDockerComposeServices(content: string): Array<{
   const out: Array<{
     name: string;
     buildPrefix?: string;
+    dockerfile?: string;
     image?: string;
     dependsOn: string[];
   }> = [];
@@ -112,6 +127,7 @@ function parseDockerComposeServices(content: string): Array<{
       continue;
     }
     let buildPrefix: string | undefined;
+    let dockerfile: string | undefined;
     let image: string | undefined;
     const blockLines: string[] = [];
     i++;
@@ -139,6 +155,8 @@ function parseDockerComposeServices(content: string): Array<{
       if (ctxLine && !buildPrefix) buildPrefix = normPrefix(ctxLine[1]!);
       const imgLine = /^\s*image:\s*["']?([^\s#]+)/i.exec(L);
       if (imgLine) image = imgLine[1]!.trim();
+      const dockerfileLine = /^\s*dockerfile:\s*["']?([^"'\s#]+)/i.exec(L);
+      if (dockerfileLine) dockerfile = dockerfileLine[1]!.trim();
       i++;
     }
     const dependsOn: string[] = [];
@@ -146,7 +164,7 @@ function parseDockerComposeServices(content: string): Array<{
     if (depIdx >= 0) {
       dependsOn.push(...parseDependsOn(blockLines.slice(depIdx)));
     }
-    out.push({ name: svcName, buildPrefix, image, dependsOn });
+    out.push({ name: svcName, buildPrefix, dockerfile, image, dependsOn });
   }
   return out;
 }
@@ -278,25 +296,68 @@ export async function inferRepoStackContainer(
   };
 }
 
-async function parsePackageJsonWorkspaces(
-  getContent: (p: string) => Promise<string | null>,
-  paths: Set<string>,
-): Promise<C4ContainerSpec[]> {
-  const raw = await getContent('package.json');
-  if (!raw) return [];
-  let pkg: { workspaces?: unknown };
-  try {
-    pkg = JSON.parse(raw) as { workspaces?: unknown };
-  } catch {
-    return [];
+/** Extrae patrones `packages:` de pnpm-workspace.yaml (subset YAML). */
+export function parsePnpmWorkspacePatterns(content: string): string[] {
+  const patterns: string[] = [];
+  const inline = /packages:\s*\[([^\]]+)\]/i.exec(content);
+  if (inline) {
+    for (const part of inline[1]!.split(',')) {
+      const pat = part.trim().replace(/^['"]|['"]$/g, '');
+      if (pat) patterns.push(pat);
+    }
+    return patterns;
   }
-  const ws = pkg.workspaces;
-  if (!ws) return [];
-  const patterns: string[] = Array.isArray(ws)
-    ? (ws as string[])
-    : typeof ws === 'object' && ws !== null && Array.isArray((ws as { packages?: string[] }).packages)
-      ? (ws as { packages: string[] }).packages
-      : [];
+  let inPackages = false;
+  for (const line of content.split(/\r?\n/)) {
+    if (/^packages:\s*$/i.test(line.trim())) {
+      inPackages = true;
+      continue;
+    }
+    if (inPackages) {
+      const item = /^\s*-\s*['"]?([^'"]+)['"]?\s*$/.exec(line);
+      if (item) {
+        patterns.push(item[1]!.trim());
+        continue;
+      }
+      if (line.trim() && !/^\s/.test(line)) inPackages = false;
+    }
+  }
+  return patterns;
+}
+
+async function collectWorkspacePatterns(
+  getContent: (p: string) => Promise<string | null>,
+): Promise<string[]> {
+  const patterns: string[] = [];
+  const rawPkg = await getContent('package.json');
+  if (rawPkg) {
+    try {
+      const pkg = JSON.parse(rawPkg) as { workspaces?: unknown };
+      const ws = pkg.workspaces;
+      if (Array.isArray(ws)) {
+        patterns.push(...(ws as string[]));
+      } else if (
+        typeof ws === 'object' &&
+        ws !== null &&
+        Array.isArray((ws as { packages?: string[] }).packages)
+      ) {
+        patterns.push(...(ws as { packages: string[] }).packages);
+      }
+    } catch {
+      /* ignore malformed package.json */
+    }
+  }
+  for (const name of PNPM_WORKSPACE_NAMES) {
+    const raw = await getContent(name);
+    if (raw) patterns.push(...parsePnpmWorkspacePatterns(raw));
+  }
+  return [...new Set(patterns.filter((p) => typeof p === 'string' && p.trim()))];
+}
+
+function workspacePatternsToContainers(
+  patterns: string[],
+  paths: Set<string>,
+): C4ContainerSpec[] {
   const out: C4ContainerSpec[] = [];
   for (const pat of patterns) {
     if (typeof pat !== 'string') continue;
@@ -308,7 +369,7 @@ async function parsePackageJsonWorkspaces(
           key,
           name: pat,
           pathPrefixes: [normPrefix(pat)],
-          technology: 'node',
+          technology: 'pnpm workspace',
           c4Kind: 'software',
         });
       }
@@ -327,12 +388,66 @@ async function parsePackageJsonWorkspaces(
         key: slugKey(first),
         name: first,
         pathPrefixes: [normPrefix(`${base}/${first}`)],
-        technology: 'node',
+        technology: 'pnpm workspace',
         c4Kind: 'software',
       });
     }
   }
   return out;
+}
+
+async function parseWorkspaceContainers(
+  getContent: (p: string) => Promise<string | null>,
+  paths: Set<string>,
+): Promise<C4ContainerSpec[]> {
+  const patterns = await collectWorkspacePatterns(getContent);
+  return workspacePatternsToContainers(patterns, paths);
+}
+
+function inferComposeServicePathPrefixes(
+  serviceName: string,
+  buildPrefix: string | undefined,
+  dockerfile: string | undefined,
+  pathSet: Set<string>,
+): string[] {
+  const prefixes: string[] = [];
+  const trimmedBuild = buildPrefix?.replace(/\\/g, '/').replace(/^\.?\//, '').replace(/\/+$/, '');
+  if (trimmedBuild && trimmedBuild !== '.') {
+    prefixes.push(normPrefix(trimmedBuild));
+  }
+  if (dockerfile) {
+    const dir = dockerfile.replace(/\\/g, '/').split('/').slice(0, -1).join('/');
+    if (dir && dir !== '.') prefixes.push(normPrefix(dir));
+  }
+  const candidates = [
+    serviceName,
+    `apps/${serviceName}`,
+    `services/${serviceName}`,
+    serviceName.replace(/-backend$/, ''),
+    serviceName.replace(/-video$/, ''),
+  ];
+  for (const c of candidates) {
+    const p = normPrefix(c);
+    if (hasPathPrefix(pathSet, p)) prefixes.push(p);
+  }
+  return [...new Set(prefixes)];
+}
+
+async function resolveComposeFile(
+  pathSet: Set<string>,
+  getContent: (p: string) => Promise<string | null>,
+): Promise<{ path: string; content: string } | null> {
+  for (const n of COMPOSE_NAMES) {
+    if (!pathSet.has(n)) continue;
+    const content = await getContent(n);
+    if (content && /services:\s*/i.test(content)) return { path: n, content };
+  }
+  for (const n of COMPOSE_NAMES) {
+    if (pathSet.has(n)) continue;
+    const content = await getContent(n);
+    if (content && /services:\s*/i.test(content)) return { path: n, content };
+  }
+  return null;
 }
 
 export async function scanC4Infrastructure(
@@ -356,39 +471,38 @@ export async function scanC4Infrastructure(
     containers.push({ ...c, key: k });
   };
 
-  for (const n of COMPOSE_NAMES) {
-    if (pathSet.has(n)) {
-      composePath = n;
-      break;
+  let composeServicesAdded = 0;
+  const resolvedCompose = await resolveComposeFile(pathSet, getContent);
+  if (resolvedCompose) {
+    composePath = resolvedCompose.path;
+    const services = parseDockerComposeServices(resolvedCompose.content);
+    const nameToKey = new Map<string, string>();
+    for (const s of services) {
+      const key = slugKey(s.name);
+      nameToKey.set(s.name, key);
+      const prefixes = inferComposeServicePathPrefixes(
+        s.name,
+        s.buildPrefix,
+        s.dockerfile,
+        pathSet,
+      );
+      const kind = s.image ? inferKindFromImage(s.image) : 'software';
+      add({
+        key,
+        name: s.name,
+        pathPrefixes: prefixes,
+        technology: s.image ?? (kind === 'database' ? 'database' : 'docker-compose'),
+        c4Kind: kind,
+      });
+      composeServicesAdded++;
     }
-  }
-  if (composePath) {
-    const content = await getContent(composePath);
-    if (content) {
-      const services = parseDockerComposeServices(content);
-      const nameToKey = new Map<string, string>();
-      for (const s of services) {
-        const key = slugKey(s.name);
-        nameToKey.set(s.name, key);
-        const prefixes: string[] = [];
-        if (s.buildPrefix) prefixes.push(s.buildPrefix);
-        const kind = s.image ? inferKindFromImage(s.image) : 'software';
-        add({
-          key,
-          name: s.name,
-          pathPrefixes: prefixes,
-          technology: s.image ?? (kind === 'database' ? 'database' : 'docker-compose'),
-          c4Kind: kind,
-        });
-      }
-      for (const s of services) {
-        const fromKey = nameToKey.get(s.name);
-        if (!fromKey) continue;
-        for (const dep of s.dependsOn) {
-          const toKey = nameToKey.get(dep);
-          if (!toKey || fromKey === toKey) continue;
-          communications.push({ fromKey, toKey, label: 'depends_on' });
-        }
+    for (const s of services) {
+      const fromKey = nameToKey.get(s.name);
+      if (!fromKey) continue;
+      for (const dep of s.dependsOn) {
+        const toKey = nameToKey.get(dep);
+        if (!toKey || fromKey === toKey) continue;
+        communications.push({ fromKey, toKey, label: 'depends_on' });
       }
     }
   }
@@ -404,8 +518,10 @@ export async function scanC4Infrastructure(
     });
   }
 
-  for (const w of await parsePackageJsonWorkspaces(getContent, pathSet)) {
-    add(w);
+  if (composeServicesAdded === 0) {
+    for (const w of await parseWorkspaceContainers(getContent, pathSet)) {
+      add(w);
+    }
   }
 
   if (containers.length === 0) {
