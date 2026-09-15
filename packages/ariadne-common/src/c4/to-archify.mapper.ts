@@ -128,12 +128,11 @@ function archifyConnectionFromRelationship(
   }
 
   if (level === 'context') {
-    const wireLabel = isArchifyWireProtocol(protocol) ? protocol : undefined;
+    const emphasized = isArchifyWireProtocol(protocol);
     return {
       from: rel.from,
       to: rel.to,
-      ...(wireLabel ? { label: wireLabel } : {}),
-      variant: wireLabel ? ('emphasis' as const) : ('default' as const),
+      variant: emphasized ? ('emphasis' as const) : ('default' as const),
     };
   }
 

@@ -121,8 +121,28 @@ describe('c4ModelToArchifyArchitecture', () => {
       visibilityEdges: [],
     });
     const ir = c4ModelToArchifyArchitecture(model);
-    expect(ir.connections?.every((c) => !c.label?.includes('package.json'))).toBe(true);
-    expect(ir.connections?.every((c) => !c.label || c.label === 'REST')).toBe(true);
+    expect(ir.connections?.every((c) => c.label == null)).toBe(true);
+  });
+
+  it('no pone REST como label en context (evita solapes Archify)', () => {
+    const model = domainContextSpecToC4Model({
+      projectId: 'p1',
+      projectName: 'Memoria',
+      repos: [{ id: 'repo-11111111-aaaa-bbbb-cccc-dddddddddddd', label: 'memoria-generacional' }],
+      dependencies: [
+        {
+          dependencyId: 'dep-1',
+          domainId: 'dom-pay',
+          domainName: 'Pagos',
+          connectionType: 'REST',
+          description: 'Cobros',
+        },
+      ],
+      visibilityEdges: [],
+    });
+    const ir = c4ModelToArchifyArchitecture(model);
+    expect(ir.connections?.every((c) => !c.label)).toBe(true);
+    expect(ir.connections?.some((c) => c.variant === 'emphasis')).toBe(true);
   });
 
   it('no usa connectionType custom (eventos) como label en context', () => {

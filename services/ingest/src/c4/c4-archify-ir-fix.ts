@@ -41,11 +41,16 @@ export function fixArchifyArchitectureIr(ir: ArchifyArchitectureIr): ArchifyArch
       size: [width, baseH] as [number, number],
     };
   });
+  const isContextDiagram = /c4 context/i.test(ir.meta?.title ?? '');
   const connections = (ir.connections ?? []).map((conn) => {
     const label = conn.label?.trim() ?? '';
     if (!label) return conn;
     const normalized = label.toLowerCase();
-    if (IMPLICIT_EDGE_LABELS.has(normalized) || !isArchifyWireProtocol(label)) {
+    if (
+      isContextDiagram ||
+      IMPLICIT_EDGE_LABELS.has(normalized) ||
+      !isArchifyWireProtocol(label)
+    ) {
       const { label: _label, ...rest } = conn;
       return { ...rest, variant: conn.variant ?? 'dashed' };
     }

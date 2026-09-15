@@ -21,6 +21,20 @@ describe('c4-archify-ir-fix', () => {
     expect(out.components[0]?.sublabel).toContain('kreodevs/memoria-generacional');
   });
 
+  it('quita REST en diagramas C4 Context', () => {
+    const out = fixArchifyArchitectureIr({
+      schema_version: 1,
+      diagram_type: 'architecture',
+      meta: { title: 'C4 Context — Memoria' },
+      components: [
+        { id: 'sys', type: 'backend', label: 'app', pos: [40, 80], size: [130, 60] },
+        { id: 'ext', type: 'external', label: 'Pagos', pos: [250, 80], size: [130, 60] },
+      ],
+      connections: [{ from: 'sys', to: 'ext', label: 'REST', variant: 'emphasis' }],
+    });
+    expect(out.connections?.[0]?.label).toBeUndefined();
+  });
+
   it('quita descripciones largas de inferencia en aristas', () => {
     const out = fixArchifyArchitectureIr({
       schema_version: 1,
