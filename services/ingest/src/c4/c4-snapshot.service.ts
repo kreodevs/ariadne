@@ -27,9 +27,7 @@ export class C4SnapshotService {
       repoId: input.repoId ?? null,
       level: input.level,
       modelJson: input.model,
-      archifyJson: input.archifyJson
-        ? (input.archifyJson as unknown as Record<string, unknown>)
-        : null,
+      archifyJson: input.archifyJson ?? null,
       archifyHtmlPath: input.archifyHtmlPath ?? null,
       contentHash: input.model.contentHash,
       generator: input.model.generator,

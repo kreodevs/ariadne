@@ -8,7 +8,7 @@ import {
   Index,
   PrimaryGeneratedColumn,
 } from 'typeorm';
-import type { C4Model } from 'ariadne-common';
+import type { ArchifyArchitectureIr, C4Model } from 'ariadne-common';
 
 @Entity('c4_model_snapshots')
 @Index(['projectId', 'level', 'createdAt'])
@@ -29,7 +29,7 @@ export class C4SnapshotEntity {
   modelJson!: C4Model;
 
   @Column({ name: 'archify_json', type: 'jsonb', nullable: true })
-  archifyJson!: Record<string, unknown> | null;
+  archifyJson!: ArchifyArchitectureIr | null;
 
   @Column({ name: 'archify_html_path', type: 'text', nullable: true })
   archifyHtmlPath!: string | null;

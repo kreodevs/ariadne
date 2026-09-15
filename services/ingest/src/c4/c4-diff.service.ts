@@ -4,7 +4,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { readFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
-import { diffC4Models, type ArchifyArchitectureIr, type C4ModelDiff } from 'ariadne-common';
+import { diffC4Models, type C4ModelDiff } from 'ariadne-common';
 import { C4SnapshotService } from './c4-snapshot.service';
 import { C4ArchifyRenderer } from './c4-archify.renderer';
 
@@ -40,8 +40,8 @@ export class C4DiffService {
 
     const diff = diffC4Models(fromSnap.modelJson, toSnap.modelJson);
 
-    const baseIr = fromSnap.archifyJson as ArchifyArchitectureIr | null;
-    const headIr = toSnap.archifyJson as ArchifyArchitectureIr | null;
+    const baseIr = fromSnap.archifyJson;
+    const headIr = toSnap.archifyJson;
     let archifyCompareHtml: string | null = null;
     let archifyComparePath: string | null = null;
     let archifyCompareError: string | null = null;

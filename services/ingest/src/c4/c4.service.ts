@@ -12,7 +12,6 @@ import {
   domainContextSpecToC4Model,
   infrastructureSpecToC4Model,
   mergeC4ContainerModels,
-  type ArchifyArchitectureIr,
   type C4Level,
   type C4Model,
 } from 'ariadne-common';
@@ -371,7 +370,7 @@ export class C4Service {
         const render = await this.archify.renderArchitecture(
           projectId,
           level,
-          snap.archifyJson as ArchifyArchitectureIr,
+          snap.archifyJson,
         );
         if (render.validated && existsSync(render.htmlPath)) {
           await this.snapshots.updateHtmlPath(snap.id, render.htmlPath);
