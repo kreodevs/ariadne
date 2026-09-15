@@ -12,6 +12,7 @@ import {
   domainContextSpecToC4Model,
   infrastructureSpecToC4Model,
   mergeC4ContainerModels,
+  type ArchifyArchitectureIr,
   type C4Level,
   type C4Model,
 } from 'ariadne-common';
@@ -28,6 +29,7 @@ import { C4ContextEnricher } from './c4-context.enricher';
 import { C4ComponentExtractor } from './c4-component.extractor';
 import { C4SequenceExtractor } from './c4-sequence.extractor';
 import { C4MarkdownExportService } from './c4-markdown-export.service';
+import { resolveExistingC4HtmlPath } from './c4-html.util';
 
 const SUPPORTED_LEVELS: C4Level[] = ['context', 'container', 'component'];
 
@@ -320,6 +322,23 @@ export class C4Service {
     return snap?.modelJson ?? null;
   }
 
+  async getModelMeta(
+    projectId: string,
+    level: C4Level,
+  ): Promise<{ model: C4Model; htmlReady: boolean; snapshotId: string } | null> {
+    const snap = await this.snapshots.getLatest(projectId, level);
+    if (!snap?.modelJson) return null;
+    const htmlReady = Boolean(
+      resolveExistingC4HtmlPath(
+        this.archify.storageRoot(),
+        projectId,
+        level,
+        snap.archifyHtmlPath,
+      ),
+    );
+    return { model: snap.modelJson, htmlReady, snapshotId: snap.id };
+  }
+
   async getContainerModel(projectId: string): Promise<C4Model | null> {
     return this.getModel(projectId, 'container');
   }
@@ -330,10 +349,45 @@ export class C4Service {
 
   async readHtml(projectId: string, level: C4Level): Promise<{ html: string; path: string } | null> {
     const snap = await this.snapshots.getLatest(projectId, level);
-    const p = snap?.archifyHtmlPath;
-    if (!p || !existsSync(p)) return null;
-    const html = await readFile(p, 'utf8');
-    return { html, path: p };
+    if (!snap) return null;
+
+    const storageRoot = this.archify.storageRoot();
+    const existing = resolveExistingC4HtmlPath(
+      storageRoot,
+      projectId,
+      level,
+      snap.archifyHtmlPath,
+    );
+    if (existing) {
+      const html = await readFile(existing, 'utf8');
+      if (snap.archifyHtmlPath !== existing) {
+        await this.snapshots.updateHtmlPath(snap.id, existing);
+      }
+      return { html, path: existing };
+    }
+
+    if (snap.archifyJson && Object.keys(snap.archifyJson).length > 0) {
+      try {
+        const render = await this.archify.renderArchitecture(
+          projectId,
+          level,
+          snap.archifyJson as ArchifyArchitectureIr,
+        );
+        if (render.validated && existsSync(render.htmlPath)) {
+          await this.snapshots.updateHtmlPath(snap.id, render.htmlPath);
+          const html = await readFile(render.htmlPath, 'utf8');
+          return { html, path: render.htmlPath };
+        }
+      } catch (err) {
+        this.logger.warn(
+          `C4 lazy HTML render (${level}) project=${projectId}: ${
+            err instanceof Error ? err.message : String(err)
+          }`,
+        );
+      }
+    }
+
+    return null;
   }
 
   async readContainerHtml(projectId: string): Promise<{ html: string; path: string } | null> {

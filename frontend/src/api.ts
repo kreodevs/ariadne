@@ -139,9 +139,11 @@ export const api = {
     request<void>(`/projects/${id}`, { method: 'DELETE' }),
 
   getC4Model: (projectId: string, level = 'container') =>
-    request<{ model: Record<string, unknown> }>(
-      `/projects/${projectId}/c4?level=${encodeURIComponent(level)}`,
-    ),
+    request<{
+      model: Record<string, unknown>;
+      htmlReady: boolean;
+      snapshotId: string;
+    }>(`/projects/${projectId}/c4?level=${encodeURIComponent(level)}`),
 
   generateC4: (
     projectId: string,

@@ -48,6 +48,10 @@ export class C4SnapshotService {
     return this.snapshots.findOne({ where: { id } });
   }
 
+  async updateHtmlPath(id: string, archifyHtmlPath: string): Promise<void> {
+    await this.snapshots.update({ id }, { archifyHtmlPath });
+  }
+
   async listSnapshots(
     projectId: string,
     level?: string,

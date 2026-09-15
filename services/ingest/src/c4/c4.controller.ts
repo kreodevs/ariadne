@@ -40,11 +40,15 @@ export class C4Controller {
     @Query('level') level?: string,
   ) {
     const lv = parseLevel(level);
-    const model = await this.c4.getModel(projectId, lv);
-    if (!model) {
+    const meta = await this.c4.getModelMeta(projectId, lv);
+    if (!meta) {
       throw new NotFoundException('Sin snapshot C4. Ejecuta POST .../c4/generate');
     }
-    return { model };
+    return {
+      model: meta.model,
+      htmlReady: meta.htmlReady,
+      snapshotId: meta.snapshotId,
+    };
   }
 
   @Get('snapshots')

@@ -52,40 +52,58 @@ export function C4DiagramViewer({
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [meta, setMeta] = useState<{ htmlReady?: boolean } | null>(null);
+  const [meta, setMeta] = useState<{ htmlReady?: boolean; hasModel?: boolean } | null>(null);
   const [useLlm, setUseLlm] = useState(false);
   const [componentKey, setComponentKey] = useState(containerKey ?? '');
 
-  const loadModel = useCallback(async () => {
+  const applyModel = useCallback((model: { elements?: C4Element[]; generator?: string }) => {
+    setElements(model.elements ?? []);
+    setGenerator(model.generator ?? null);
+  }, []);
+
+  const loadHtml = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    let hasModel = false;
     try {
       const res = await api.getC4Model(projectId, level);
       const model = res.model as {
         elements?: C4Element[];
         generator?: string;
       };
-      setElements(model.elements ?? []);
-      setGenerator(model.generator ?? null);
-    } catch {
-      setElements([]);
-      setGenerator(null);
-    }
-  }, [projectId, level]);
+      applyModel(model);
+      hasModel = true;
+      setMeta({ htmlReady: res.htmlReady, hasModel: true });
 
-  const loadHtml = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
       const doc = await api.getC4Html(projectId, level);
       setHtml(doc);
-      await loadModel();
+      setMeta({ htmlReady: true, hasModel: true });
     } catch (e) {
       setHtml(null);
-      setError(e instanceof Error ? e.message : String(e));
-      await loadModel();
+      if (hasModel) {
+        setMeta((prev) => ({ ...prev, htmlReady: false, hasModel: true }));
+        setError(
+          formatC4ArchifyFailure({
+            htmlReady: false,
+            fallback:
+              'Modelo C4 guardado pero el diagrama HTML no está disponible. Pulsa «Regenerar diagrama» para crearlo.',
+          }),
+        );
+      } else {
+        setElements([]);
+        setGenerator(null);
+        setMeta({ hasModel: false });
+        const msg = e instanceof Error ? e.message : String(e);
+        if (/404/i.test(msg) && /sin snapshot/i.test(msg)) {
+          setError(null);
+        } else {
+          setError(msg);
+        }
+      }
     } finally {
       setLoading(false);
     }
-  }, [projectId, level, loadModel]);
+  }, [projectId, level, applyModel]);
 
   const regenerate = useCallback(async () => {
     setGenerating(true);
@@ -219,7 +237,7 @@ export function C4DiagramViewer({
       <C4SnapshotCompare projectId={projectId} level={level} />
 
       {error ? (
-        <Alert variant="destructive">
+        <Alert variant={meta?.hasModel ? 'default' : 'destructive'}>
           <AlertTitle>Diagrama C4 {levelLabel}</AlertTitle>
           <AlertDescription className="space-y-2">
             <p className="whitespace-pre-wrap text-sm">{error}</p>

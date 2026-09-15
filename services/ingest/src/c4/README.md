@@ -22,9 +22,9 @@ Pipeline: dominios / docker-compose / Falkor → `C4Model` → Archify HTML.
 
 ## API
 
-- `GET /projects/:id/c4?level=context|container|component` — JSON `C4Model`
+- `GET /projects/:id/c4?level=context|container|component` — JSON `C4Model` + `htmlReady` + `snapshotId`
 - `POST /projects/:id/c4/generate` — body `{ level?, levels?, useLlm?, containerKey? }`
-- `GET /projects/:id/c4/html?level=…` — HTML Archify
+- `GET /projects/:id/c4/html?level=…` — HTML Archify (re-render lazy desde `archify_json` si el fichero falta en disco)
 - `GET /projects/:id/c4/snapshots?level=&limit=` — historial
 - `GET /projects/:id/c4/diff?from=&to=` — diff JSON + HTML Archify compare
 
