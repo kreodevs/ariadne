@@ -5,6 +5,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { FalkorDB } from 'falkordb';
 import {
   apiFlowToArchifySequence,
+  buildApiFlowSteps,
   formatHttpCallLabel,
   inferMonorepoSegmentLabel,
   type ApiFlowSpec,
@@ -34,7 +35,24 @@ interface SequenceFlowRow {
   isPublicEntry?: boolean;
   hasApiLink?: boolean;
   kind?: 'route' | 'api-client';
+  httpStatusCode?: number;
+  serviceMethod?: string;
+  modelName?: string;
+  modelTable?: string;
 }
+
+/** Enriquecimiento handler → servicio → Model + status HTTP desde Nest/OpenAPI. */
+const SEQUENCE_BACKEND_ENRICHMENT_CYPHER = `
+OPTIONAL MATCH (cf)-[:CONTAINS]->(handlerFn:Function {name: nr.handlerName, projectId: $projectId})
+OPTIONAL MATCH (handlerFn)-[:CALLS*1..3]->(calleeFn:Function)
+OPTIONAL MATCH (svcFile:File {projectId: $projectId})-[:CONTAINS]->(calleeFn)
+OPTIONAL MATCH (svcFile)-[:CONTAINS]->(m:Model)
+WITH *,
+     coalesce(nr.httpStatusCode, op.successStatusCode) AS httpStatusCode,
+     collect(DISTINCT calleeFn.name)[0] AS serviceMethod,
+     collect(DISTINCT m.name)[0] AS modelName,
+     collect(DISTINCT m.tableName)[0] AS modelTable
+`;
 
 @Injectable()
 export class C4SequenceExtractor {
@@ -143,47 +161,23 @@ export class C4SequenceExtractor {
         ? 'FalkorDB'
         : 'PostgreSQL';
 
-    const clientCall = formatHttpCallLabel(method, apiPath ?? backendPath ?? '/api');
-    const backendCall = backendPath ?? handlerName ?? 'handler';
-
     const title = `API flow — ${route}`;
-    const steps = [
-      {
-        id: 'open',
-        from: 'user',
-        to: 'web',
-        label: `navega ${route} → ${screen}`,
-        variant: 'default' as const,
-      },
-      {
-        id: 'call',
-        from: 'web',
-        to: 'api',
-        label: clientCall,
-        variant: 'emphasis' as const,
-      },
-      {
-        id: 'handler',
-        from: 'api',
-        to: 'backend',
-        label: backendCall,
-        variant: 'emphasis' as const,
-      },
-      {
-        id: 'db',
-        from: 'backend',
-        to: 'db',
-        label: 'query',
-        variant: 'dashed' as const,
-      },
-      {
-        id: 'response',
-        from: 'api',
-        to: 'web',
-        label: '200 JSON',
-        variant: 'return' as const,
-      },
-    ];
+    const steps = buildApiFlowSteps({
+      routePath: route,
+      screenName: screen,
+      method,
+      apiPath,
+      backendPath,
+      handlerName,
+      modelName: row?.modelName,
+      modelTable: row?.modelTable,
+      serviceMethod: row?.serviceMethod,
+      httpStatusCode: row?.httpStatusCode,
+    });
+    const dbSublabel = row?.modelName ?? row?.modelTable ?? 'persistencia';
+    const hasEnrichedBackend = Boolean(
+      row?.modelName || row?.modelTable || row?.serviceMethod || row?.httpStatusCode,
+    );
 
     return {
       title,
@@ -197,7 +191,7 @@ export class C4SequenceExtractor {
         { id: 'web', label: webLabel, type: 'frontend', sublabel: screen },
         { id: 'api', label: apiLabel, type: 'backend', sublabel: 'HTTP' },
         { id: 'backend', label: backendLabel, type: 'backend', sublabel: handlerName ?? 'handler' },
-        { id: 'db', label: dbLabel, type: 'database', sublabel: 'persistencia' },
+        { id: 'db', label: dbLabel, type: 'database', sublabel: dbSublabel },
       ],
       steps,
       evidence: [
@@ -206,7 +200,9 @@ export class C4SequenceExtractor {
           nodeId: String(row?.routeId ?? row?.routePath ?? projectId),
           filePath: screenFile,
           reason: row?.hasApiLink
-            ? 'Route + REFERENCES_API / NestRoute indexados'
+            ? hasEnrichedBackend
+              ? 'Route + NestRoute + Model/HTTP status en grafo'
+              : 'Route + REFERENCES_API / NestRoute indexados'
             : row
               ? 'Route indexada (sin enlace API completo en el grafo)'
               : 'Flujo sintético (sin ruta indexada)',
@@ -254,6 +250,7 @@ export class C4SequenceExtractor {
           WITH rt, comp, sf, acr, op, coalesce(nr, nr2) AS nr
           OPTIONAL MATCH (nc:NestController)-[:DECLARES_ROUTE]->(nr)
           OPTIONAL MATCH (cf:File)-[:CONTAINS]->(nc)
+          ${SEQUENCE_BACKEND_ENRICHMENT_CYPHER}
           RETURN rt.path AS routePath,
                  coalesce(comp.name, rt.componentName) AS screenName,
                  sf.path AS screenFilePath,
@@ -266,7 +263,11 @@ export class C4SequenceExtractor {
                  rt.path AS routeId,
                  coalesce(rt.isPublicEntry, 'false') AS isPublicEntry,
                  (acr IS NOT NULL) AS hasApiLink,
-                 'route' AS kind
+                 'route' AS kind,
+                 httpStatusCode,
+                 serviceMethod,
+                 modelName,
+                 modelTable
           ORDER BY
             CASE WHEN coalesce(rt.isPublicEntry, 'false') = 'true' THEN 0 ELSE 1 END,
             CASE WHEN acr IS NOT NULL AND nr IS NOT NULL THEN 0 ELSE 1 END,
@@ -330,6 +331,7 @@ export class C4SequenceExtractor {
         WITH f, acr, coalesce(nr, nr2) AS nr, op
         OPTIONAL MATCH (nc:NestController)-[:DECLARES_ROUTE]->(nr)
         OPTIONAL MATCH (cf:File)-[:CONTAINS]->(nc)
+        ${SEQUENCE_BACKEND_ENRICHMENT_CYPHER}
         RETURN f.path AS screenFilePath,
                'API client' AS screenName,
                coalesce(acr.normalizedPath, acr.apiPath) AS apiPath,
@@ -340,7 +342,11 @@ export class C4SequenceExtractor {
                cf.path AS controllerFilePath,
                f.path AS routePath,
                (nr IS NOT NULL OR acr.apiPath IS NOT NULL) AS hasApiLink,
-               'api-client' AS kind
+               'api-client' AS kind,
+               httpStatusCode,
+               serviceMethod,
+               modelName,
+               modelTable
         ORDER BY f.path, apiPath
         LIMIT 80
       `;
@@ -445,6 +451,16 @@ export class C4SequenceExtractor {
       isPublicEntry: String(row.isPublicEntry ?? 'false') === 'true',
       hasApiLink: Boolean(row.hasApiLink),
       kind: row.kind === 'api-client' ? 'api-client' : 'route',
+      httpStatusCode: this.parseOptionalInt(row.httpStatusCode),
+      serviceMethod: row.serviceMethod != null ? String(row.serviceMethod) : undefined,
+      modelName: row.modelName != null ? String(row.modelName) : undefined,
+      modelTable: row.modelTable != null ? String(row.modelTable) : undefined,
     };
+  }
+
+  private parseOptionalInt(value: unknown): number | undefined {
+    if (value == null || value === '') return undefined;
+    const n = Number(value);
+    return Number.isFinite(n) && n >= 100 && n < 600 ? n : undefined;
   }
 }

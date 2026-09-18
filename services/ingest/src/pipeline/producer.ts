@@ -430,7 +430,7 @@ export function buildCypherForFile(
     const segProp = rt.routeSegment !== undefined ? cypherSafe(rt.routeSegment) : 'null';
     const fp = cypherSafe(fullPath);
     statements.push(
-      `MERGE (nr:NestRoute {path: ${cypherSafe(path)}, controllerName: ${cypherSafe(rt.controllerName)}, handlerName: ${cypherSafe(rt.handlerName)}, projectId: ${pid}, repoId: ${rid}}) ON CREATE SET nr.httpMethod = ${cypherSafe(rt.httpMethod)}, nr.handlerLine = ${rt.handlerLine}, nr.routeSegment = ${segProp}, nr.fullPath = ${fp} ON MATCH SET nr.httpMethod = ${cypherSafe(rt.httpMethod)}, nr.handlerLine = ${rt.handlerLine}, nr.routeSegment = ${segProp}, nr.fullPath = ${fp}`,
+      `MERGE (nr:NestRoute {path: ${cypherSafe(path)}, controllerName: ${cypherSafe(rt.controllerName)}, handlerName: ${cypherSafe(rt.handlerName)}, projectId: ${pid}, repoId: ${rid}}) ON CREATE SET nr.httpMethod = ${cypherSafe(rt.httpMethod)}, nr.handlerLine = ${rt.handlerLine}, nr.routeSegment = ${segProp}, nr.fullPath = ${fp}${rt.httpStatusCode != null ? `, nr.httpStatusCode = ${rt.httpStatusCode}` : ''} ON MATCH SET nr.httpMethod = ${cypherSafe(rt.httpMethod)}, nr.handlerLine = ${rt.handlerLine}, nr.routeSegment = ${segProp}, nr.fullPath = ${fp}${rt.httpStatusCode != null ? `, nr.httpStatusCode = ${rt.httpStatusCode}` : ''}`,
     );
     statements.push(
       `MATCH (f:File {path: ${cypherSafe(path)}, projectId: ${pid}, repoId: ${rid}}) MATCH (nr:NestRoute {path: ${cypherSafe(path)}, controllerName: ${cypherSafe(rt.controllerName)}, handlerName: ${cypherSafe(rt.handlerName)}, projectId: ${pid}, repoId: ${rid}}) MERGE (f)-[:CONTAINS]->(nr)`,

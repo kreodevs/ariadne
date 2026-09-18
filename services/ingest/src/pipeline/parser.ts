@@ -154,6 +154,8 @@ export interface NestHttpRouteInfo {
   httpMethod: string;
   /** Primer argumento string de @Get('…') si existe. */
   routeSegment?: string;
+  /** Literal de `@HttpCode(...)` cuando está presente en el handler. */
+  httpStatusCode?: number;
   roles: string[];
   guardNames: string[];
 }
@@ -1668,6 +1670,45 @@ function extractGuardRefsFromArg(node: Parser.SyntaxNode, source: string, out: s
   }
 }
 
+const NEST_HTTP_STATUS_MEMBERS: Record<string, number> = {
+  OK: 200,
+  CREATED: 201,
+  ACCEPTED: 202,
+  NO_CONTENT: 204,
+  BAD_REQUEST: 400,
+  UNAUTHORIZED: 401,
+  FORBIDDEN: 403,
+  NOT_FOUND: 404,
+  CONFLICT: 409,
+};
+
+function extractHttpCodeFromDecorator(dec: Parser.SyntaxNode, source: string): number | undefined {
+  if (getDecoratorCallExpressionCalleeName(dec, source) !== 'HttpCode') return undefined;
+  const call = dec.childForFieldName('expression') ?? findNodesByType(dec, 'call_expression')[0];
+  if (!call || call.type !== 'call_expression') return undefined;
+  const args = call.childForFieldName('arguments');
+  if (!args) return undefined;
+  for (let i = 0; i < args.childCount; i++) {
+    const arg = args.child(i);
+    if (!arg || arg.type === ',' || arg.type === '(' || arg.type === ')') continue;
+    if (arg.type === 'number') {
+      const n = Number(getNodeText(source, arg));
+      return Number.isFinite(n) ? n : undefined;
+    }
+    if (arg.type === 'member_expression') {
+      const prop = arg.childForFieldName('property') ?? arg.lastNamedChild;
+      const name = prop ? getNodeText(source, prop) : '';
+      if (name && NEST_HTTP_STATUS_MEMBERS[name] != null) return NEST_HTTP_STATUS_MEMBERS[name];
+    }
+    if (arg.type === 'identifier') {
+      const name = getNodeText(source, arg);
+      if (NEST_HTTP_STATUS_MEMBERS[name] != null) return NEST_HTTP_STATUS_MEMBERS[name];
+    }
+    break;
+  }
+  return undefined;
+}
+
 function extractUseGuardsFromDecorator(dec: Parser.SyntaxNode, source: string): string[] {
   if (getDecoratorCallExpressionCalleeName(dec, source) !== 'UseGuards') return [];
   const call = dec.childForFieldName('expression') ?? findNodesByType(dec, 'call_expression')[0];
@@ -1721,12 +1762,15 @@ function collectNestHttpRoutesForController(
     const methodRoles = new Set(classRoles);
     const methodGuards = new Set(classGuards);
     let http: { httpMethod: string; routeSegment?: string } | null = null;
+    let httpStatusCode: number | undefined;
 
     for (const dec of decoratorsOnNodeOrdered(ch)) {
       for (const r of extractRolesFromRolesDecorator(dec, source)) methodRoles.add(r);
       for (const g of extractUseGuardsFromDecorator(dec, source)) methodGuards.add(g);
       const mapped = nestHttpVerbAndSegmentFromDecorator(dec, source);
       if (mapped) http = mapped;
+      const status = extractHttpCodeFromDecorator(dec, source);
+      if (status != null) httpStatusCode = status;
     }
 
     if (!http) continue;
@@ -1737,6 +1781,7 @@ function collectNestHttpRoutesForController(
       handlerLine: ch.startPosition.row + 1,
       httpMethod: http.httpMethod,
       ...(http.routeSegment !== undefined ? { routeSegment: http.routeSegment } : {}),
+      ...(httpStatusCode != null ? { httpStatusCode } : {}),
       roles: [...methodRoles],
       guardNames: [...methodGuards],
     });

@@ -153,6 +153,13 @@ export {
   type ApiFlowStep,
   type ArchifySequenceIr,
 } from './c4/to-archify-sequence.js';
+export {
+  buildApiFlowSteps,
+  buildDbQueryLabel,
+  formatHttpResponseLabel,
+  inferHttpStatusCode,
+  type ApiFlowStepInput,
+} from './c4/build-api-flow-steps.js';
 export { buildC4MarkdownBundle, type C4MarkdownFile } from './c4/c4-markdown-export.js';
 export { wantsArchitectureDiagramQuestion } from './c4/chat-architecture-diagram.util.js';
 export {
