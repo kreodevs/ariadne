@@ -43,8 +43,9 @@ export async function buildCypherForPrismaSchema(
       en.documentation != null && en.documentation.trim()
         ? `, e.description = ${cypherSafe(en.documentation.trim())}`
         : '';
+    const valuesJson = cypherSafe(JSON.stringify((en.values ?? []).map((v) => v.name)));
     statements.push(
-      `MERGE (e:Enum {path: ${cypherSafe(path)}, name: ${cypherSafe(en.name)}, projectId: ${pid}, repoId: ${rid}}) ON CREATE SET e.source = ${cypherSafe(KIND_PRISMA)}${desc} ON MATCH SET e.source = ${cypherSafe(KIND_PRISMA)}${desc}`,
+      `MERGE (e:Enum {path: ${cypherSafe(path)}, name: ${cypherSafe(en.name)}, projectId: ${pid}, repoId: ${rid}}) ON CREATE SET e.source = ${cypherSafe(KIND_PRISMA)}, e.valuesJson = ${valuesJson}${desc} ON MATCH SET e.source = ${cypherSafe(KIND_PRISMA)}, e.valuesJson = ${valuesJson}${desc}`,
     );
     statements.push(
       `MATCH (f:File {path: ${cypherSafe(path)}, projectId: ${pid}, repoId: ${rid}}) MATCH (e:Enum {path: ${cypherSafe(path)}, name: ${cypherSafe(en.name)}, projectId: ${pid}, repoId: ${rid}}) MERGE (f)-[:CONTAINS]->(e)`,

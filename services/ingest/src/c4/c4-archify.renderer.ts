@@ -215,13 +215,18 @@ export class C4ArchifyRenderer {
     return { htmlPath, validated: true, archifyBin: bin };
   }
 
-  async renderWorkflow(projectId: string, ir: ArchifyWorkflowIr): Promise<ArchifyRenderResult> {
+  async renderWorkflow(
+    projectId: string,
+    ir: ArchifyWorkflowIr,
+    targetId = 'sync-pipeline',
+  ): Promise<ArchifyRenderResult> {
     const root = this.storageRoot();
     await mkdir(root, { recursive: true });
     const base = join(root, projectId);
     await mkdir(base, { recursive: true });
-    const jsonPath = join(base, 'workflow.json');
-    const htmlPath = join(base, 'workflow.html');
+    const safeTarget = targetId.replace(/[^a-z0-9:_-]/gi, '_');
+    const jsonPath = join(base, `workflow-${safeTarget}.json`);
+    const htmlPath = join(base, `workflow-${safeTarget}.html`);
     await writeFile(jsonPath, JSON.stringify(ir, null, 2), 'utf8');
 
     const bin = this.resolveArchifyBin();

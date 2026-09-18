@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   buildDefaultSyncWorkflowSpec,
+  buildRouteFlowWorkflowSpec,
   buildSyncJobLifecycleSpec,
   entityLifecycleToArchifyLifecycle,
   syncWorkflowToArchifyWorkflow,
@@ -16,6 +17,19 @@ describe('archify workflow/lifecycle mappers', () => {
     expect(ir.nodes.every((n) => n.col <= 5)).toBe(true);
     expect(ir.mainPath).toContain('writing_graph');
     expect(ir.nodes.some((n) => n.id === 'failed')).toBe(true);
+  });
+
+  it('buildRouteFlowWorkflowSpec cabe en columnas Archify', () => {
+    const spec = buildRouteFlowWorkflowSpec({
+      routePath: '/admin/evento',
+      screenName: 'EventoPage',
+      method: 'GET',
+      apiPath: '/api/eventos/:id',
+      handlerName: 'findOne',
+    });
+    const ir = syncWorkflowToArchifyWorkflow(spec);
+    expect(ir.nodes.every((n) => n.col <= 5)).toBe(true);
+    expect(ir.mainPath).toContain('handler');
   });
 
   it('entityLifecycleToArchifyLifecycle incluye estados terminal', () => {

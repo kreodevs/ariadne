@@ -166,6 +166,18 @@ export {
   type ArchifyWorkflowIr,
   type SyncWorkflowSpec,
 } from './c4/to-archify-workflow.js';
+export { buildRouteFlowWorkflowSpec } from './c4/build-route-flow-workflow.js';
+export {
+  buildEnumStatusWorkflowSpec,
+  buildJourneyWorkflowSpec,
+  buildServiceChainWorkflowSpec,
+  indexedFlowPayloadToWorkflowSpec,
+} from './c4/build-indexed-flow-workflow.js';
+export {
+  type C4WorkflowTargetKind,
+  type C4WorkflowTargetOption,
+  type IndexedFlowPayload,
+} from './c4/workflow-targets.types.js';
 export {
   buildApiRequestLifecycleSpec,
   buildSyncJobLifecycleSpec,

@@ -247,17 +247,34 @@ export const api = {
     return res.text();
   },
 
-  generateC4Workflow: (projectId: string) =>
+  listC4WorkflowTargets: (projectId: string) =>
+    request<{
+      targets: Array<{
+        id: string;
+        kind: string;
+        label: string;
+        description: string;
+        routePath?: string | null;
+        isDefault?: boolean;
+      }>;
+    }>(`/projects/${projectId}/c4/workflow/targets`),
+
+  generateC4Workflow: (projectId: string, targetId?: string) =>
     request<{
       htmlReady: boolean;
       durationMs: number;
       archifyError: string | null;
       archifyBin: string | null;
       title: string;
-    }>(`/projects/${projectId}/c4/workflow/generate`, { method: 'POST', body: '{}' }),
+      targetId: string;
+    }>(`/projects/${projectId}/c4/workflow/generate`, {
+      method: 'POST',
+      body: JSON.stringify({ targetId }),
+    }),
 
-  getC4WorkflowHtml: async (projectId: string): Promise<string> => {
-    const res = await fetch(`${BASE}/projects/${projectId}/c4/workflow/html`, {
+  getC4WorkflowHtml: async (projectId: string, targetId = 'sync-pipeline'): Promise<string> => {
+    const q = targetId ? `?targetId=${encodeURIComponent(targetId)}` : '';
+    const res = await fetch(`${BASE}/projects/${projectId}/c4/workflow/html${q}`, {
       headers: getAuthHeaders(),
     });
     if (!res.ok) {

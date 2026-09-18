@@ -43,6 +43,7 @@ import {
 } from './graphql-client-reference-extract';
 import { isPublicEntryRoute } from './react-route-public-entry';
 import { extractPendingRouteDefs, type PendingRouteDef } from './router-routes-extract';
+import { extractFlowsFromSource, type ParsedFlowDef } from './flow-extract';
 import { parseStrapiGraphqlSchema, type GraphQlQueryInfo } from './strapi-graphql-extract';
 import {
   isStrapiConfigJsPath,
@@ -364,6 +365,8 @@ export interface ParsedFile {
   routes: RouteInfo[];
   /** Rutas TanStack / browser router antes de resolver paths (post-sync enrich). */
   pendingRouteDefs?: PendingRouteDef[];
+  /** Flujos multi-paso (wizard, job, LangGraph, cron). */
+  flows?: ParsedFlowDef[];
   /** Modelos de datos (clases TypeORM/Prisma; interface/type/class en Models|modelsType). */
   models: ModelInfo[];
   /** CSS/HTML indexados como activos estáticos. */
@@ -1070,6 +1073,10 @@ export function parseSource(
   collectPropTypes(root, source, componentNames, result.propsByComponent);
   collectRoutes(root, source, result);
   result.pendingRouteDefs = extractPendingRouteDefs(root, path, source);
+  const extFlows = normPathEarly.slice(normPathEarly.lastIndexOf('.')).toLowerCase();
+  if (['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs'].includes(extFlows)) {
+    result.flows = extractFlowsFromSource(root, source, path);
+  }
   collectFunctionsAndCalls(root, source, result);
   if (isStorybookStoriesPath(path)) {
     result.storybookCsf = { storyMetaTargets: extractStorybookCsfMetaTargets(root, source) };

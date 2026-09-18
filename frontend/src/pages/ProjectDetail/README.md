@@ -8,7 +8,7 @@ Vista de detalle de proyecto Ariadne.
 - **Diagramas** — pestañas Archify:
   - **C4** — Context, Container, Component (`C4DiagramViewer`), evidencias (`C4EvidencePanel`), compare (`C4SnapshotCompare`).
   - **Secuencia** — API request/response (`C4SequenceViewer`, rutas Falkor).
-  - **Proceso** — workflow full-sync (`C4WorkflowViewer`).
+  - **Proceso** — workflow con selector de flujos indexados (`C4WorkflowViewer`: ruta, enum, journey, job, wizard…).
   - **Estados** — lifecycle sync job / HTTP (`C4LifecycleViewer`).
   - Export `.md` común. Si Archify falla, la UI muestra `archifyError` del ingest.
 

@@ -35,6 +35,7 @@ import {
 import { buildCypherForPrismaSchema } from '../pipeline/prisma-extract';
 import { buildCypherForOpenApiSpec } from '../pipeline/openapi-spec-ingest';
 import { buildCrossRepoApiAndStrapiLinkCypher } from '../pipeline/cross-repo-api-link';
+import { buildPostSyncFlowIndexCypher } from '../pipeline/flow-graph-index';
 import { enrichParsedFilesWithCoreRouterRoutes } from '../pipeline/strapi-core-router-infer';
 import { enrichParsedFilesWithRouterRoutes } from '../pipeline/router-routes-extract';
 import { buildStrapiContentTypeRelationCypher } from '../pipeline/strapi-content-type-relations';
@@ -785,6 +786,17 @@ export class SyncService {
           console.warn(
             '[sync] cross-repo API link:',
             linkErr instanceof Error ? linkErr.message : String(linkErr),
+          );
+        }
+
+        try {
+          const flowGraph = await prepareGraph('flow-index');
+          const flowCy = await buildPostSyncFlowIndexCypher(flowGraph, projectId, repoId);
+          if (flowCy.length > 0) await runCypherBatch(flowGraph, flowCy);
+        } catch (flowErr) {
+          console.warn(
+            '[sync] flow index:',
+            flowErr instanceof Error ? flowErr.message : String(flowErr),
           );
         }
 

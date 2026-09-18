@@ -67,6 +67,17 @@ export class C4SequenceExtractor {
     return merged.map((row) => this.rowToRouteOption(row));
   }
 
+  /** Fila de flujo para una ruta (workflow / secuencia). */
+  async resolveRouteFlowRow(projectId: string, routePath?: string): Promise<SequenceFlowRow | null> {
+    const routeRows = await this.fetchRouteRows(projectId);
+    const apiRows = await this.fetchApiClientRouteRows(projectId);
+    const rows = this.mergeRouteRows(routeRows, apiRows);
+    if (routePath) {
+      return rows.find((r) => r.routePath === routePath) ?? null;
+    }
+    return this.pickDefaultRoute(rows) ?? apiRows[0] ?? (await this.fetchApiClientFallback(projectId));
+  }
+
   async buildRepresentativeFlow(
     projectId: string,
     routePath?: string,

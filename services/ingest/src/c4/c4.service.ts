@@ -212,11 +212,18 @@ export class C4Service {
     return { html, path: p };
   }
 
-  async generateWorkflow(projectId: string) {
+  async listWorkflowTargets(projectId: string) {
+    await this.projects.findOne(projectId);
+    const targets = await this.workflowExtractor.listTargets(projectId);
+    return { targets };
+  }
+
+  async generateWorkflow(projectId: string, targetId = 'sync-pipeline') {
     const t0 = Date.now();
     await this.projects.findOne(projectId);
-    const { archifyIr, spec } = await this.workflowExtractor.buildSyncWorkflow(projectId);
-    const render = await this.archify.renderWorkflow(projectId, archifyIr);
+    const { archifyIr, spec, targetId: resolvedTarget } =
+      await this.workflowExtractor.buildWorkflow(projectId, targetId);
+    const render = await this.archify.renderWorkflow(projectId, archifyIr, resolvedTarget);
     return {
       archifyIr,
       htmlReady: render.validated,
@@ -225,12 +232,26 @@ export class C4Service {
       archifyBin: render.archifyBin,
       durationMs: Date.now() - t0,
       title: spec.title,
+      targetId: resolvedTarget,
     };
   }
 
-  async readWorkflowHtml(projectId: string): Promise<{ html: string; path: string } | null> {
-    const p = join(this.archify.storageRoot(), projectId, 'workflow.html');
-    if (!existsSync(p)) return null;
+  async readWorkflowHtml(
+    projectId: string,
+    targetId = 'sync-pipeline',
+  ): Promise<{ html: string; path: string } | null> {
+    const safeTarget = targetId.replace(/[^a-z0-9:_-]/gi, '_');
+    const p = join(this.archify.storageRoot(), projectId, `workflow-${safeTarget}.html`);
+    if (!existsSync(p)) {
+      if (targetId === 'sync-pipeline') {
+        const legacy = join(this.archify.storageRoot(), projectId, 'workflow.html');
+        if (existsSync(legacy)) {
+          const html = await readFile(legacy, 'utf8');
+          return { html, path: legacy };
+        }
+      }
+      return null;
+    }
     const html = await readFile(p, 'utf8');
     return { html, path: p };
   }

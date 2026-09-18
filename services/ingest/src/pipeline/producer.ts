@@ -21,6 +21,8 @@ import { STORYBOOK_MAX_EMBED_CHARS } from './storybook-documentation';
 import { importInfosToStorybookBindings, isStorybookStoriesPath } from './storybook-csf-ast';
 import { isNonSourceEvidenceNoisePath } from '../chat/chat-evidence-path-filter';
 import { apiNameFromStrapiUid } from './strapi-uid-reference-extract';
+import { flowRowsToCypher } from './flow-graph-index';
+import type { ParsedFlowDef } from './flow-extract';
 
 export type { GraphClient } from 'ariadne-common';
 
@@ -268,6 +270,18 @@ export function buildCypherForFile(
     statements.push(
       `MATCH (f:File {path: ${cypherSafe(path)}, projectId: ${pid}, repoId: ${rid}}) MATCH (h:Hook {name: ${cypherSafe(h.name)}, projectId: ${pid}, repoId: ${rid}}) MERGE (f)-[:CONTAINS]->(h)`,
     );
+  }
+
+  if (parsed.flows?.length) {
+    const flowRows = parsed.flows.map((fl: ParsedFlowDef) => ({
+      flowId: fl.flowId,
+      kind: fl.kind,
+      label: fl.label,
+      description: fl.description ?? '',
+      sourcePath: fl.sourcePath,
+      payload: fl.payload,
+    }));
+    statements.push(...flowRowsToCypher(projectId, repoId, flowRows));
   }
 
   for (const r of parsed.routes ?? []) {

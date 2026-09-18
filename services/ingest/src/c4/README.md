@@ -44,8 +44,10 @@ El spec de secuencia (`buildApiFlowSteps`) incluye **request y response**: `db �
 
 | Tipo Archify | Endpoint generate | HTML | Fuente |
 |--------------|-------------------|------|--------|
-| **workflow** | `POST .../c4/workflow/generate` | `GET .../c4/workflow/html` | Pipeline full-sync (`sync.service.ts`) |
+| **workflow** | `POST .../c4/workflow/generate` `{ targetId? }` | `GET .../c4/workflow/html?targetId=` | Selector: rutas (`route-flow`), `:Flow` indexados (enum, CALLS, journey, wizard, job, LangGraph, cron) + `sync-pipeline` |
 | **lifecycle** | `POST .../c4/lifecycle/generate` `{ target }` | `GET .../c4/lifecycle/html?target=` | `sync-job` o `api-request` |
+
+`GET .../c4/workflow/targets` — lista flujos elegibles (fase 1: rutas; fase 2: post-sync `flow-graph-index`; fase 3: `flow-extract` en parser).
 
 UI: pestañas **C4 | Secuencia | Proceso | Estados** en Arquitectura → Diagramas.
 

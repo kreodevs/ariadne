@@ -113,15 +113,27 @@ export class C4Controller {
     return this.c4.generateSequence(projectId, body?.routePath);
   }
 
+  @Get('workflow/targets')
+  async listWorkflowTargets(@Param('projectId') projectId: string) {
+    return this.c4.listWorkflowTargets(projectId);
+  }
+
   @Post('workflow/generate')
-  async generateWorkflow(@Param('projectId') projectId: string) {
-    return this.c4.generateWorkflow(projectId);
+  async generateWorkflow(
+    @Param('projectId') projectId: string,
+    @Body() body: { targetId?: string },
+  ) {
+    return this.c4.generateWorkflow(projectId, body?.targetId ?? 'sync-pipeline');
   }
 
   @Get('workflow/html')
   @Header('Content-Type', 'text/html; charset=utf-8')
-  async getWorkflowHtml(@Param('projectId') projectId: string, @Res() res?: Response) {
-    const doc = await this.c4.readWorkflowHtml(projectId);
+  async getWorkflowHtml(
+    @Param('projectId') projectId: string,
+    @Query('targetId') targetId?: string,
+    @Res() res?: Response,
+  ) {
+    const doc = await this.c4.readWorkflowHtml(projectId, targetId ?? 'sync-pipeline');
     if (!doc) {
       throw new NotFoundException('Sin workflow C4. Ejecuta POST .../c4/workflow/generate');
     }
