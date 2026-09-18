@@ -71,7 +71,7 @@ describe('cross-repo-api-link', () => {
 
   it('buildCrossRepoApiAndStrapiLinkCypher includes all link kinds', () => {
     const stmts = buildCrossRepoApiAndStrapiLinkCypher(pid);
-    expect(stmts.length).toBe(17);
+    expect(stmts.length).toBe(19);
     expect(stmts.some((s) => s.includes('OpenApiOperation'))).toBe(true);
     expect(stmts.some((s) => s.includes('ExternalApiReference'))).toBe(true);
     expect(stmts.some((s) => s.includes('INVOKES_STRAPI_ROUTE'))).toBe(true);

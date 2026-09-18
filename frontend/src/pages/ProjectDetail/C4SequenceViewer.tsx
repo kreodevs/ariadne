@@ -22,11 +22,19 @@ type SequenceRoute = {
   apiSummary: string | null;
   isPublicEntry: boolean;
   hasApiLink: boolean;
+  kind?: 'route' | 'api-client';
+  screenFilePath?: string | null;
 };
 
 function formatRouteLabel(route: SequenceRoute): string {
+  if (route.kind === 'api-client') {
+    const file = route.screenFilePath?.split('/').pop() ?? route.routePath.split('/').pop();
+    const parts = [file ?? 'API client'];
+    if (route.apiSummary) parts.push(route.apiSummary);
+    return parts.join(' · ');
+  }
   const parts = [route.routePath];
-  if (route.screenName) parts.push(route.screenName);
+  if (route.screenName && route.screenName !== 'API client') parts.push(route.screenName);
   if (route.apiSummary) parts.push(route.apiSummary);
   return parts.join(' · ');
 }
@@ -126,12 +134,17 @@ export function C4SequenceViewer({ projectId }: { projectId: string }) {
           {routes.length > 0 ? (
             <Select value={selectedRoute} onValueChange={setSelectedRoute}>
               <SelectTrigger className="h-9 text-xs">
-                <SelectValue placeholder="Elige una ruta React" />
+                <SelectValue placeholder="Elige una ruta o flujo API" />
               </SelectTrigger>
               <SelectContent>
                 {routes.map((route) => (
-                  <SelectItem key={route.routePath} value={route.routePath} className="text-xs">
+                  <SelectItem
+                    key={`${route.kind ?? 'route'}:${route.routePath}`}
+                    value={route.routePath}
+                    className="text-xs"
+                  >
                     {formatRouteLabel(route)}
+                    {route.kind === 'api-client' ? ' · cliente API' : ''}
                     {route.isPublicEntry ? ' · entrada' : ''}
                     {!route.hasApiLink ? ' · sin API' : ''}
                   </SelectItem>
@@ -140,7 +153,7 @@ export function C4SequenceViewer({ projectId }: { projectId: string }) {
             </Select>
           ) : (
             <p className="text-xs text-muted-foreground">
-              Sin rutas en Falkor. Haz sync del frontend (nodos Route) y vuelve a intentar.
+              Sin rutas ni clientes API en Falkor. Haz sync del frontend y vuelve a intentar.
             </p>
           )}
         </div>

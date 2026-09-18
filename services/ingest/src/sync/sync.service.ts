@@ -36,6 +36,7 @@ import { buildCypherForPrismaSchema } from '../pipeline/prisma-extract';
 import { buildCypherForOpenApiSpec } from '../pipeline/openapi-spec-ingest';
 import { buildCrossRepoApiAndStrapiLinkCypher } from '../pipeline/cross-repo-api-link';
 import { enrichParsedFilesWithCoreRouterRoutes } from '../pipeline/strapi-core-router-infer';
+import { enrichParsedFilesWithRouterRoutes } from '../pipeline/router-routes-extract';
 import { buildStrapiContentTypeRelationCypher } from '../pipeline/strapi-content-type-relations';
 import { isOpenApiSpecSyncPath } from '../pipeline/strapi-path-patterns';
 import {
@@ -589,6 +590,15 @@ export class SyncService {
         );
       }
       const parsedFilesEnriched = Array.from(parsedByPath.values());
+
+      try {
+        enrichParsedFilesWithRouterRoutes(parsedFilesEnriched);
+      } catch (routerRoutesErr) {
+        console.warn(
+          '[sync] TanStack/browser router routes:',
+          routerRoutesErr instanceof Error ? routerRoutesErr.message : String(routerRoutesErr),
+        );
+      }
 
       let tsconfigPaths: Awaited<ReturnType<typeof loadRepoTsconfigPaths>> = null;
       try {

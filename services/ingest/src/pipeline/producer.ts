@@ -272,11 +272,17 @@ export function buildCypherForFile(
 
   for (const r of parsed.routes ?? []) {
     const publicEntry = r.isPublicEntry ? 'true' : 'false';
+    const routeSourceSet = r.routeSource
+      ? `, rt.routeSource = ${cypherSafe(r.routeSource)}`
+      : '';
     statements.push(
-      `MERGE (rt:Route {path: ${cypherSafe(r.path)}, projectId: ${pid}, repoId: ${rid}}) ON CREATE SET rt.componentName = ${cypherSafe(r.componentName)}, rt.isPublicEntry = ${publicEntry} ON MATCH SET rt.componentName = ${cypherSafe(r.componentName)}, rt.isPublicEntry = ${publicEntry}`,
+      `MERGE (rt:Route {path: ${cypherSafe(r.path)}, projectId: ${pid}, repoId: ${rid}}) ON CREATE SET rt.componentName = ${cypherSafe(r.componentName)}, rt.isPublicEntry = ${publicEntry}${routeSourceSet} ON MATCH SET rt.componentName = ${cypherSafe(r.componentName)}, rt.isPublicEntry = ${publicEntry}${routeSourceSet}`,
     );
     statements.push(
       `MATCH (p:Project {projectId: ${pid}}) MATCH (rt:Route {path: ${cypherSafe(r.path)}, projectId: ${pid}, repoId: ${rid}}) MERGE (p)-[:HAS_ROUTE]->(rt)`,
+    );
+    statements.push(
+      `MERGE (comp:Component {name: ${cypherSafe(r.componentName)}, projectId: ${pid}, repoId: ${rid}})`,
     );
     statements.push(
       `MATCH (rt:Route {path: ${cypherSafe(r.path)}, projectId: ${pid}, repoId: ${rid}}) MATCH (comp:Component {name: ${cypherSafe(r.componentName)}, projectId: ${pid}, repoId: ${rid}}) MERGE (rt)-[:ROUTE_TO_COMPONENT]->(comp)`,

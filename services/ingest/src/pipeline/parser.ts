@@ -42,6 +42,7 @@ import {
   type GraphQlClientReferenceParsed,
 } from './graphql-client-reference-extract';
 import { isPublicEntryRoute } from './react-route-public-entry';
+import { extractPendingRouteDefs, type PendingRouteDef } from './router-routes-extract';
 import { parseStrapiGraphqlSchema, type GraphQlQueryInfo } from './strapi-graphql-extract';
 import {
   isStrapiConfigJsPath,
@@ -217,6 +218,10 @@ export interface RouteInfo {
   enclosingComponent?: string;
   /** Entry point público (urbanos/public, visualizacionCampania, login). */
   isPublicEntry?: boolean;
+  /** Origen de la ruta (jsx Route, TanStack, createBrowserRouter, landing). */
+  routeSource?: 'react-router-jsx' | 'tanstack' | 'browser-router' | 'landing-heuristic';
+  /** Export const asociado (TanStack `profileRoute`, etc.). */
+  routeExportName?: string;
 }
 
 /** Modelo de datos (clase, interface o type object en paths de dominio frontend). */
@@ -355,6 +360,8 @@ export interface ParsedFile {
   graphQlClientReferences: GraphQlClientReferenceInfo[];
   /** React Router Route definitions (path -> component). */
   routes: RouteInfo[];
+  /** Rutas TanStack / browser router antes de resolver paths (post-sync enrich). */
+  pendingRouteDefs?: PendingRouteDef[];
   /** Modelos de datos (clases TypeORM/Prisma; interface/type/class en Models|modelsType). */
   models: ModelInfo[];
   /** CSS/HTML indexados como activos estáticos. */
@@ -1060,6 +1067,7 @@ export function parseSource(
   collectTsPropsInterfacesAndForwardRef(root, source, result, componentNames);
   collectPropTypes(root, source, componentNames, result.propsByComponent);
   collectRoutes(root, source, result);
+  result.pendingRouteDefs = extractPendingRouteDefs(root, path, source);
   collectFunctionsAndCalls(root, source, result);
   if (isStorybookStoriesPath(path)) {
     result.storybookCsf = { storyMetaTargets: extractStorybookCsfMetaTargets(root, source) };
@@ -1249,6 +1257,7 @@ function collectRoutes(root: Parser.SyntaxNode, source: string, result: ParsedFi
       result.routes.push({
         path,
         componentName,
+        routeSource: 'react-router-jsx',
         ...(enclosingComponent ? { enclosingComponent } : {}),
         ...(isPublicEntryRoute(path) ? { isPublicEntry: true } : {}),
       });

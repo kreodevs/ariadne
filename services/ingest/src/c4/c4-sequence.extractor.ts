@@ -33,6 +33,7 @@ interface SequenceFlowRow {
   routeId?: string;
   isPublicEntry?: boolean;
   hasApiLink?: boolean;
+  kind?: 'route' | 'api-client';
 }
 
 @Injectable()
@@ -42,18 +43,23 @@ export class C4SequenceExtractor {
   constructor(private readonly projects: ProjectsService) {}
 
   async listRoutes(projectId: string): Promise<C4SequenceRouteOption[]> {
-    const rows = await this.fetchRouteRows(projectId);
-    return rows.map((row) => this.rowToRouteOption(row));
+    const routeRows = await this.fetchRouteRows(projectId);
+    const apiRows = await this.fetchApiClientRouteRows(projectId);
+    const merged = this.mergeRouteRows(routeRows, apiRows);
+    return merged.map((row) => this.rowToRouteOption(row));
   }
 
   async buildRepresentativeFlow(
     projectId: string,
     routePath?: string,
   ): Promise<C4SequenceExtractResult> {
-    const rows = await this.fetchRouteRows(projectId);
+    const routeRows = await this.fetchRouteRows(projectId);
+    const apiRows = await this.fetchApiClientRouteRows(projectId);
+    const rows = this.mergeRouteRows(routeRows, apiRows);
     const row =
       (routePath ? rows.find((r) => r.routePath === routePath) : undefined) ??
       this.pickDefaultRoute(rows) ??
+      apiRows[0] ??
       (await this.fetchApiClientFallback(projectId));
     const spec = this.rowToSpec(projectId, row);
     const resolvedRoute = String(row?.routePath ?? routePath ?? '/');
@@ -83,7 +89,32 @@ export class C4SequenceExtractor {
       apiSummary: apiPath ? formatHttpCallLabel(method, String(apiPath)) : null,
       isPublicEntry: Boolean(row.isPublicEntry),
       hasApiLink: Boolean(row.hasApiLink),
+      kind: row.kind ?? 'route',
+      screenFilePath: row.screenFilePath ?? null,
     };
+  }
+
+  private mergeRouteRows(
+    routeRows: SequenceFlowRow[],
+    apiRows: SequenceFlowRow[],
+  ): SequenceFlowRow[] {
+    const out = [...routeRows];
+    const seen = new Set(routeRows.map((r) => String(r.routePath ?? '')));
+    for (const row of apiRows) {
+      const key = String(row.routePath ?? '');
+      if (!key || seen.has(key)) continue;
+      seen.add(key);
+      out.push(row);
+    }
+    out.sort((a, b) => {
+      const rank = (r: SequenceFlowRow) =>
+        (r.kind === 'api-client' ? 2 : 0) +
+        (r.isPublicEntry ? 0 : 1) * 4 +
+        (r.hasApiLink ? 0 : 2);
+      const diff = rank(a) - rank(b);
+      return diff !== 0 ? diff : String(a.routePath).localeCompare(String(b.routePath));
+    });
+    return out.slice(0, 80);
   }
 
   private rowToSpec(projectId: string, row: SequenceFlowRow | null): ApiFlowSpec {
@@ -216,6 +247,8 @@ export class C4SequenceExtractor {
           OPTIONAL MATCH (rt)-[:ROUTE_TO_COMPONENT]->(comp:Component)
           OPTIONAL MATCH (sf:File)-[:CONTAINS]->(comp)
           OPTIONAL MATCH (rt)-[:ENTRY_REACHES_API]->(acr:ApiClientReference)
+          OPTIONAL MATCH (sf)-[:REFERENCES_API]->(acr2:ApiClientReference)
+          WITH rt, comp, sf, coalesce(acr, acr2) AS acr
           OPTIONAL MATCH (acr)-[:CALLS_NEST_ROUTE]->(nr:NestRoute)
           OPTIONAL MATCH (acr)-[:CALLS_API]->(op:OpenApiOperation)-[:SAME_REST_AS]->(nr2:NestRoute)
           WITH rt, comp, sf, acr, op, coalesce(nr, nr2) AS nr
@@ -232,7 +265,8 @@ export class C4SequenceExtractor {
                  cf.path AS controllerFilePath,
                  rt.path AS routeId,
                  coalesce(rt.isPublicEntry, 'false') AS isPublicEntry,
-                 (acr IS NOT NULL AND nr IS NOT NULL) AS hasApiLink
+                 (acr IS NOT NULL) AS hasApiLink,
+                 'route' AS kind
           ORDER BY
             CASE WHEN coalesce(rt.isPublicEntry, 'false') = 'true' THEN 0 ELSE 1 END,
             CASE WHEN acr IS NOT NULL AND nr IS NOT NULL THEN 0 ELSE 1 END,
@@ -262,6 +296,75 @@ export class C4SequenceExtractor {
     } catch (err) {
       this.logger.warn(
         `C4 sequence list routes: ${err instanceof Error ? err.message : String(err)}`,
+      );
+      return [];
+    } finally {
+      await client.close();
+    }
+  }
+
+  private async fetchApiClientRouteRows(projectId: string): Promise<SequenceFlowRow[]> {
+    const config = getFalkorConfig();
+    const client = await FalkorDB.connect({
+      socket: { host: config.host, port: config.port },
+    });
+    try {
+      const contexts = await this.projects.getCypherShardContexts(projectId, {
+        includeSiblingProjects: false,
+      });
+      const shards =
+        contexts.length > 0
+          ? contexts
+          : [
+              {
+                graphName: graphNameForProject(isProjectShardingEnabled() ? projectId : undefined),
+                cypherProjectId: projectId,
+              },
+            ];
+
+      const q = `
+        MATCH (f:File)-[:REFERENCES_API]->(acr:ApiClientReference)
+        WHERE f.projectId = $projectId
+        OPTIONAL MATCH (acr)-[:CALLS_NEST_ROUTE]->(nr:NestRoute)
+        OPTIONAL MATCH (acr)-[:CALLS_API]->(op:OpenApiOperation)-[:SAME_REST_AS]->(nr2:NestRoute)
+        WITH f, acr, coalesce(nr, nr2) AS nr, op
+        OPTIONAL MATCH (nc:NestController)-[:DECLARES_ROUTE]->(nr)
+        OPTIONAL MATCH (cf:File)-[:CONTAINS]->(nc)
+        RETURN f.path AS screenFilePath,
+               'API client' AS screenName,
+               coalesce(acr.normalizedPath, acr.apiPath) AS apiPath,
+               coalesce(nr.fullPath, nr.path) AS backendPath,
+               coalesce(nr.httpMethod, op.method, 'GET') AS method,
+               nr.handlerName AS handlerName,
+               coalesce(nc.name, nr.controllerName) AS controllerName,
+               cf.path AS controllerFilePath,
+               f.path AS routePath,
+               (nr IS NOT NULL OR acr.apiPath IS NOT NULL) AS hasApiLink,
+               'api-client' AS kind
+        ORDER BY f.path, apiPath
+        LIMIT 80
+      `;
+
+      const rows: SequenceFlowRow[] = [];
+      const seen = new Set<string>();
+      for (const shard of shards) {
+        const graph = client.selectGraph(shard.graphName);
+        const pid = shard.cypherProjectId;
+        const res = (await graph.query(q, { params: { projectId: pid } })) as {
+          data?: Array<Record<string, unknown>>;
+        };
+        for (const row of res.data ?? []) {
+          const normalized = this.normalizeFlowRow(row);
+          const key = String(normalized.routePath ?? '');
+          if (!key || seen.has(key)) continue;
+          seen.add(key);
+          rows.push(normalized);
+        }
+      }
+      return rows;
+    } catch (err) {
+      this.logger.warn(
+        `C4 sequence api-client routes: ${err instanceof Error ? err.message : String(err)}`,
       );
       return [];
     } finally {
@@ -341,6 +444,7 @@ export class C4SequenceExtractor {
       routeId: row.routeId != null ? String(row.routeId) : undefined,
       isPublicEntry: String(row.isPublicEntry ?? 'false') === 'true',
       hasApiLink: Boolean(row.hasApiLink),
+      kind: row.kind === 'api-client' ? 'api-client' : 'route',
     };
   }
 }

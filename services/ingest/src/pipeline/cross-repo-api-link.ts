@@ -86,6 +86,18 @@ export function buildGraphQlAdminOnlyMarkCypher(projectId: string): string[] {
   ];
 }
 
+/**
+ * Enlaza Route → ApiClientReference alcanzable desde el componente de pantalla
+ * (TanStack / React Router) hacia Nest/OpenAPI vía CALLS_NEST_ROUTE / CALLS_API.
+ */
+export function buildRouteComponentApiReachLinkCypher(projectId: string): string[] {
+  const pid = cypherSafe(projectId);
+  return [
+    `MATCH (rt:Route {projectId: ${pid}})-[:ROUTE_TO_COMPONENT]->(comp:Component) MATCH (f:File {projectId: ${pid}})-[:CONTAINS]->(comp) MATCH (f)-[:REFERENCES_API]->(acr:ApiClientReference) WHERE f.projectId = ${pid} MERGE (rt)-[:ENTRY_REACHES_API]->(acr)`,
+    `MATCH (rt:Route {projectId: ${pid}})-[:ROUTE_TO_COMPONENT]->(root:Component) OPTIONAL MATCH (root)-[:RENDERS*1..8]->(desc:Component) WITH rt, collect(DISTINCT desc) + [root] AS comps UNWIND comps AS comp MATCH (f:File {projectId: ${pid}})-[:CONTAINS]->(comp) MATCH (f)-[:REFERENCES_API]->(acr:ApiClientReference) MERGE (rt)-[:ENTRY_REACHES_API]->(acr)`,
+  ];
+}
+
 /** Rutas React públicas → StrapiRoute con `auth: false` (urbanos, visualización cliente). */
 export function buildPublicEntryRouteLinkCypher(projectId: string): string[] {
   const pid = cypherSafe(projectId);
@@ -140,5 +152,6 @@ export function buildCrossRepoApiAndStrapiLinkCypher(projectId: string): string[
     ...buildGraphQlAdminOnlyMarkCypher(projectId),
     ...buildPublicEntryRouteLinkCypher(projectId),
     ...buildPublicEntryReachableApiLinkCypher(projectId),
+    ...buildRouteComponentApiReachLinkCypher(projectId),
   ];
 }

@@ -15,6 +15,7 @@
 - **graphql-client-reference-extract.ts** — `gql`/`graphql` templates en front → `GraphQlClientReference`.
 - **strapi-openapi-route-match.ts** — Coincidencia `OpenApiOperation.pathTemplate` ↔ `StrapiRoute.routePath`.
 - **react-route-public-entry.ts** — Clasifica rutas React públicas (`urbanos/public`, `visualizacionCampania`) → `Route.isPublicEntry`; post-sync `ENTRY_CONSUMES` / `ENTRY_REACHES_API`.
+- **router-routes-extract.ts** — Rutas front sin JSX `<Route>`: **TanStack Router** (`createRoute` + `getParentRoute`), **React Router data API** (`createBrowserRouter` / `createHashRouter`) y **landing** heurístico (`App.tsx` con `pathname === '/foo'`). El parser guarda `pendingRouteDefs`; tras parsear el repo, `enrichParsedFilesWithRouterRoutes` resuelve paths relativos y fusiona en `ParsedFile.routes` → nodos `:Route` (`routeSource`) en **producer**. Post-sync: `buildRouteComponentApiReachLinkCypher` enlaza `Route → ENTRY_REACHES_API → ApiClientReference` desde el componente de pantalla.
 - **openapi-spec-ingest.ts** — `swagger.json`, `openapi.{yaml,yml,json}`, **`full_documentation.json`**, `src/**/documentation/**/*.json` (OpenAPI Strapi): `File.openApiTruth`, nodos `OpenApiOperation` (MERGE por `pathTemplate+method+projectId+repoId`, sin duplicar por `specPath`; preferencia `full_documentation.json`), relación `DEFINES_OP`.
 - **prisma-extract.ts** — …
 - **typeorm-entity-metadata.ts** — AST TypeORM: tabla, columnas, `@Embedded`, `@Index`/`@Unique`, relaciones (`@JoinColumn`, `@JoinTable`), inferencia `*Id` + nav prop.
