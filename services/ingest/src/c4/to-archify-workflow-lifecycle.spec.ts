@@ -11,7 +11,9 @@ describe('archify workflow/lifecycle mappers', () => {
     const spec = buildDefaultSyncWorkflowSpec('demo');
     const ir = syncWorkflowToArchifyWorkflow(spec);
     expect(ir.diagram_type).toBe('workflow');
-    expect(ir.schema_version).toBe(2);
+    expect(ir.schema_version).toBe(1);
+    expect(ir.edges.every((e) => !('id' in e))).toBe(true);
+    expect(ir.nodes.every((n) => n.col <= 5)).toBe(true);
     expect(ir.mainPath).toContain('writing_graph');
     expect(ir.nodes.some((n) => n.id === 'failed')).toBe(true);
   });
@@ -22,5 +24,7 @@ describe('archify workflow/lifecycle mappers', () => {
     expect(ir.diagram_type).toBe('lifecycle');
     expect(ir.states.some((s) => s.id === 'failed' && s.type === 'failure')).toBe(true);
     expect(ir.transitions.some((t) => t.to === 'failed')).toBe(true);
+    expect(ir.transitions.every((t) => !('id' in t))).toBe(true);
+    expect(ir.meta.quality_profile).toBeUndefined();
   });
 });
