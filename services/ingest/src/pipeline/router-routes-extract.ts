@@ -57,7 +57,7 @@ function getObjectPropertyValue(
     if (!keyNode) continue;
     const keyText = getNodeText(source, keyNode).replace(/^['"]|['"]$/g, '');
     if (keyText !== key) continue;
-    return pair.childForFieldName('value') ?? pair.namedChild(1);
+    return pair.childForFieldName('value') ?? pair.namedChild(1) ?? undefined;
   }
   return undefined;
 }
