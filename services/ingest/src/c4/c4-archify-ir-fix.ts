@@ -27,9 +27,9 @@ export function fixArchifyArchitectureIr(ir: ArchifyArchitectureIr): ArchifyArch
     if (slash > 0 && slash < label.length - 1) {
       const full = label;
       label = full.slice(slash + 1).trim() || label;
-      sublabel = sublabel && sublabel !== full
-        ? `${full} · ${sublabel}`.slice(0, 120)
-        : full.slice(0, 120);
+      if (!sublabel) {
+        sublabel = full.slice(0, 48);
+      }
     }
     const baseW = Array.isArray(c.size) ? c.size[0]! : ARCHIFY_MIN_COMPONENT_W;
     const baseH = Array.isArray(c.size) ? c.size[1]! : 60;

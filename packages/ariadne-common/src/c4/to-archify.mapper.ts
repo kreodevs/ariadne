@@ -53,6 +53,38 @@ const GAP_X = 80;
 const GAP_Y = 100;
 const MARGIN_X = 40;
 const MARGIN_Y = 80;
+/** Sublabel máximo en context (cajas Archify ~130–280px). */
+const CONTEXT_SUBLABEL_MAX = 36;
+
+function truncateDiagramText(text: string, max = CONTEXT_SUBLABEL_MAX): string {
+  const t = text.trim();
+  if (!t) return '';
+  if (t.length <= max) return t;
+  return `${t.slice(0, max - 1)}…`;
+}
+
+/** Sublabel corto para C4 Context (dominio + hints de package.json). */
+function buildContextSublabel(el: C4Element, pathSublabel?: string): string | undefined {
+  const desc = el.description?.trim();
+
+  if (el.kind === 'system') {
+    if (desc) {
+      const domainOnly = desc.replace(/^Dominio:\s*/i, '').trim();
+      return truncateDiagramText(domainOnly);
+    }
+    return pathSublabel ? truncateDiagramText(pathSublabel) : undefined;
+  }
+
+  if (el.kind === 'external' && desc) {
+    const paren = /\(([^)]+)\)/.exec(desc);
+    if (paren) return truncateDiagramText(paren[1]!.trim());
+    return truncateDiagramText(desc);
+  }
+
+  if (desc) return truncateDiagramText(desc);
+  if (el.technology) return truncateDiagramText(el.technology);
+  return pathSublabel ? truncateDiagramText(pathSublabel) : undefined;
+}
 
 function gridPosition(index: number, cols: number): { pos: [number, number]; size: [number, number] } {
   const row = Math.floor(index / cols);
@@ -170,14 +202,16 @@ export function c4ModelToArchifyArchitecture(
         ? el.name.slice(slash + 1).trim() || el.name
         : el.name;
     const pathSublabel =
-      slash > 0 && slash < el.name.length - 1 ? el.name.trim().slice(0, 64) : undefined;
-    const baseSublabel =
+      slash > 0 && slash < el.name.length - 1 ? el.name.trim() : undefined;
+    const sublabel =
       model.level === 'context'
-        ? el.description?.slice(0, 64) ?? el.technology?.slice(0, 64)
-        : el.technology?.slice(0, 64);
-    const sublabel = pathSublabel && baseSublabel && baseSublabel !== pathSublabel
-      ? `${pathSublabel} · ${baseSublabel}`.slice(0, 64)
-      : pathSublabel ?? baseSublabel;
+        ? buildContextSublabel(el, pathSublabel)
+        : (() => {
+            const tech = el.technology?.slice(0, 64);
+            return pathSublabel && tech && tech !== pathSublabel
+              ? `${pathSublabel} · ${tech}`.slice(0, 64)
+              : pathSublabel ?? tech;
+          })();
     return {
       id: el.id,
       type: archifyTypeForElement(el, model.level),

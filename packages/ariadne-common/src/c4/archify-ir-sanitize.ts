@@ -80,6 +80,17 @@ function splitRepoStyleLabel(
   return { label: shortLabel, sublabel: mergedSublabel };
 }
 
+function truncateSublabelToFitWidth(sublabel: string, width: number): string {
+  if (componentWidthFitsArchifyText('', sublabel, width)) return sublabel;
+  let len = sublabel.length;
+  while (len > 1) {
+    const candidate = `${sublabel.slice(0, len - 1)}…`;
+    if (componentWidthFitsArchifyText('', candidate, width)) return candidate;
+    len -= 1;
+  }
+  return '…';
+}
+
 function fitArchifyComponentText(
   label: string,
   sublabel?: string,
@@ -98,11 +109,16 @@ function fitArchifyComponentText(
     minComponentWidthForLabel(nextLabel),
     nextSublabel ? minComponentWidthForSublabel(nextSublabel) : 0,
   );
+  const width = Math.min(MAX_CELL_W, neededWidth);
+  let finalSublabel = nextSublabel;
+  if (finalSublabel && !componentWidthFitsArchifyText(nextLabel, finalSublabel, width)) {
+    finalSublabel = truncateSublabelToFitWidth(finalSublabel, width);
+  }
 
   return {
     label: nextLabel,
-    sublabel: nextSublabel,
-    width: Math.min(MAX_CELL_W, neededWidth),
+    sublabel: finalSublabel,
+    width,
   };
 }
 

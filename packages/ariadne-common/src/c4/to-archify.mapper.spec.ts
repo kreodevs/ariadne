@@ -104,6 +104,40 @@ describe('c4ModelToArchifyArchitecture', () => {
     expect(ir.connections?.[0]?.variant).toBe('dashed');
   });
 
+  it('acorta sublabels de context (dominio + hint de package.json)', () => {
+    const model = domainContextSpecToC4Model({
+      projectId: 'p1',
+      projectName: 'Memoria',
+      domain: { id: 'dom-ev', name: 'Eventos y memoria', description: 'Plataforma de eventos' },
+      repos: [{ id: 'repo-11111111-aaaa-bbbb-cccc-dddddddddddd', label: 'kreodevs/memoria-generacional' }],
+      dependencies: [
+        {
+          dependencyId: 'dep-1',
+          domainId: 'dom-infra',
+          domainName: 'Infraestructura',
+          connectionType: 'REST',
+          description: 'SDK de infraestructura o media detectado en package.json (@aws-sdk/client-s3)',
+        },
+        {
+          dependencyId: 'dep-2',
+          domainId: 'dom-pay',
+          domainName: 'Pagos',
+          connectionType: 'REST',
+          description: 'Dependencia de cobros detectada en package.json (stripe)',
+        },
+      ],
+      visibilityEdges: [],
+    });
+    const ir = c4ModelToArchifyArchitecture(model);
+    const system = ir.components.find((c) => c.label === 'memoria-generacional');
+    const infra = ir.components.find((c) => c.label === 'Infraestructura');
+    const pagos = ir.components.find((c) => c.label === 'Pagos');
+    expect(system?.sublabel).toContain('Eventos y memoria');
+    expect(system?.sublabel?.length).toBeLessThanOrEqual(36);
+    expect(infra?.sublabel).toBe('@aws-sdk/client-s3');
+    expect(pagos?.sublabel).toBe('stripe');
+  });
+
   it('no pone descripciones de inferencia como label en context', () => {
     const model = domainContextSpecToC4Model({
       projectId: 'p1',

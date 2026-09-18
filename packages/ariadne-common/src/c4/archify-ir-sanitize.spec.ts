@@ -2,6 +2,28 @@ import { describe, expect, it } from 'vitest';
 import { sanitizeArchifyArchitectureIr, sanitizeArchifySequenceIr } from './archify-ir-sanitize.js';
 
 describe('sanitizeArchifyArchitectureIr', () => {
+  it('trunca sublabels que no caben aunque el ancho esté al máximo', () => {
+    const out = sanitizeArchifyArchitectureIr({
+      schema_version: 1,
+      diagram_type: 'architecture',
+      meta: { title: 'C4 Context' },
+      components: [
+        {
+          id: 'ext_infra',
+          type: 'external',
+          label: 'Infraestructura',
+          sublabel:
+            'SDK de infraestructura o media detectado en package.json (@aws-sdk/client-s3)',
+          pos: [40, 80],
+          size: [130, 60],
+        },
+      ],
+    });
+    const component = out.components[0]!;
+    expect(component.sublabel?.length).toBeLessThan(80);
+    expect(component.size?.[0]).toBeLessThanOrEqual(280);
+  });
+
   it('acorta labels org/repo y ensancha el componente para Archify', () => {
     const out = sanitizeArchifyArchitectureIr({
       schema_version: 1,
