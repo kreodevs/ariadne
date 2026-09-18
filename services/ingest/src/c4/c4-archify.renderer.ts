@@ -11,7 +11,9 @@ import {
   sanitizeArchifyArchitectureIr,
   sanitizeArchifySequenceIr,
   type ArchifyArchitectureIr,
+  type ArchifyLifecycleIr,
   type ArchifySequenceIr,
+  type ArchifyWorkflowIr,
 } from 'ariadne-common';
 import { getC4Settings } from './c4-settings.util';
 import { runArchifyRender, runArchifyValidate } from './archify-cli.util';
@@ -207,6 +209,85 @@ export class C4ArchifyRenderer {
         'Archify render (sequence) falló',
       );
       this.logger.warn(`Archify sequence render failed: ${err.slice(0, 500)}`);
+      return { htmlPath, validated: false, archifyBin: bin, stderr: err };
+    }
+
+    return { htmlPath, validated: true, archifyBin: bin };
+  }
+
+  async renderWorkflow(projectId: string, ir: ArchifyWorkflowIr): Promise<ArchifyRenderResult> {
+    const root = this.storageRoot();
+    await mkdir(root, { recursive: true });
+    const base = join(root, projectId);
+    await mkdir(base, { recursive: true });
+    const jsonPath = join(base, 'workflow.json');
+    const htmlPath = join(base, 'workflow.html');
+    await writeFile(jsonPath, JSON.stringify(ir, null, 2), 'utf8');
+
+    const bin = this.resolveArchifyBin();
+    if (!bin) {
+      return { htmlPath, validated: false, archifyBin: null, stderr: ARCHIFY_BIN_MISSING };
+    }
+
+    const validate = runArchifyValidate(bin, 'workflow', jsonPath);
+    if (validate.status !== 0) {
+      const err = extractArchifyCliError(
+        validate.stdout ?? '',
+        validate.stderr ?? '',
+        'Archify validate (workflow) falló',
+      );
+      return { htmlPath, validated: false, archifyBin: bin, stderr: err };
+    }
+
+    const rendered = runArchifyRender(bin, 'workflow', jsonPath, htmlPath);
+    if (rendered.status !== 0) {
+      const err = extractArchifyCliError(
+        rendered.stdout ?? '',
+        rendered.stderr ?? '',
+        'Archify render (workflow) falló',
+      );
+      return { htmlPath, validated: false, archifyBin: bin, stderr: err };
+    }
+
+    return { htmlPath, validated: true, archifyBin: bin };
+  }
+
+  async renderLifecycle(
+    projectId: string,
+    ir: ArchifyLifecycleIr,
+    target = 'sync-job',
+  ): Promise<ArchifyRenderResult> {
+    const root = this.storageRoot();
+    await mkdir(root, { recursive: true });
+    const base = join(root, projectId);
+    await mkdir(base, { recursive: true });
+    const safeTarget = target.replace(/[^a-z0-9_-]/gi, '_');
+    const jsonPath = join(base, `lifecycle-${safeTarget}.json`);
+    const htmlPath = join(base, `lifecycle-${safeTarget}.html`);
+    await writeFile(jsonPath, JSON.stringify(ir, null, 2), 'utf8');
+
+    const bin = this.resolveArchifyBin();
+    if (!bin) {
+      return { htmlPath, validated: false, archifyBin: null, stderr: ARCHIFY_BIN_MISSING };
+    }
+
+    const validate = runArchifyValidate(bin, 'lifecycle', jsonPath);
+    if (validate.status !== 0) {
+      const err = extractArchifyCliError(
+        validate.stdout ?? '',
+        validate.stderr ?? '',
+        'Archify validate (lifecycle) falló',
+      );
+      return { htmlPath, validated: false, archifyBin: bin, stderr: err };
+    }
+
+    const rendered = runArchifyRender(bin, 'lifecycle', jsonPath, htmlPath);
+    if (rendered.status !== 0) {
+      const err = extractArchifyCliError(
+        rendered.stdout ?? '',
+        rendered.stderr ?? '',
+        'Archify render (lifecycle) falló',
+      );
       return { htmlPath, validated: false, archifyBin: bin, stderr: err };
     }
 

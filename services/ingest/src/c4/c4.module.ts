@@ -18,6 +18,8 @@ import { C4ComponentExtractor } from './c4-component.extractor';
 import { C4FalkorGraph } from './c4-falkor.graph';
 import { C4DiffService } from './c4-diff.service';
 import { C4SequenceExtractor } from './c4-sequence.extractor';
+import { C4WorkflowExtractor } from './c4-workflow.extractor';
+import { C4LifecycleExtractor } from './c4-lifecycle.extractor';
 import { C4MarkdownExportService } from './c4-markdown-export.service';
 import { C4ChatBridgeService } from './c4-chat-bridge.service';
 import { DomainsModule } from '../domains/domains.module';
@@ -52,6 +54,8 @@ import { DomainDomainVisibilityEntity } from '../domains/entities/domain-domain-
     C4FalkorGraph,
     C4DiffService,
     C4SequenceExtractor,
+    C4WorkflowExtractor,
+    C4LifecycleExtractor,
     C4MarkdownExportService,
     C4ChatBridgeService,
   ],

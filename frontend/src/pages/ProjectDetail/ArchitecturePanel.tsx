@@ -27,7 +27,18 @@ import { Input } from '@/components/ui/input';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { C4DiagramViewer } from './C4DiagramViewer';
 import { C4SequenceViewer } from './C4SequenceViewer';
+import { C4WorkflowViewer } from './C4WorkflowViewer';
+import { C4LifecycleViewer } from './C4LifecycleViewer';
 import { cn } from '@/lib/utils';
+
+type DiagramTab = 'architecture' | 'sequence' | 'workflow' | 'lifecycle';
+
+const DIAGRAM_TABS: Array<{ id: DiagramTab; label: string; hint: string }> = [
+  { id: 'architecture', label: 'C4', hint: 'Context · Container · Component' },
+  { id: 'sequence', label: 'Secuencia', hint: 'API request/response' },
+  { id: 'workflow', label: 'Proceso', hint: 'Pipeline full-sync' },
+  { id: 'lifecycle', label: 'Estados', hint: 'Sync job · HTTP' },
+];
 
 export function ArchitecturePanel({
   project,
@@ -50,6 +61,7 @@ export function ArchitecturePanel({
   const [inferMsg, setInferMsg] = useState<string | null>(null);
   const autoInferDone = useRef(false);
   const [archTab, setArchTab] = useState<'domains' | 'c4'>('domains');
+  const [diagramTab, setDiagramTab] = useState<DiagramTab>('architecture');
   const [c4Level, setC4Level] = useState<'context' | 'container' | 'component'>('context');
   const [drillContainerKey, setDrillContainerKey] = useState<string | undefined>();
 
@@ -176,66 +188,90 @@ export function ArchitecturePanel({
               : 'bg-[var(--muted)] text-[var(--muted-foreground)] hover:text-[var(--foreground)]',
           )}
         >
-          Diagramas C4
+          Diagramas
         </button>
       </nav>
 
       {archTab === 'c4' ? (
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">Diagramas C4</CardTitle>
+            <CardTitle className="text-base">Diagramas Archify</CardTitle>
             <CardDescription>
-              Context (dominios), Container (compose), Component (Falkor). Compara snapshots para ver delta de
-              topología.
+              Arquitectura C4, secuencias API, procesos de sync y máquinas de estado — cada tipo en su pestaña.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            <nav className="flex gap-2" aria-label="Niveles C4">
-              {(['context', 'container', 'component'] as const).map((lv) => (
+            <nav className="flex flex-wrap gap-2" aria-label="Tipos de diagrama">
+              {DIAGRAM_TABS.map((tab) => (
                 <button
-                  key={lv}
+                  key={tab.id}
                   type="button"
-                  onClick={() => {
-                    setC4Level(lv);
-                    if (lv !== 'component') setDrillContainerKey(undefined);
-                  }}
+                  onClick={() => setDiagramTab(tab.id)}
                   className={cn(
                     'rounded-lg px-3 py-1.5 text-xs font-medium transition-colors',
-                    c4Level === lv
+                    diagramTab === tab.id
                       ? 'bg-[var(--primary)] text-[var(--primary-foreground)]'
                       : 'bg-[var(--muted)] text-[var(--muted-foreground)] hover:text-[var(--foreground)]',
                   )}
+                  title={tab.hint}
                 >
-                  {lv === 'context' ? 'Context' : lv === 'container' ? 'Container' : 'Component'}
+                  {tab.label}
                 </button>
               ))}
             </nav>
-            {c4Level === 'container' ? (
-              <p className="text-xs text-muted-foreground">
-                Tras generar Container, abre Component para drill-down por clave de servicio (ej.{' '}
-                <button
-                  type="button"
-                  className="text-[var(--primary)] underline"
-                  onClick={() => {
-                    setDrillContainerKey('frontend');
-                    setC4Level('component');
-                  }}
-                >
-                  frontend
-                </button>
-                , ingest).
-              </p>
+
+            {diagramTab === 'architecture' ? (
+              <div className="space-y-4">
+                <nav className="flex gap-2" aria-label="Niveles C4">
+                  {(['context', 'container', 'component'] as const).map((lv) => (
+                    <button
+                      key={lv}
+                      type="button"
+                      onClick={() => {
+                        setC4Level(lv);
+                        if (lv !== 'component') setDrillContainerKey(undefined);
+                      }}
+                      className={cn(
+                        'rounded-lg px-3 py-1.5 text-xs font-medium transition-colors',
+                        c4Level === lv
+                          ? 'bg-[var(--primary)] text-[var(--primary-foreground)]'
+                          : 'bg-[var(--muted)] text-[var(--muted-foreground)] hover:text-[var(--foreground)]',
+                      )}
+                    >
+                      {lv === 'context' ? 'Context' : lv === 'container' ? 'Container' : 'Component'}
+                    </button>
+                  ))}
+                </nav>
+                {c4Level === 'container' ? (
+                  <p className="text-xs text-muted-foreground">
+                    Tras generar Container, abre Component para drill-down por clave de servicio (ej.{' '}
+                    <button
+                      type="button"
+                      className="text-[var(--primary)] underline"
+                      onClick={() => {
+                        setDrillContainerKey('frontend');
+                        setC4Level('component');
+                        setDiagramTab('architecture');
+                      }}
+                    >
+                      frontend
+                    </button>
+                    , ingest).
+                  </p>
+                ) : null}
+                <C4DiagramViewer
+                  projectId={projectId}
+                  level={c4Level}
+                  containerKey={drillContainerKey}
+                  scopeKey={`project:${projectId}`}
+                />
+              </div>
             ) : null}
-            <C4DiagramViewer
-              projectId={projectId}
-              level={c4Level}
-              containerKey={drillContainerKey}
-              scopeKey={`project:${projectId}`}
-            />
-            <div className="border-t border-[var(--border)] pt-4">
-              <p className="text-sm font-medium mb-2">Secuencia API (Archify)</p>
-              <C4SequenceViewer projectId={projectId} />
-            </div>
+
+            {diagramTab === 'sequence' ? <C4SequenceViewer projectId={projectId} /> : null}
+            {diagramTab === 'workflow' ? <C4WorkflowViewer projectId={projectId} /> : null}
+            {diagramTab === 'lifecycle' ? <C4LifecycleViewer projectId={projectId} /> : null}
+
             <div className="border-t border-[var(--border)] pt-4 flex flex-wrap gap-2">
               <Button
                 type="button"

@@ -15,7 +15,7 @@ export function isUnknownArchifyCommand(
   return new RegExp(`Unknown command ["']?${command}["']?`, 'i').test(output);
 }
 
-type ArchifyDiagramType = 'architecture' | 'sequence';
+type ArchifyDiagramType = 'architecture' | 'sequence' | 'workflow' | 'lifecycle';
 
 function spawnArchify(bin: string, args: string[]): SpawnSyncReturns<string> {
   return spawnSync(process.execPath, [bin, ...args], {

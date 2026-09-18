@@ -113,6 +113,56 @@ export class C4Controller {
     return this.c4.generateSequence(projectId, body?.routePath);
   }
 
+  @Post('workflow/generate')
+  async generateWorkflow(@Param('projectId') projectId: string) {
+    return this.c4.generateWorkflow(projectId);
+  }
+
+  @Get('workflow/html')
+  @Header('Content-Type', 'text/html; charset=utf-8')
+  async getWorkflowHtml(@Param('projectId') projectId: string, @Res() res?: Response) {
+    const doc = await this.c4.readWorkflowHtml(projectId);
+    if (!doc) {
+      throw new NotFoundException('Sin workflow C4. Ejecuta POST .../c4/workflow/generate');
+    }
+    if (res) {
+      res.send(doc.html);
+      return;
+    }
+    return doc.html;
+  }
+
+  @Get('lifecycle/targets')
+  listLifecycleTargets() {
+    return this.c4.listLifecycleTargets();
+  }
+
+  @Post('lifecycle/generate')
+  async generateLifecycle(
+    @Param('projectId') projectId: string,
+    @Body() body: { target?: string; routePath?: string },
+  ) {
+    return this.c4.generateLifecycle(projectId, body?.target ?? 'sync-job', body?.routePath);
+  }
+
+  @Get('lifecycle/html')
+  @Header('Content-Type', 'text/html; charset=utf-8')
+  async getLifecycleHtml(
+    @Param('projectId') projectId: string,
+    @Query('target') target?: string,
+    @Res() res?: Response,
+  ) {
+    const doc = await this.c4.readLifecycleHtml(projectId, target ?? 'sync-job');
+    if (!doc) {
+      throw new NotFoundException('Sin lifecycle C4. Ejecuta POST .../c4/lifecycle/generate');
+    }
+    if (res) {
+      res.send(doc.html);
+      return;
+    }
+    return doc.html;
+  }
+
   @Get('sequence/html')
   @Header('Content-Type', 'text/html; charset=utf-8')
   async getSequenceHtml(

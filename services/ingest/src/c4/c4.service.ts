@@ -27,6 +27,8 @@ import { C4ContextExtractor } from './c4-context.extractor';
 import { C4ContextEnricher } from './c4-context.enricher';
 import { C4ComponentExtractor } from './c4-component.extractor';
 import { C4SequenceExtractor } from './c4-sequence.extractor';
+import { C4WorkflowExtractor } from './c4-workflow.extractor';
+import { C4LifecycleExtractor } from './c4-lifecycle.extractor';
 import { C4MarkdownExportService } from './c4-markdown-export.service';
 import { resolveExistingC4HtmlPath } from './c4-html.util';
 
@@ -58,6 +60,8 @@ export class C4Service {
     private readonly contextEnricher: C4ContextEnricher,
     private readonly componentExtractor: C4ComponentExtractor,
     private readonly sequenceExtractor: C4SequenceExtractor,
+    private readonly workflowExtractor: C4WorkflowExtractor,
+    private readonly lifecycleExtractor: C4LifecycleExtractor,
     private readonly markdownExport: C4MarkdownExportService,
     @InjectRepository(IndexedFile)
     private readonly indexedFiles: Repository<IndexedFile>,
@@ -203,6 +207,65 @@ export class C4Service {
 
   async readSequenceHtml(projectId: string): Promise<{ html: string; path: string } | null> {
     const p = join(this.archify.storageRoot(), projectId, 'sequence.html');
+    if (!existsSync(p)) return null;
+    const html = await readFile(p, 'utf8');
+    return { html, path: p };
+  }
+
+  async generateWorkflow(projectId: string) {
+    const t0 = Date.now();
+    await this.projects.findOne(projectId);
+    const { archifyIr, spec } = await this.workflowExtractor.buildSyncWorkflow(projectId);
+    const render = await this.archify.renderWorkflow(projectId, archifyIr);
+    return {
+      archifyIr,
+      htmlReady: render.validated,
+      archifyHtmlPath: render.validated ? render.htmlPath : null,
+      archifyError: render.validated ? null : render.stderr ?? null,
+      archifyBin: render.archifyBin,
+      durationMs: Date.now() - t0,
+      title: spec.title,
+    };
+  }
+
+  async readWorkflowHtml(projectId: string): Promise<{ html: string; path: string } | null> {
+    const p = join(this.archify.storageRoot(), projectId, 'workflow.html');
+    if (!existsSync(p)) return null;
+    const html = await readFile(p, 'utf8');
+    return { html, path: p };
+  }
+
+  listLifecycleTargets() {
+    return { targets: this.lifecycleExtractor.listTargets() };
+  }
+
+  async generateLifecycle(projectId: string, target = 'sync-job', routePath?: string) {
+    const t0 = Date.now();
+    await this.projects.findOne(projectId);
+    const { archifyIr, spec, target: resolvedTarget } = await this.lifecycleExtractor.buildLifecycle(
+      projectId,
+      target,
+      routePath,
+    );
+    const render = await this.archify.renderLifecycle(projectId, archifyIr, resolvedTarget);
+    return {
+      archifyIr,
+      htmlReady: render.validated,
+      archifyHtmlPath: render.validated ? render.htmlPath : null,
+      archifyError: render.validated ? null : render.stderr ?? null,
+      archifyBin: render.archifyBin,
+      durationMs: Date.now() - t0,
+      title: spec.title,
+      target: resolvedTarget,
+    };
+  }
+
+  async readLifecycleHtml(
+    projectId: string,
+    target = 'sync-job',
+  ): Promise<{ html: string; path: string } | null> {
+    const safeTarget = target.replace(/[^a-z0-9_-]/gi, '_');
+    const p = join(this.archify.storageRoot(), projectId, `lifecycle-${safeTarget}.html`);
     if (!existsSync(p)) return null;
     const html = await readFile(p, 'utf8');
     return { html, path: p };

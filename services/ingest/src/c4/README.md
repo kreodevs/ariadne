@@ -40,6 +40,15 @@ Pipeline: dominios / docker-compose / Falkor → `C4Model` → Archify HTML.
 
 El spec de secuencia (`buildApiFlowSteps`) incluye **request y response**: `db → backend` (rows), `backend → api` (DTO), `api → web` (status HTTP). Status desde `@HttpCode` / OpenAPI `responses` (2xx) en el grafo; si no hay evidencia, heurística Nest (POST→201, DELETE→204, GET→200). Query DB enriquecida con `handler -[:CALLS*1..3]-> servicio` y `:Model` del mismo archivo de servicio.
 
+### Workflow y lifecycle (3.3)
+
+| Tipo Archify | Endpoint generate | HTML | Fuente |
+|--------------|-------------------|------|--------|
+| **workflow** | `POST .../c4/workflow/generate` | `GET .../c4/workflow/html` | Pipeline full-sync (`sync.service.ts`) |
+| **lifecycle** | `POST .../c4/lifecycle/generate` `{ target }` | `GET .../c4/lifecycle/html?target=` | `sync-job` o `api-request` |
+
+UI: pestañas **C4 | Secuencia | Proceso | Estados** en Arquitectura → Diagramas.
+
 Antes de invocar Archify CLI, `C4ArchifyRenderer` aplica `c4-archify-ir-fix.ts` (ingest: labels `org/repo`, sin self-loops, sin label `RENDERS`/`IMPORTS`/`CALLS` en componentes) y luego `sanitizeArchifySequenceIr` / `sanitizeArchifyArchitectureIr` (`ariadne-common`, incluye reflow del grid tras ensanchar componentes, normalización de `component.id` al patrón Archify `^[a-zA-Z][a-zA-Z0-9_-]*$` — p. ej. `8ca79cef_application` → `c_8ca79cef_application` — y deduplicación). Repos sin compose: se infiere **Web UI** (React/Vite) o **API** (NestJS) desde `package.json` raíz; en multi-root se enlaza front→back con **REST**. Los ids de componente Falkor usan hash estable (`compElementId`) para paths largos. Tras `validate`, usa `deliver` si el CLI lo soporta; si no, cae a `render` (Archify v2.9 en Docker). `npm run build` en ingest ejecuta `prebuild` de `ariadne-common`.
 
 ## Export / chat / parity

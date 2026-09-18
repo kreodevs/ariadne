@@ -160,6 +160,19 @@ export {
   inferHttpStatusCode,
   type ApiFlowStepInput,
 } from './c4/build-api-flow-steps.js';
+export {
+  buildDefaultSyncWorkflowSpec,
+  syncWorkflowToArchifyWorkflow,
+  type ArchifyWorkflowIr,
+  type SyncWorkflowSpec,
+} from './c4/to-archify-workflow.js';
+export {
+  buildApiRequestLifecycleSpec,
+  buildSyncJobLifecycleSpec,
+  entityLifecycleToArchifyLifecycle,
+  type ArchifyLifecycleIr,
+  type EntityLifecycleSpec,
+} from './c4/to-archify-lifecycle.js';
 export { buildC4MarkdownBundle, type C4MarkdownFile } from './c4/c4-markdown-export.js';
 export { wantsArchitectureDiagramQuestion } from './c4/chat-architecture-diagram.util.js';
 export {

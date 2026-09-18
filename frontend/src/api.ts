@@ -247,6 +247,58 @@ export const api = {
     return res.text();
   },
 
+  generateC4Workflow: (projectId: string) =>
+    request<{
+      htmlReady: boolean;
+      durationMs: number;
+      archifyError: string | null;
+      archifyBin: string | null;
+      title: string;
+    }>(`/projects/${projectId}/c4/workflow/generate`, { method: 'POST', body: '{}' }),
+
+  getC4WorkflowHtml: async (projectId: string): Promise<string> => {
+    const res = await fetch(`${BASE}/projects/${projectId}/c4/workflow/html`, {
+      headers: getAuthHeaders(),
+    });
+    if (!res.ok) {
+      const text = await res.text();
+      const { message } = parseApiError(text);
+      throw new Error(`${res.status}: ${message || res.statusText}`);
+    }
+    return res.text();
+  },
+
+  listC4LifecycleTargets: (projectId: string) =>
+    request<{
+      targets: Array<{ id: string; label: string; description: string }>;
+    }>(`/projects/${projectId}/c4/lifecycle/targets`),
+
+  generateC4Lifecycle: (projectId: string, target?: string, routePath?: string) =>
+    request<{
+      htmlReady: boolean;
+      durationMs: number;
+      archifyError: string | null;
+      archifyBin: string | null;
+      title: string;
+      target: string;
+    }>(`/projects/${projectId}/c4/lifecycle/generate`, {
+      method: 'POST',
+      body: JSON.stringify({ target, routePath }),
+    }),
+
+  getC4LifecycleHtml: async (projectId: string, target = 'sync-job'): Promise<string> => {
+    const res = await fetch(
+      `${BASE}/projects/${projectId}/c4/lifecycle/html?target=${encodeURIComponent(target)}`,
+      { headers: getAuthHeaders() },
+    );
+    if (!res.ok) {
+      const text = await res.text();
+      const { message } = parseApiError(text);
+      throw new Error(`${res.status}: ${message || res.statusText}`);
+    }
+    return res.text();
+  },
+
   exportC4Markdown: (projectId: string) =>
     request<{ files: Array<{ name: string; content: string }>; merged: string }>(
       `/projects/${projectId}/c4/export`,
