@@ -4,6 +4,7 @@ import {
   buildRouteFlowWorkflowSpec,
   buildSyncJobLifecycleSpec,
   entityLifecycleToArchifyLifecycle,
+  indexedFlowPayloadToWorkflowSpec,
   syncWorkflowToArchifyWorkflow,
 } from 'ariadne-common';
 
@@ -17,6 +18,24 @@ describe('archify workflow/lifecycle mappers', () => {
     expect(ir.nodes.every((n) => n.col <= 5)).toBe(true);
     expect(ir.mainPath).toContain('writing_graph');
     expect(ir.nodes.some((n) => n.id === 'failed')).toBe(true);
+  });
+
+  it('wizard indexado no hereda phases/grupos del sync pipeline', () => {
+    const spec = indexedFlowPayloadToWorkflowSpec({
+      kind: 'wizard',
+      title: 'Wizard — Demo',
+      lanes: [{ id: 'main', label: 'Pasos' }],
+      mainPath: ['step0', 'step1'],
+      nodes: [
+        { id: 'step0', lane: 'main', col: 0, type: 'external', label: 'Paso 1' },
+        { id: 'step1', lane: 'main', col: 1, type: 'cloud', label: 'Paso 2' },
+      ],
+      edges: [{ id: 'e0', from: 'step0', to: 'step1', variant: 'emphasis' }],
+    });
+    const ir = syncWorkflowToArchifyWorkflow(spec);
+    expect(ir.phases).toBeUndefined();
+    expect(ir.groups).toBeUndefined();
+    expect(ir.cards).toBeUndefined();
   });
 
   it('buildRouteFlowWorkflowSpec cabe en columnas Archify', () => {

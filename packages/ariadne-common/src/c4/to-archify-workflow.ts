@@ -65,33 +65,30 @@ export interface ArchifyWorkflowIr {
   cards?: Array<{ dot: string; title: string; items: string[] }>;
 }
 
-/** Pipeline full-sync de Ariadne → Archify workflow IR. */
+function isSyncPipelineWorkflow(spec: SyncWorkflowSpec): boolean {
+  return (
+    spec.mainPath.includes('writing_graph') &&
+    spec.lanes.some((l) => l.id === 'graph') &&
+    spec.lanes.some((l) => l.id === 'trigger')
+  );
+}
+
+/** Spec de workflow → Archify IR (fases/grupos solo en pipeline full-sync). */
 export function syncWorkflowToArchifyWorkflow(spec: SyncWorkflowSpec): ArchifyWorkflowIr {
+  const syncPipeline = isSyncPipelineWorkflow(spec);
   const maxCol = Math.min(5, spec.nodes.reduce((m, n) => Math.max(m, n.col), 0));
-  return {
+
+  const ir: ArchifyWorkflowIr = {
     schema_version: 1,
     diagram_type: 'workflow',
     meta: {
       title: spec.title,
-      subtitle: spec.subtitle ?? 'Full sync: indexación → Falkor → embeddings → C4',
+      ...(spec.subtitle ? { subtitle: spec.subtitle } : syncPipeline
+        ? { subtitle: 'Full sync: indexación → Falkor → embeddings → C4' }
+        : {}),
       animation: 'trace',
     },
     lanes: spec.lanes,
-    phases: [
-      { id: 'prepare', label: 'Preparar', fromCol: 0, toCol: 1 },
-      { id: 'index', label: 'Indexar', fromCol: 2, toCol: 3, variant: 'emphasis' },
-      { id: 'finalize', label: 'Finalizar', fromCol: 4, toCol: maxCol, variant: 'dashed' },
-    ],
-    groups: [
-      {
-        id: 'graph_write',
-        label: 'Escritura grafo',
-        lane: 'graph',
-        fromCol: 3,
-        toCol: 3,
-        variant: 'emphasis',
-      },
-    ],
     mainPath: spec.mainPath,
     nodes: spec.nodes.map((n) => ({
       id: n.id,
@@ -111,14 +108,34 @@ export function syncWorkflowToArchifyWorkflow(spec: SyncWorkflowSpec): ArchifyWo
       ...(e.fromSide ? { fromSide: e.fromSide } : {}),
       ...(e.toSide ? { toSide: e.toSide } : {}),
     })),
-    cards: [
+  };
+
+  if (syncPipeline) {
+    ir.phases = [
+      { id: 'prepare', label: 'Preparar', fromCol: 0, toCol: 1 },
+      { id: 'index', label: 'Indexar', fromCol: 2, toCol: 3, variant: 'emphasis' },
+      { id: 'finalize', label: 'Finalizar', fromCol: 4, toCol: maxCol, variant: 'dashed' },
+    ];
+    ir.groups = [
+      {
+        id: 'graph_write',
+        label: 'Escritura grafo',
+        lane: 'graph',
+        fromCol: 3,
+        toCol: 3,
+        variant: 'emphasis',
+      },
+    ];
+    ir.cards = [
       {
         dot: 'cyan',
         title: 'Origen',
         items: ['Fases alineadas con sync.service.ts', 'Ramas de error en indexing y writing_graph'],
       },
-    ],
-  };
+    ];
+  }
+
+  return ir;
 }
 
 /** Spec determinista del pipeline de sync (sin depender de Falkor). */
