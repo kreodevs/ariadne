@@ -44,3 +44,7 @@ Luego ejecuta un full sync una vez (o deja que el webhook solo haga incrementale
 ```bash
 curl -X POST http://localhost:3002/repositories/<id>/sync
 ```
+
+## Complemento local: hook `post-commit`
+
+El webhook actúa **al hacer push**. Para refrescar el grafo ya en el **commit** (p. ej. un agente que commitea desde terminal), `ariadne link` instala un hook git `post-commit` en cada proyecto cliente que envía los archivos del commit a `POST /repositories/local-sync/file`. Es idempotente y no sustituye al webhook: si el ingest no estaba disponible en el commit, el webhook de push deja el grafo al día. Ver [`scripts/git-hooks/README.md`](../../scripts/git-hooks/README.md).

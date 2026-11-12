@@ -13,6 +13,19 @@ Servidor MCP que expone herramientas de contexto sobre el grafo en FalkorDB.
 - Fuente TypeDoc/JSDoc: **`src/mcp-tools.doc.ts`** — tabla resumida de cada `name` MCP, revision `MCP_ARIADNE_TOOLS_DOC_REVISION` (incrementar al cambiar el set de tools en `index.ts`).
 - El manifiesto runtime (`description` + `inputSchema`) sigue definido en **`src/index.ts`** dentro de `ListToolsRequestSchema`.
 
+## `ariadne link`, hook `post-commit` y `scripts/link.mjs` generado
+
+- **Fuente única:** `src/cli.ts` (comando `ariadne link`) y `src/git-hook.ts` (instalación **idempotente** del hook git `post-commit`; ver [`scripts/git-hooks/README.md`](../../scripts/git-hooks/README.md)).
+- **`scripts/link.mjs` (raíz) es un archivo generado:** bundle con esbuild de `cli.ts` (`scripts/bundle-link.mjs`), versionado porque `npx github:kreodevs/ariadne link` no compila. No editar a mano.
+
+| Script (`services/mcp-ariadne`) | Qué hace |
+| --- | --- |
+| `npm run build` | `tsc` + bundle a `dist/link.mjs` (corre en los Dockerfiles del MCP y del frontend, CI y publicación; falla si el bundle no compila) |
+| `npm run sync:link` | Regenera el `scripts/link.mjs` versionado (desde la raíz: `pnpm run build:link`) |
+| `npm run check:link` | Falla si `scripts/link.mjs` está desactualizado (CI y antes de `npm publish`; desde la raíz: `pnpm run check:link`) |
+
+Tras cambiar `cli.ts` o `git-hook.ts`: `npm run sync:link` y versionar el resultado junto con el cambio.
+
 ## Publicar a npm
 
 ```bash
@@ -20,6 +33,8 @@ cd services/mcp-ariadne
 npm login
 npm publish
 ```
+
+El workflow `publish-package.yml` ejecuta `npm run build` y `npm run check:link` antes de publicar.
 
 ## Herramientas
 

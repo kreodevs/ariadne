@@ -48,6 +48,9 @@ Este comando:
    - **Google Antigravity (`.agents/skills/ariadne/SKILL.md`):** Skill nativo con frontmatter YAML.
    - **Universal (`AGENTS.md`):** Instrucciones canónicas universales para cualquier otro agente.
 3. Activa automáticamente el **Live Watcher en segundo plano** dentro del MCP, con Write-Ahead Log (WAL) para trabajar sin conexión en modo avión o tolerar reinicios del servidor.
+4. Instala el **hook git `post-commit`** del proyecto: tras cada commit envía al grafo los archivos del commit (altas, cambios, renombres y borrados), útil cuando commitea un agente o se hace desde terminal. Es **idempotente** (volver a ejecutar `ariadne link` no duplica nada ni toca hooks ajenos como Husky) y no bloquea el commit si el ingest no responde. Variables: `INGEST_URL`, `ARIADNE_HOOK_DISABLE=1`. Ver [`scripts/git-hooks/README.md`](../../scripts/git-hooks/README.md).
+
+> **Qué sincroniza qué:** el Live Watcher cubre los **guardados** de archivos; el hook `post-commit` cubre los **commits**; el [webhook de push](bitbucket_webhook.md) cubre lo que se **sube** al remoto. Se complementan: puedes verificar con `get_sync_status` que el grafo no esté `stale`.
 
 ---
 

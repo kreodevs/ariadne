@@ -94,4 +94,4 @@ This gives you project IDs, repo names, and branches. Use the `roots[].id` (repo
 6. **Pre-commit review** — `detect_changes()` (or legacy `analyze_local_changes()`) before every commit to catch broken dependencies.
 7. **Graph freshness** — Call `get_sync_status` before Gate 1/2; if `stale: true`, resync first.
 8. **Two gates for refactors** — `get_modification_plan` then `validate_change_plan`; never skip Gate 2 on multi-file work.
-9. **Live Local Sync** — When editing files without committing, use `sync_local_file(filePath, content)` or run `pnpm --filter ariadne-mcp daemon` so FalkorDB always reflects your working tree.
+9. **Live Local Sync** — When editing files without committing, use `sync_local_file(filePath, content)` or run `pnpm --filter ariadne-mcp daemon` so FalkorDB always reflects your working tree. Commits made outside the IDE (agents, terminal) are synced by the `post-commit` git hook that `ariadne link` installs (idempotent; see `scripts/git-hooks/README.md`).
