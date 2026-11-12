@@ -7,6 +7,8 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.0.0/).
 
 ### Added
 
+- **`scripts/link.mjs` ahora se genera desde `services/mcp-ariadne/src/cli.ts` con esbuild** (`scripts/bundle-link.mjs`), eliminando la implementación duplicada de `ariadne link`. `npm run build` del MCP (Dockerfile del MCP, Dockerfile del frontend, `deploy-build.sh`, CI y publicación) ejecuta `tsc` + el bundle (`dist/link.mjs`); `pnpm run build:link` actualiza el archivo versionado que usa `npx github:...`; `check:link` falla en CI (`ci-ingest-mcp`) y antes de `npm publish` si está desactualizado.
+- **`ariadne link` instala un hook git `post-commit` idempotente** (`services/mcp-ariadne/src/git-hook.ts`, duplicado en `scripts/link.mjs`): tras cada commit envía a `POST /repositories/local-sync/file` los archivos añadidos, modificados, renombrados y borrados, para sincronizar el grafo con commits de agentes o terminal sin esperar al webhook. Re-ejecutar `link` no duplica nada: actualiza su bloque entre marcadores, añade al final de hooks ajenos de shell sin tocarlos, respeta `core.hooksPath`/Husky/worktrees y no falla el commit si el ingest no responde. Ver `scripts/git-hooks/README.md`. Documentación actualizada: `README.md`, `AGENTS.md`, `docs/notebooklm/{MCP_AYUDA,INSTALACION_MCP_CURSOR,bitbucket_webhook,ingestion_flow}.md` y `services/mcp-ariadne/README.md`.
 - **Configuración Zero-Config de 1 Paso (`npx ariadne link` / `init`):**
   - CLI `ariadne-link` (`cli.ts`) para inicializar cualquier proyecto cliente con un solo comando.
   - Detección automática del repositorio remoto Git, generación de `.cursor/mcp.json` con configuración exacta de servidor y token, colocación de `AGENTS.md` canónico y creación de `.ariadne/config.json`.
@@ -52,6 +54,7 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.0.0/).
 
 ### Fixed
 
+- **CI e2e del frontend:** el job `e2e` queda fijado a `ubuntu-24.04`; `ubuntu-latest` pasó a Ubuntu 26.04, no soportado por Playwright 1.59, y `playwright install --with-deps` fallaba antes de correr los tests.
 - **Resolución de Identidad en Chat y Modification-Plan (`projectId` vs `repoId`):**
   - Enrutamiento directo en `chatProject` hacia `chatRepository` cuando el proyecto tiene un único repositorio vinculado, evitando consultas a grafos vacíos.
   - Expansión bidireccional en `ProjectsService.getCypherShardContexts` para incluir los shards de todos los repositorios vinculados al proyecto y viceversa.

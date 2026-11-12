@@ -18,6 +18,7 @@ WORKDIR /app
 COPY --from=ariadne-common /packages/ariadne-common /packages/ariadne-common
 COPY services/mcp-ariadne/package.json services/mcp-ariadne/tsconfig.json ./
 COPY services/mcp-ariadne/src ./src
+COPY services/mcp-ariadne/scripts ./scripts
 RUN --mount=type=cache,target=/root/.npm \
     npm install --ignore-scripts && npm run build
 

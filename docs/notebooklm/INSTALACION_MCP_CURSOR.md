@@ -74,6 +74,7 @@ npx -y github:kreodevs/ariadne link --server https://ariadne.kreoint.mx --token 
    - **Universal (`AGENTS.md`):** Instrucciones canónicas para cualquier otro asistente (Windsurf, Aider, etc.).
 3. Registra `.ariadne/config.json` con los metadatos de sincronización del proyecto.
 4. Activa el **Live Watcher en segundo plano**: para sincronización continua de archivos locales en tiempo real con Write-Ahead Log (WAL).
+5. Instala (o actualiza) el **hook git `post-commit`**: sincroniza con el grafo los archivos de cada commit, incluidos los hechos por agentes o desde terminal. Idempotente: si ya existe su bloque lo actualiza sin duplicarlo; si el repo tenía un hook propio (p. ej. Husky) añade el bloque al final sin modificar lo previo; si el hook existente no es de shell, lo deja intacto y avisa. Respeta `core.hooksPath` y worktrees. Desactivar puntualmente: `ARIADNE_HOOK_DISABLE=1 git commit ...`. Ver [`scripts/git-hooks/README.md`](../../scripts/git-hooks/README.md).
 
 ---
 

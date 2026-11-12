@@ -75,6 +75,7 @@ git clone --depth 1 [URL_DEL_REPO]
 - Tras la ingesta inicial se guarda `lastCommitSha` en `repositories`.
 - En push, si el historial es desconocido, se usa diff entre `lastCommitSha` y el nuevo.
 - Los archivos borrados se eliminan del grafo (orphan cleanup).
+- En local, el hook git `post-commit` instalado por `ariadne link` envía los archivos de cada commit a `POST /repositories/local-sync/file` (sin esperar al push); ver [bitbucket_webhook.md](bitbucket_webhook.md#complemento-local-hook-post-commit).
 
 ## 6. Qué Evitar
 

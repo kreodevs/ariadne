@@ -9,6 +9,7 @@ RUN --mount=type=cache,target=/root/.npm \
     cd /packages/ariadne-common && npm install && npm run build
 COPY services/mcp-ariadne/package.json services/mcp-ariadne/tsconfig.json ./
 COPY services/mcp-ariadne/src ./src
+COPY services/mcp-ariadne/scripts ./scripts
 RUN --mount=type=cache,target=/root/.npm \
     npm install --ignore-scripts && npm run build && \
     npm pack && mkdir -p /export && mv *.tgz /export/ariadne-mcp.tgz

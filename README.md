@@ -52,6 +52,7 @@ npx -y github:kreodevs/ariadne link --server https://ariadne.kreoint.mx --token 
 5. **Google Antigravity (`.agents/skills/ariadne/SKILL.md`):** Skill empaquetado con frontmatter YAML compatible con Antigravity.
 6. **Universal (`AGENTS.md`):** Reglas canónicas para Windsurf, Aider y cualquier otro cliente MCP.
 7. **Live Watcher en segundo plano:** Sincronización continua de deltas locales en tiempo real con Write-Ahead Log (WAL) tolerante a fallas.
+8. **Hook git `post-commit`:** Tras cada commit envía al grafo los archivos añadidos, modificados, renombrados y borrados (`POST /repositories/local-sync/file`), de modo que los commits de agentes o de terminal también quedan sincronizados sin esperar al webhook de push. Es **idempotente**: puedes volver a ejecutar `ariadne link` cuantas veces quieras (actualiza solo su bloque, no pisa hooks existentes como Husky y nunca bloquea el commit). Detalle y opciones (`INGEST_URL`, `ARIADNE_HOOK_DISABLE=1`) en [`scripts/git-hooks/README.md`](scripts/git-hooks/README.md).
 
 ---
 
