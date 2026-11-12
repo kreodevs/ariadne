@@ -54,6 +54,7 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.0.0/).
 
 ### Fixed
 
+- **CI e2e del frontend:** el job `e2e` queda fijado a `ubuntu-24.04`; `ubuntu-latest` pasó a Ubuntu 26.04, no soportado por Playwright 1.59, y `playwright install --with-deps` fallaba antes de correr los tests.
 - **Resolución de Identidad en Chat y Modification-Plan (`projectId` vs `repoId`):**
   - Enrutamiento directo en `chatProject` hacia `chatRepository` cuando el proyecto tiene un único repositorio vinculado, evitando consultas a grafos vacíos.
   - Expansión bidireccional en `ProjectsService.getCypherShardContexts` para incluir los shards de todos los repositorios vinculados al proyecto y viceversa.

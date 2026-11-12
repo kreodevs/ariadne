@@ -31,7 +31,8 @@ jobs:
       - run: pnpm run test:unit
 
   e2e:
-    runs-on: ubuntu-latest
+    # Fijo en 24.04: ubuntu-latest pasó a 26.04, que Playwright 1.59 no soporta (falla en `playwright install --with-deps`).
+    runs-on: ubuntu-24.04
     defaults:
       run:
         working-directory: frontend
