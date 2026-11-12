@@ -8,6 +8,7 @@ on:
       - "services/mcp-ariadne/**"
       - "NOTICE"
       - "scripts/verify-archify-third-party.mjs"
+      - "scripts/link.mjs"
       - ".github/workflows/ci-ingest-mcp.yml"
   pull_request:
     paths:
@@ -15,6 +16,7 @@ on:
       - "services/mcp-ariadne/**"
       - "NOTICE"
       - "scripts/verify-archify-third-party.mjs"
+      - "scripts/link.mjs"
       - ".github/workflows/ci-ingest-mcp.yml"
 
 jobs:
@@ -59,4 +61,8 @@ jobs:
         working-directory: packages/ariadne-common
         run: npm install && npm run build
       - run: npm install
+      # `build` = tsc + bundle de link (dist/link.mjs); falla si el bundle no compila.
       - run: npm run build
+      # scripts/link.mjs (runner de `npx github:...`) se versiona: debe coincidir con el bundle de src/cli.ts.
+      - name: Verificar scripts/link.mjs actualizado
+        run: npm run check:link

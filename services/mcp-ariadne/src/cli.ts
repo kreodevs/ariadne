@@ -12,6 +12,7 @@ import { existsSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { resolve, join, basename } from "node:path";
 import { execSync } from "node:child_process";
+import { installPostCommitHook, type HookInstallStatus } from "./git-hook.js";
 
 const CANONICAL_AGENTS_MD = `# AGENTS.md — Ariadne Codebase Intelligence
 
@@ -291,6 +292,18 @@ export async function runAriadneLink(): Promise<void> {
   };
   await writeFile(configJsonPath, JSON.stringify(ariadneConfig, null, 2) + "\n", "utf-8");
   console.log(`✅ \x1b[32mRegistrado .ariadne/config.json\x1b[0m`);
+
+  // 8. Hook git post-commit (idempotente): sincroniza al grafo los archivos de cada commit
+  const hook = await installPostCommitHook(cwd);
+  const hookMsg: Record<HookInstallStatus, string> = {
+    installed: "✅ \x1b[32mInstalado hook git post-commit\x1b[0m",
+    appended: "✅ \x1b[32mHook post-commit añadido al existente\x1b[0m (el contenido previo no se tocó)",
+    updated: "✅ \x1b[32mHook post-commit actualizado\x1b[0m",
+    unchanged: "ℹ️  Hook post-commit ya instalado y al día.",
+    "skipped-not-git": "ℹ️  No es un repositorio git: hook post-commit omitido.",
+    "skipped-foreign-shebang": "⚠️  Ya existe un hook post-commit que no es shell: no se modificó (añade el bloque a mano, ver scripts/git-hooks/README.md).",
+  };
+  console.log(`${hookMsg[hook.status]}${hook.hookPath && hook.status !== "skipped-foreign-shebang" ? ` (${hook.hookPath})` : ""}`);
 
   console.log(`\n🎉 \x1b[1m\x1b[32m¡Listo! Tu proyecto ahora está conectado a Ariadne.\x1b[0m`);
   console.log(`
