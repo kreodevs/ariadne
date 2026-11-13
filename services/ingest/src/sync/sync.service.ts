@@ -39,6 +39,7 @@ import { buildCypherForPrismaSchema } from '../pipeline/prisma-extract';
 import { buildCypherForOpenApiSpec } from '../pipeline/openapi-spec-ingest';
 import { buildCrossRepoApiAndStrapiLinkCypher } from '../pipeline/cross-repo-api-link';
 import { buildPostSyncFlowIndexCypher } from '../pipeline/flow-graph-index';
+import { toGraphClient } from '../pipeline/graph-client-adapter';
 import { enrichParsedFilesWithCoreRouterRoutes } from '../pipeline/strapi-core-router-infer';
 import { enrichParsedFilesWithRouterRoutes } from '../pipeline/router-routes-extract';
 import { buildStrapiContentTypeRelationCypher } from '../pipeline/strapi-content-type-relations';
@@ -651,7 +652,7 @@ export class SyncService {
                 })
               : graphNameForProject(pidArgForProject);
           const graph = client.selectGraph(gname);
-          const graphClient = { query: (cypher: string) => graph.query(cypher) };
+          const graphClient = toGraphClient(graph);
           if (!ensuredGraphs.has(gname)) {
             ensuredGraphs.add(gname);
             await ensureFalkorIndexes(graphClient);
@@ -1007,7 +1008,12 @@ export class SyncService {
       void this.theforgeConverge.triggerAfterSync(repositoryId, 'full');
       const primaryProjectId = projectIds[0];
       if (primaryProjectId) {
-        void this.designSystemLink.linkAfterSync(primaryProjectId, repositoryId);
+        // Post-sync no bloqueante: sin catch, un rechazo sería unhandled rejection y tumba el proceso.
+        void this.designSystemLink.linkAfterSync(primaryProjectId, repositoryId).catch((linkErr: unknown) => {
+          this.logger.error(
+            `Design-system post-sync link failed: ${linkErr instanceof Error ? linkErr.message : String(linkErr)}`,
+          );
+        });
         void this.mddPersistence.persistAfterFullSync(repositoryId, primaryProjectId, commitSha ?? null);
         void this.c4Service.persistAfterFullSync(repositoryId, primaryProjectId);
       }
@@ -1151,7 +1157,7 @@ export class SyncService {
     try {
       const gname = graphNameForProject(isProjectShardingEnabled() ? projectId : undefined);
       const graph = client.selectGraph(gname);
-      const graphClient = { query: (cypher: string) => graph.query(cypher) };
+      const graphClient = toGraphClient(graph);
 
       if (!content || !content.trim()) {
         const deleteCy = buildCypherDeleteFile(path, projectId, repoId);

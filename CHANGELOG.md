@@ -54,6 +54,11 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.0.0/).
 
 ### Fixed
 
+- **Ingest: el paso post-sync de enlaces a design-system tumbaba el contenedor tras un full sync:**
+  - `DesignSystemLinkService.linkAfterSync` escribía (`MERGE`) a través de `ChatCypherService.executeCypher`, el executor read-only de `query_graph`, que lanza `CypherGuardError: Blocked write/destructive Cypher clause: MERGE`. Ahora lee y escribe por el cliente Falkor compartido del ingest, por shard del proyecto, sin guard ni `LIMIT` implícito.
+  - La llamada en `sync.service.ts` era `void` sin `catch`: el rechazo quedaba como promesa no manejada y Node terminaba el proceso ~3 s después del sync. El servicio ya no lanza (registra el error) y el call site también captura el rechazo; el job de sync ya completado no se ve afectado.
+  - Tests: `design-system-link.service.spec.ts` (escritura fuera del guard, fallos no propagan) y `graph-client-adapter.spec.ts`.
+- **Ingest: "Missing parameters" en el batch `UNWIND` y en el índice de flujos post-sync:** los wrappers `{ query: (cypher) => graph.query(cypher) }` de `sync.service.ts` (indexación por lote y `indexFile`) y de `c4-ingest.service.ts` descartaban el segundo argumento `{ params }`, así que cualquier sentencia con `$batch` o `$projectId` llegaba sin parámetros. Ahora usan `toGraphClient` (`src/pipeline/graph-client-adapter.ts`), que lo reenvía. Efecto previo: el `UNWIND` caía siempre al fallback sentencia por sentencia y el índice de flujos (`[sync] flow index`) se omitía sin error visible.
 - **CI e2e del frontend:** el job `e2e` queda fijado a `ubuntu-24.04`; `ubuntu-latest` pasó a Ubuntu 26.04, no soportado por Playwright 1.59, y `playwright install --with-deps` fallaba antes de correr los tests.
 - **Resolución de Identidad en Chat y Modification-Plan (`projectId` vs `repoId`):**
   - Enrutamiento directo en `chatProject` hacia `chatRepository` cuando el proyecto tiene un único repositorio vinculado, evitando consultas a grafos vacíos.
