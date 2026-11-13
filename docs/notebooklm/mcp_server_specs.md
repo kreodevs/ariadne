@@ -29,7 +29,7 @@ Estas son las funciones que la IA podrá "invocar" para entender tu código lega
 
 Cuando el ingest/API despliegan **un grafo Redis/Falkor por `projectId`** (`AriadneSpecs:<uuid>` en lugar de un solo `AriadneSpecs`):
 
-- El **MCP** selecciona el grafo con `graphNameForProject(projectId)` tras resolver/inferir el proyecto.
+- El **MCP** selecciona el grafo con `graphNameForProject(projectId)` tras resolver/inferir el proyecto. La configuración de sharding se lee de los Ajustes del sistema vía `GET {INGEST_URL}/internal/system-settings` (`falkor-runtime-settings.ts`, caché 15 s); la variable de entorno solo es respaldo si el ingest no responde.
 - **Inferencia sin `projectId`:** si está configurado `INGEST_URL`, el MCP puede obtener candidatos con `GET /projects` y `GET /repositories` y probar el shard hasta acotar el archivo; si no hay ingest, conviene **`.ariadne-project`** o **`projectId` explícito**.
 - **`semantic_search`:** ver [Tool: `semantic_search`](#tool-semantic_search). Con sharding activo exige **`projectId`** explícito (no infiere desde ruta).
 - **`find_similar_implementations`:** con sharding activo exige **`projectId`** o **`currentFilePath`** (inferencia vía ingest cuando aplica).

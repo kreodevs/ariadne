@@ -54,6 +54,7 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.0.0/).
 
 ### Fixed
 
+- **MCP: `query_graph`, `semantic_search` y demás tools veían el grafo vacío con el sharding activado desde la UI:** `ingest` y `api` aplican la configuración de Ajustes del sistema (`setFalkorRuntimeOverrides`), pero `mcp-ariadne` solo leía `FALKOR_SHARD_BY_PROJECT` del entorno (por defecto `false`), así que consultaba `AriadneSpecs` mientras el ingest escribía en `AriadneSpecs:<projectId>`. Nuevo `falkor-runtime-settings.ts`: el MCP lee `GET {INGEST_URL}/internal/system-settings` (caché 15 s, sin lanzar si el ingest no responde) y aplica los mismos overrides al inicio de cada tool. Tests con `node:test` (`npm test`) y job `mcp-test` en CI (Node 22).
 - **Ingest: el paso post-sync de enlaces a design-system tumbaba el contenedor tras un full sync:**
   - `DesignSystemLinkService.linkAfterSync` escribía (`MERGE`) a través de `ChatCypherService.executeCypher`, el executor read-only de `query_graph`, que lanza `CypherGuardError: Blocked write/destructive Cypher clause: MERGE`. Ahora lee y escribe por el cliente Falkor compartido del ingest, por shard del proyecto, sin guard ni `LIMIT` implícito.
   - La llamada en `sync.service.ts` era `void` sin `catch`: el rechazo quedaba como promesa no manejada y Node terminaba el proceso ~3 s después del sync. El servicio ya no lanza (registra el error) y el call site también captura el rechazo; el job de sync ya completado no se ve afectado.

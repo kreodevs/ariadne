@@ -13,6 +13,10 @@ Servidor MCP que expone herramientas de contexto sobre el grafo en FalkorDB.
 - Fuente TypeDoc/JSDoc: **`src/mcp-tools.doc.ts`** — tabla resumida de cada `name` MCP, revision `MCP_ARIADNE_TOOLS_DOC_REVISION` (incrementar al cambiar el set de tools en `index.ts`).
 - El manifiesto runtime (`description` + `inputSchema`) sigue definido en **`src/index.ts`** dentro de `ListToolsRequestSchema`.
 
+## Configuración de sharding Falkor
+
+El MCP lee el sharding (`shardByProject`, `shardByDomain`, …) de los Ajustes del sistema consultando `GET {INGEST_URL}/internal/system-settings` (`src/falkor-runtime-settings.ts`, caché de 15 s, se refresca al inicio de cada tool), con la misma fuente que ingest y API. `FALKOR_SHARD_BY_PROJECT` en su entorno solo actúa como respaldo si el ingest no responde. Tests: `npm test` (Node ≥ 22.6, `node:test`).
+
 ## `ariadne link`, hook `post-commit` y `scripts/link.mjs` generado
 
 - **Fuente única:** `src/cli.ts` (comando `ariadne link`) y `src/git-hook.ts` (instalación **idempotente** del hook git `post-commit`; ver [`scripts/git-hooks/README.md`](../../scripts/git-hooks/README.md)).
