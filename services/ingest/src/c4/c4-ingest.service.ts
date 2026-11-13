@@ -8,6 +8,7 @@ import { FalkorClientService } from '../pipeline/falkor-client.service';
 import { buildC4IngestCypher } from './c4-cypher';
 import { scanC4Infrastructure } from './c4-infrastructure';
 import { getC4Settings } from './c4-settings.util';
+import { toGraphClient } from '../pipeline/graph-client-adapter';
 
 @Injectable()
 export class C4IngestService {
@@ -49,7 +50,7 @@ export class C4IngestService {
       const client = await this.falkor.getClient();
       for (const gname of graphNames) {
         const graph = client.selectGraph(gname);
-        const gc = { query: (q: string) => graph.query(q) };
+        const gc = toGraphClient(graph);
         await runCypherBatch(gc, batch.cleanup);
         await runCypherBatch(gc, batch.merge);
         await runCypherBatch(gc, batch.linkFiles);
