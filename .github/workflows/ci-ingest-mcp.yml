@@ -66,3 +66,20 @@ jobs:
       # scripts/link.mjs (runner de `npx github:...`) se versiona: debe coincidir con el bundle de src/cli.ts.
       - name: Verificar scripts/link.mjs actualizado
         run: npm run check:link
+
+  # Tests del MCP (node:test + strip-types: requiere Node >= 22.6).
+  mcp-test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: services/mcp-ariadne
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Install and build ariadne-common
+        working-directory: packages/ariadne-common
+        run: npm install && npm run build
+      - run: npm install
+      - run: npm test

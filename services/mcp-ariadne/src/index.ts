@@ -20,6 +20,7 @@ import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { ListToolsRequestSchema, CallToolRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 import { createLogger, isProjectShardingEnabled, guardCypherQuery, CypherGuardError } from "ariadne-common";
+import { refreshFalkorRuntimeOverrides } from "./falkor-runtime-settings.js";
 import { getGraph, closeFalkor, forEachProjectShardGraph } from "./falkor.js";
 import { getMcpToolCache, closeRedis } from "./redis.js";
 import { loadAriadneProjectConfig, loadAriadneProjectConfigNearFile, resolveAbsolutePath } from "./utils.js";
@@ -1920,6 +1921,8 @@ async function fetchFileFromIngest(
   if (isMcpToolInvocationLoggingEnabled()) mcpLogToolInvocationStart(name, args);
   try {
   const __mcpResult = await (async () => {
+  // Sharding/Falkor: misma configuración que ingest y API (system_settings), no solo process.env.
+  await refreshFalkorRuntimeOverrides();
   let graph = await getGraph(undefined);
 
   if (name === "list_known_projects") {
