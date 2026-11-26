@@ -21,7 +21,11 @@ Respeta `core.hooksPath` y worktrees; con Husky v9 escribe en `.husky/post-commi
 
 ## Configuración
 
-- `INGEST_URL` (o `ARIADNE_INGEST_URL`): si no está, usa `serverUrl` de `.ariadne/config.json`, y si no `http://localhost:3002`.
+- URL destino, por prioridad:
+  1. `INGEST_URL` (o `ARIADNE_INGEST_URL`): se usa tal cual, directo al ingest.
+  2. `serverUrl` de `.ariadne/config.json`: si es `localhost` va directo al ingest; si es remota (la web, p. ej. `https://relicai.obp.mx`) el hook envía a `<serverUrl>/api/repositories/local-sync/file`, porque el ingest no se expone públicamente.
+  3. `http://localhost:3002`.
+- `ARIADNE_TOKEN` (o `MCP_SECRET`): Secret MCP `ari_…`, **obligatorio** con URL remota (el hook manda `Authorization: Bearer`). Debe estar en el entorno desde el que haces `git commit` (p. ej. `~/.zshrc`). Sin él, el hook avisa y no sincroniza.
 - `projectId`: se lee de `.ariadne-project` si existe.
 - `ARIADNE_HOOK_DISABLE=1`: omite el hook.
 

@@ -5,6 +5,10 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.0.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- **Hook `post-commit` fallaba siempre contra servidores remotos:** usaba `serverUrl` (la web, p. ej. `https://relicai.obp.mx`, que responde 405 al `POST /repositories/local-sync/file`) sin autenticación. Ahora, con una URL remota, envía a `<serverUrl>/api/repositories/local-sync/file` con `Authorization: Bearer $ARIADNE_TOKEN` (Secret MCP `ari_…`); si falta el token avisa y no llama. Un 401/403/404/405 corta el bucle y el aviso indica la causa. `localhost` e `INGEST_URL` siguen yendo directo al ingest. Tests en `git-hook.spec.ts`; `scripts/link.mjs` regenerado.
+
 ### Added
 
 - **`scripts/link.mjs` ahora se genera desde `services/mcp-ariadne/src/cli.ts` con esbuild** (`scripts/bundle-link.mjs`), eliminando la implementación duplicada de `ariadne link`. `npm run build` del MCP (Dockerfile del MCP, Dockerfile del frontend, `deploy-build.sh`, CI y publicación) ejecuta `tsc` + el bundle (`dist/link.mjs`); `pnpm run build:link` actualiza el archivo versionado que usa `npx github:...`; `check:link` falla en CI (`ci-ingest-mcp`) y antes de `npm publish` si está desactualizado.

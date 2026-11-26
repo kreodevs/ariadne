@@ -26,7 +26,17 @@ const root = process.env.ROOT;
 let projectId, cfgUrl;
 try { projectId = JSON.parse(fs.readFileSync(path.join(root, ".ariadne-project"), "utf8")).projectId; } catch (e) {}
 try { cfgUrl = JSON.parse(fs.readFileSync(path.join(root, ".ariadne", "config.json"), "utf8")).serverUrl; } catch (e) {}
-const url = (process.env.INGEST_URL || process.env.ARIADNE_INGEST_URL || cfgUrl || "http://localhost:3002").replace(/\/$/, "");
+const envUrl = process.env.INGEST_URL || process.env.ARIADNE_INGEST_URL;
+const token = process.env.ARIADNE_TOKEN || process.env.MCP_SECRET || "";
+const strip = (u) => u.replace(/\/+$/, "");
+let url, viaApi = false;
+if (envUrl) url = strip(envUrl);
+else if (cfgUrl) {
+  url = strip(strip(cfgUrl).replace(/\/mcp$/, ""));
+  if (!/^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:|\/|$)/.test(url)) { viaApi = true; if (!/\/api$/.test(url)) url += "/api"; }
+} else url = "http://localhost:3002";
+const headers = { "Content-Type": "application/json" };
+if (viaApi && token) headers.Authorization = "Bearer " + token;
 const EXT = new Set([".ts",".tsx",".js",".jsx",".mjs",".cjs",".prisma",".py",".go",".rs"]);
 const IGN = ["node_modules","dist","build",".next",".turbo","coverage",".ariadne"];
 const tok = fs.readFileSync(0, "utf8").split("\0").filter(Boolean);
@@ -39,20 +49,25 @@ for (let i = 0; i < tok.length; ) {
 const ok = (f) => (EXT.has(path.extname(f.p).toLowerCase()) || f.p.endsWith("package.json"))
   && !IGN.some((d) => f.p.startsWith(d + "/") || f.p.includes("/" + d + "/"));
 (async () => {
-  let n = 0, fail = 0;
-  for (const f of files.filter(ok)) {
+  let n = 0, fail = 0, status = 0;
+  const todo = files.filter(ok);
+  if (viaApi && !token && todo.length) {
+    console.error("[ariadne] post-commit: " + url + " exige token; define ARIADNE_TOKEN (Secret MCP ari_...) en tu entorno. Sin sincronizar.");
+    return;
+  }
+  for (const f of todo) {
     let content = "", del = f.del;
     if (!del) { try { content = fs.readFileSync(path.join(root, f.p), "utf8"); } catch (e) { del = true; } }
     try {
       const r = await fetch(url + "/repositories/local-sync/file", {
-        method: "POST", headers: { "Content-Type": "application/json" },
+        method: "POST", headers: headers,
         body: JSON.stringify({ path: f.p, content: del ? "" : content, projectId: projectId }),
         signal: AbortSignal.timeout(5000),
       });
-      if (r.ok) n++; else fail++;
+      if (r.ok) n++; else { fail++; status = r.status; if (r.status === 401 || r.status === 403 || r.status === 404 || r.status === 405) break; }
     } catch (e) { fail++; break; }
   }
-  if (n || fail) console.error("[ariadne] post-commit: " + n + " archivo(s) sincronizados" + (fail ? ", " + fail + " fallaron (ingest en " + url + "?)" : ""));
+  if (n || fail) console.error("[ariadne] post-commit: " + n + " archivo(s) sincronizados" + (fail ? ", " + fail + " fallaron (" + url + (status ? " respondio " + status : " sin respuesta") + (status === 401 || status === 403 ? "; revisa ARIADNE_TOKEN" : status === 404 || status === 405 ? "; esa URL no enruta al ingest" : "") + ")" : ""));
 })();
 `;
 
